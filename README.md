@@ -19,7 +19,7 @@ Pythia can be understood as an operationalization of the program described in:
 - https://peterhj.github.io/notes/roadmap.html
 
 The design of Pythia intentionally addresses limitations in the implementation of [Praline](https://github.com/peterhj/praline) v1,
-and also unifies the logical form frameworks in both [Praline](https://github.com/peterhj/praline) and [Meringue](https://github.com/peterhj/meringue).
+and also unifies the logical frameworks in both [Praline](https://github.com/peterhj/praline) and [Meringue](https://github.com/peterhj/meringue).
 
 ## Related Work
 
