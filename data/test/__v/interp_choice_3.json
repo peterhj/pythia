@@ -1,0 +1,123 @@
+{
+  "clk": 28,
+  "env": {
+    "span": [],
+    "code": [
+      {
+        "prim_key": {
+          "SNum_key": 11,
+          "SNum_tag": 0
+        },
+        "flat_val": "ModCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 13,
+          "SNum_tag": 0
+        },
+        "flat_val": "StmCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 15,
+          "SNum_tag": 0
+        },
+        "flat_val": "TermCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 17,
+          "SNum_tag": 0
+        },
+        "flat_val": "TermCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 20,
+          "SNum_tag": 0
+        },
+        "flat_val": "TermCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 25,
+          "SNum_tag": 0
+        },
+        "flat_val": "StmCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 27,
+          "SNum_tag": 0
+        },
+        "flat_val": "TermCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 29,
+          "SNum_tag": 0
+        },
+        "flat_val": "TermCode"
+      }
+    ],
+    "ident": [
+      {
+        "prim_key": {
+          "SNum_key": 5,
+          "SNum_tag": 0
+        },
+        "flat_val": "eval"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 3,
+          "SNum_tag": 0
+        },
+        "flat_val": "failure"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 9,
+          "SNum_tag": 0
+        },
+        "flat_val": "TokenTrie"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 1,
+          "SNum_tag": 0
+        },
+        "flat_val": "choice"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 7,
+          "SNum_tag": 0
+        },
+        "flat_val": "print"
+      }
+    ],
+    "term": [
+      {
+        "prim_key": {
+          "SNum_key": 34,
+          "SNum_tag": 0
+        },
+        "flat_val": {
+          "IntLitTerm": 2
+        }
+      },
+      {
+        "prim_key": {
+          "SNum_key": 33,
+          "SNum_tag": 0
+        },
+        "flat_val": {
+          "IdentTerm": {
+            "raw": "choice"
+          }
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,2 @@
+defproc hi():
+    pass

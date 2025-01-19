@@ -1,0 +1,91 @@
+[package]
+name = "pythia"
+version = "0.1.0-devel"
+edition = "2021"
+authors = ["Peter Jin <peterhaijin@gmail.com>"]
+license = "Apache-2.0"
+
+[profile.dev]
+#opt-level = 0
+opt-level = 1
+debug = true
+overflow-checks = true
+panic = "abort"
+codegen-units = 256
+incremental = true
+lto = false
+
+[profile.release]
+opt-level = 3
+debug = true
+overflow-checks = true
+panic = "abort"
+codegen-units = 1
+incremental = false
+lto = false
+
+[features]
+default = []
+pyo3 = []
+#pyo3 = ["dep:pyo3-build-config", "dep:pyo3"]
+rayon = []
+#rayon = ["dep:rayon"]
+
+#[build-dependencies]
+#pyo3-build-config = { version = "^0.21", optional = true }
+
+[dependencies]
+#crossbeam-utils = { version = "^0.8" }
+fxhash2 = { version = "^2" }
+libc = { version = "^0.2" }
+once_cell = { version = "^1" }
+paste = { version = "^1.0" }
+#pyo3 = { version = "^0.21", features = ["auto-initialize"], optional = true }
+#rayon = { version = "^1.10" }
+rclite = { version = "^0.2" }
+regex = { version = "^1.10" }
+serde = { version = "^1.0", features = ["derive"] }
+serde_json = { version = "^1.0" }
+signal_hook = { version = "^0.3" }
+smol_str = { version = "^0.2", default-features = false, features = ["serde"] }
+term_colors = { version = "^2" }
+time = { version = "^0.1" }
+
+[lib]
+#crate-type = ["lib", "cdylib"]
+crate-type = ["lib"]
+
+[[bin]]
+name = "boot-interp-test"
+path = "tools/boot-interp-test.rs"
+
+[[bin]]
+name = "interp"
+path = "tools/interp.rs"
+
+[patch.crates-io]
+aho-corasick = { path = "../aho-corasick-latest" }
+branches = { path = "../branches" }
+#crossbeam-deque = { path = "../crossbeam/crossbeam-deque" }
+#crossbeam-utils = { path = "../crossbeam/crossbeam-utils" }
+#either = { path = "../either" }
+fxhash2 = { path = "../fxhash2" }
+itoa = { path = "../itoa" }
+libc = { path = "../libc" }
+memchr = { path = "../memchr-latest" }
+once_cell = { path = "../once_cell" }
+paste = { path = "../paste" }
+proc-macro2 = { path = "../proc-macro2" }
+quote = { path = "../quote" }
+#rayon = { path = "../rayon" }
+rclite = { path = "../rclite" }
+regex = { path = "../regex-latest" }
+regex-syntax = { path = "../regex-latest/regex-syntax" }
+ryu = { path = "../ryu" }
+serde = { path = "../serde/serde" }
+serde_json = { path = "../serde_json" }
+signal_hook = { path = "../signal_hook" }
+smol_str = { path = "../smol_str" }
+syn = { path = "../syn" }
+term_colors = { path = "../term_colors" }
+time = { path = "../time-0.1" }

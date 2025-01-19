@@ -1,0 +1,1 @@
+triangle(abc, xyz)

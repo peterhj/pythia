@@ -1,0 +1,115 @@
+{
+  "clk": 11,
+  "env": {
+    "span": [],
+    "code": [
+      {
+        "prim_key": {
+          "SNum_key": 11,
+          "SNum_tag": 0
+        },
+        "flat_val": "ModCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 13,
+          "SNum_tag": 0
+        },
+        "flat_val": "StmCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 14,
+          "SNum_tag": 0
+        },
+        "flat_val": "TermCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 16,
+          "SNum_tag": 0
+        },
+        "flat_val": "TermCode"
+      }
+    ],
+    "ident": [
+      {
+        "prim_key": {
+          "SNum_key": 18,
+          "SNum_tag": 0
+        },
+        "flat_val": "triangle"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 5,
+          "SNum_tag": 0
+        },
+        "flat_val": "eval"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 3,
+          "SNum_tag": 0
+        },
+        "flat_val": "failure"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 9,
+          "SNum_tag": 0
+        },
+        "flat_val": "TokenTrie"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 1,
+          "SNum_tag": 0
+        },
+        "flat_val": "choice"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 7,
+          "SNum_tag": 0
+        },
+        "flat_val": "print"
+      }
+    ],
+    "term": [
+      {
+        "prim_key": {
+          "SNum_key": 22,
+          "SNum_tag": 0
+        },
+        "flat_val": {
+          "TupleTerm": {
+            "buf": [
+              {
+                "ENum_cls": {
+                  "SNum_key": 21,
+                  "SNum_tag": 0
+                },
+                "ENum_inst": {
+                  "SNum_key": 21,
+                  "SNum_tag": 0
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "prim_key": {
+          "SNum_key": 21,
+          "SNum_tag": 0
+        },
+        "flat_val": {
+          "IdentTerm": {
+            "raw": "triangle"
+          }
+        }
+      }
+    ]
+  }
+}

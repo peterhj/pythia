@@ -1,0 +1,236 @@
+{
+  "clk": 19,
+  "env": {
+    "span": [],
+    "code": [
+      {
+        "prim_key": {
+          "SNum_key": 20,
+          "SNum_tag": 0
+        },
+        "flat_val": "ModCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 22,
+          "SNum_tag": 0
+        },
+        "flat_val": "StmCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 24,
+          "SNum_tag": 0
+        },
+        "flat_val": "TermCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 25,
+          "SNum_tag": 0
+        },
+        "flat_val": "TermCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 28,
+          "SNum_tag": 0
+        },
+        "flat_val": "TermCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 30,
+          "SNum_tag": 0
+        },
+        "flat_val": "TermCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 33,
+          "SNum_tag": 0
+        },
+        "flat_val": "TermCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 38,
+          "SNum_tag": 0
+        },
+        "flat_val": "StmCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 40,
+          "SNum_tag": 0
+        },
+        "flat_val": "TermCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 42,
+          "SNum_tag": 0
+        },
+        "flat_val": "TermCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 44,
+          "SNum_tag": 0
+        },
+        "flat_val": "TermCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 47,
+          "SNum_tag": 0
+        },
+        "flat_val": "StmCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 49,
+          "SNum_tag": 0
+        },
+        "flat_val": "TermCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 51,
+          "SNum_tag": 0
+        },
+        "flat_val": "TermCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 55,
+          "SNum_tag": 0
+        },
+        "flat_val": "TermCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 57,
+          "SNum_tag": 0
+        },
+        "flat_val": "TermCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 59,
+          "SNum_tag": 0
+        },
+        "flat_val": "TermCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 62,
+          "SNum_tag": 0
+        },
+        "flat_val": "StmCode"
+      }
+    ],
+    "ident": [
+      {
+        "prim_key": {
+          "SNum_key": 18,
+          "SNum_tag": 0
+        },
+        "flat_val": "TokenTrie"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 16,
+          "SNum_tag": 0
+        },
+        "flat_val": "failure"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 27,
+          "SNum_tag": 0
+        },
+        "flat_val": "k"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 14,
+          "SNum_tag": 0
+        },
+        "flat_val": "choice"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 12,
+          "SNum_tag": 0
+        },
+        "flat_val": "__test_fun_0__"
+      }
+    ],
+    "term": [
+      {
+        "prim_key": {
+          "SNum_key": 70,
+          "SNum_tag": 0
+        },
+        "flat_val": {
+          "TupleTerm": {
+            "buf": [
+              {
+                "ENum_cls": {
+                  "SNum_key": 67,
+                  "SNum_tag": 0
+                },
+                "ENum_inst": {
+                  "SNum_key": 67,
+                  "SNum_tag": 0
+                }
+              },
+              {
+                "ENum_cls": {
+                  "SNum_key": 68,
+                  "SNum_tag": 0
+                },
+                "ENum_inst": {
+                  "SNum_key": 68,
+                  "SNum_tag": 0
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "prim_key": {
+          "SNum_key": 68,
+          "SNum_tag": 0
+        },
+        "flat_val": {
+          "IntLitTerm": 2
+        }
+      },
+      {
+        "prim_key": {
+          "SNum_key": 67,
+          "SNum_tag": 0
+        },
+        "flat_val": {
+          "IdentTerm": {
+            "raw": "choice"
+          }
+        }
+      },
+      {
+        "prim_key": {
+          "SNum_key": 66,
+          "SNum_tag": 0
+        },
+        "flat_val": {
+          "IdentTerm": {
+            "raw": "k"
+          }
+        }
+      }
+    ]
+  }
+}

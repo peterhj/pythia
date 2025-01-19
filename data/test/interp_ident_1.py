@@ -1,0 +1,2 @@
+triangle(abc)
+triangle(xyz)
