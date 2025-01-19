@@ -89,3 +89,4 @@ smol_str = { path = "../smol_str" }
 syn = { path = "../syn" }
 term_colors = { path = "../term_colors" }
 time = { path = "../time-0.1" }
+unicode-ident = { path = "../unicode-ident" }

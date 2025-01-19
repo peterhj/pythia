@@ -39,7 +39,7 @@ version = "1.0.15"
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.82"
+version = "1.0.93"
 dependencies = [
  "unicode-ident",
 ]
@@ -64,7 +64,7 @@ dependencies = [
 
 [[package]]
 name = "quote"
-version = "1.0.36"
+version = "1.0.38"
 dependencies = [
  "proc-macro2",
 ]
@@ -78,7 +78,7 @@ dependencies = [
 
 [[package]]
 name = "regex"
-version = "1.10.6"
+version = "1.11.1"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -88,7 +88,7 @@ dependencies = [
 
 [[package]]
 name = "regex-automata"
-version = "0.4.7"
+version = "0.4.9"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -97,7 +97,7 @@ dependencies = [
 
 [[package]]
 name = "regex-syntax"
-version = "0.8.4"
+version = "0.8.5"
 
 [[package]]
 name = "ryu"
@@ -105,14 +105,14 @@ version = "1.0.18"
 
 [[package]]
 name = "serde"
-version = "1.0.203"
+version = "1.0.217"
 dependencies = [
  "serde_derive",
 ]
 
 [[package]]
 name = "serde_derive"
-version = "1.0.203"
+version = "1.0.217"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -121,9 +121,10 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.117"
+version = "1.0.135"
 dependencies = [
  "itoa",
+ "memchr",
  "ryu",
  "serde",
 ]
@@ -152,7 +153,7 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "2.0.63"
+version = "2.0.96"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -175,4 +176,4 @@ dependencies = [
 
 [[package]]
 name = "unicode-ident"
-version = "1.0.12"
+version = "1.0.14"
