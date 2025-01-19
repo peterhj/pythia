@@ -60,7 +60,7 @@ name = "boot-interp-test"
 path = "tools/boot-interp-test.rs"
 
 [[bin]]
-name = "interp"
+name = "pythia"
 path = "tools/interp.rs"
 
 [patch.crates-io]

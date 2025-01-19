@@ -21,6 +21,23 @@ Pythia can be understood as an operationalization of the program described in:
 The design of Pythia intentionally addresses limitations in the implementation of [Praline](https://github.com/peterhj/praline) v1,
 and also unifies the logical frameworks in both [Praline](https://github.com/peterhj/praline) and [Meringue](https://github.com/peterhj/meringue).
 
+## Quickstart
+
+### Build
+
+    git clone https://git.sr.ht/~ptrj/pythia
+    cd pythia
+    git submodule update --init --recursive
+    make
+
+### Run interpreter tests
+
+    make i
+
+### Interpret a source file
+
+    ./target/release/pythia <source.pythia>
+
 ## Related Work
 
 - [Dodona](https://arxiv.org/abs/2012.11401) (Daniel Selsam, Jesse Michael Han, Leonardo de Moura, Patrice Godefroid)

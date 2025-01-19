@@ -57,7 +57,9 @@ fn main() {
         break;
       }
     } else {
-      src_path = Some(arg.to_string());
+      if src_path.is_none() {
+        src_path = Some(arg.to_string());
+      }
     }
   }
   if args_err || src_path.is_none() {
