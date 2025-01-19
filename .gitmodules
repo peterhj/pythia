@@ -1,0 +1,63 @@
+[submodule "dep/aho-corasick"]
+	path = dep/aho-corasick
+	url = https://github.com/peterhj/aho-corasick
+[submodule "dep/branches"]
+	path = dep/branches
+	url = https://github.com/peterhj/branches
+[submodule "dep/fxhash2"]
+	path = dep/fxhash2
+	url = https://github.com/peterhj/fxhash2
+[submodule "dep/itoa"]
+	path = dep/itoa
+	url = https://github.com/peterhj/itoa
+[submodule "dep/libc"]
+	path = dep/libc
+	url = https://github.com/peterhj/libc
+[submodule "dep/memchr"]
+	path = dep/memchr
+	url = https://github.com/peterhj/memchr
+[submodule "dep/once_cell"]
+	path = dep/once_cell
+	url = https://github.com/peterhj/once_cell
+[submodule "dep/paste"]
+	path = dep/paste
+	url = https://github.com/peterhj/paste
+[submodule "dep/proc-macro2"]
+	path = dep/proc-macro2
+	url = https://github.com/peterhj/proc-macro2
+[submodule "dep/quote"]
+	path = dep/quote
+	url = https://github.com/peterhj/quote
+[submodule "dep/rclite"]
+	path = dep/rclite
+	url = https://github.com/peterhj/rclite
+[submodule "dep/regex"]
+	path = dep/regex
+	url = https://github.com/peterhj/regex
+[submodule "dep/ryu"]
+	path = dep/ryu
+	url = https://github.com/peterhj/ryu
+[submodule "dep/serde"]
+	path = dep/serde
+	url = https://github.com/peterhj/serde
+[submodule "dep/serde_json"]
+	path = dep/serde_json
+	url = https://github.com/peterhj/serde_json
+[submodule "dep/signal_hook"]
+	path = dep/signal_hook
+	url = https://github.com/peterhj/signal_hook
+[submodule "dep/smol_str"]
+	path = dep/smol_str
+	url = https://github.com/peterhj/smol_str
+[submodule "dep/syn"]
+	path = dep/syn
+	url = https://github.com/peterhj/syn
+[submodule "dep/term_colors"]
+	path = dep/term_colors
+	url = https://github.com/peterhj/term_colors
+[submodule "dep/time"]
+	path = dep/time-0.1
+	url = https://github.com/peterhj/time-0.1
+[submodule "dep/unicode-ident"]
+	path = dep/unicode-ident
+	url = https://github.com/peterhj/unicode-ident
