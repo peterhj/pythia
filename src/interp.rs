@@ -1421,8 +1421,8 @@ impl Result_ {
     x
   }
 
-  pub fn put(&mut self, x: SNum) -> ResReg_ {
-    replace(&mut self.reg, ResReg_::Key(x))
+  pub fn put(&mut self, reg: ResReg_) -> ResReg_ {
+    replace(&mut self.reg, reg)
   }
 
   pub fn get(&mut self) -> ResReg_ {
@@ -1483,7 +1483,7 @@ impl_tabled!(TermCode_);
 // An eclass-enode/eid pair.
 #[derive(Clone, Copy, Default)]
 pub struct ENum {
-  cls:  SNum,
+  ecls: SNum,
   inst: SNum,
 }
 
@@ -1491,7 +1491,7 @@ pub struct ENum {
 impl From<SNum> for ENum {
   fn from(x: SNum) -> ENum {
     ENum{
-      cls:  x,
+      ecls: x,
       inst: x,
     }
   }
@@ -1509,7 +1509,7 @@ impl Serialize for ENum {
 impl Debug for ENum {
   fn fmt(&self, f: &mut Formatter) -> FmtResult {
     write!(f, "ENum({}.{}:={}.{})",
-        self.cls._key(), self.cls._tag(),
+        self.ecls._key(), self.ecls._tag(),
         self.inst._key(), self.inst._tag(),
     )
   }
@@ -1518,7 +1518,7 @@ impl Debug for ENum {
 impl PartialEq for ENum {
   fn eq(&self, rhs: &ENum) -> bool {
     // FIXME: ENum comparison should go through a unifier.
-    self.cls == rhs.cls
+    self.ecls == rhs.ecls
   }
 }
 
@@ -1528,27 +1528,27 @@ impl Eq for ENum {
 impl PartialOrd for ENum {
   fn partial_cmp(&self, rhs: &ENum) -> Option<Ordering> {
     // FIXME: ENum comparison should go through a unifier.
-    self.cls.partial_cmp(&rhs.cls)
+    self.ecls.partial_cmp(&rhs.ecls)
   }
 }
 
 impl Ord for ENum {
   fn cmp(&self, rhs: &ENum) -> Ordering {
     // FIXME: ENum comparison should go through a unifier.
-    self.cls.cmp(&rhs.cls)
+    self.ecls.cmp(&rhs.ecls)
   }
 }
 
 impl Hash for ENum {
   fn hash<H: Hasher>(&self, state: &mut H) {
-    self.cls.hash(state)
+    self.ecls.hash(state)
   }
 }
 
 impl ENum {
   #[inline]
   pub fn _cls(&self) -> SNum {
-    self.cls
+    self.ecls
   }
 
   #[inline]
@@ -1637,7 +1637,7 @@ impl FastUnifier_ {
     let stop = root.inst;
     let mut cursor = stop;
     loop {
-      buf.push(ENum{cls: root.cls, inst: cursor});
+      buf.push(ENum{ecls: root.ecls, inst: cursor});
       match self.next.get(&cursor) {
         Some(&next) => {
           cursor = next;
@@ -1659,7 +1659,7 @@ impl FastUnifier_ {
   // [Interp-API]
   pub fn _find(&self, clkinval: &LClkInvalidSet, clk: LClk, query: SNum) -> Result<ENum, UnifierCheck> {
     if self.root.contains(&query) {
-      return Ok(ENum{cls: query, inst: query});
+      return Ok(ENum{ecls: query, inst: query});
     }
     let mut cache = self.cache.borrow_mut();
     let mut prev_up_clk = clk;
@@ -1700,7 +1700,7 @@ impl FastUnifier_ {
           cursor = up;
         }
         None => {
-          return Ok(ENum{cls: cursor, inst: query});
+          return Ok(ENum{ecls: cursor, inst: query});
         }
       }
     }
@@ -1710,21 +1710,21 @@ impl FastUnifier_ {
   pub fn _unify(&mut self, log: &mut FastLog_, clkinval: &LClkInvalidSet, clk: LClk, lquery: SNum, rquery: SNum, ) -> Result<SNum, UnifierCheck> {
     if lquery == rquery {
       let root = self._find(clkinval, clk, rquery)?;
-      return Ok(root.cls);
+      return Ok(root.ecls);
     }
     if lquery > rquery {
       return self._unify(log, clkinval, clk, rquery, lquery);
     }
     let l_root = self._find(clkinval, clk, lquery)?;
     let r_root = self._find(clkinval, clk, rquery)?;
-    if l_root.cls == r_root.cls {
-      return Ok(r_root.cls);
+    if l_root.ecls == r_root.ecls {
+      return Ok(r_root.ecls);
     }
     // NB: invariant unification (lexicographic ordered roots).
-    let (oroot, nroot) = if l_root.cls > r_root.cls {
-      (l_root.cls, r_root.cls)
+    let (oroot, nroot) = if l_root.ecls > r_root.ecls {
+      (l_root.ecls, r_root.ecls)
     } else {
-      (r_root.cls, l_root.cls)
+      (r_root.ecls, l_root.ecls)
     };
     let onext = self._next(oroot);
     let nprev = self._prev(nroot);
@@ -3008,7 +3008,7 @@ impl FastInterp {
     _debugln!(self, "DEBUG: FastInterp::get_vals: query={:?} keys={:?}", query, keys);
     let mut vals = Vec::new();
     for &key in keys.iter() {
-      if key.cls != query.cls {
+      if key.ecls != query.ecls {
         _debugln!(self, "DEBUG: FastInterp::get_vals: cls mismatch: query={:?} key={:?}", query, key);
         return Err(bot());
       }
@@ -3054,15 +3054,45 @@ impl FastInterp {
   }
 
   // [Interp-API]: This is part of the interpreter private API.
+  pub fn put_mat_res(&mut self, v: bool) -> Result<(), InterpCheck> {
+    let x = ResReg_::Mat(v);
+    match self.res_.put(x) {
+      ResReg_::Emp => {
+        Ok(())
+      }
+      y => {
+        Err(format!("already filled result register: x = {:?} y = {:?}", x, y).into())
+      }
+    }
+  }
+
+  // [Interp-API]: This is part of the interpreter private API.
+  pub fn get_mat_res(&mut self) -> Result<bool, InterpCheck> {
+    match self.res_.get() {
+      ResReg_::Emp => {
+        Err(format!("expected result register").into())
+      }
+      ResReg_::Mat(v) => {
+        Ok(v)
+      }
+      y => {
+        Err(format!("unexpected result register: y = {:?}", y).into())
+      }
+    }
+  }
+
+  // [Interp-API]: This is part of the interpreter private API.
   #[track_caller]
   pub fn put_res<K: Into<SNum>>(&mut self, key: K) -> Result<(), InterpCheck> {
     let x = key.into();
+    let x = ResReg_::Key(x);
     match self.res_.put(x) {
-      ResReg_::Emp => Ok(()),
-      ResReg_::Key(y) => {
+      ResReg_::Emp => {
+        Ok(())
+      }
+      y => {
         Err(format!("already filled result register: x = {:?} y = {:?}", x, y).into())
       }
-      _ => unimplemented!()
     }
   }
 
@@ -3073,8 +3103,12 @@ impl FastInterp {
       ResReg_::Emp => {
         Err(format!("expected result register").into())
       }
-      ResReg_::Key(x) => Ok(x),
-      _ => unimplemented!()
+      ResReg_::Key(x) => {
+        Ok(x)
+      }
+      y => {
+        Err(format!("unexpected result register: y = {:?}", y).into())
+      }
     }
   }
 
@@ -3530,7 +3564,7 @@ impl FastInterp {
               self.port = Port_::Return;
             }
             StmCode_::If{span, cases, final_case} => {
-              _debugln!(self, "DEBUG: FastInterp::resume_:   Enter  InterpStm: If: ");
+              _traceln!(self, "DEBUG: FastInterp::resume_:   Enter  InterpStm: If: ");
               self.knt_ = MemKnt{
                 clk,
                 prev: knt.prev,
@@ -3570,11 +3604,6 @@ impl FastInterp {
               /*self.port = Port_::Enter;*/
             }
             IfStmCodeInterpCursor_::Body(body_stmp, ..) => {
-              let save_tctx = state.save_tctx.pop();
-              if save_tctx.is_none() {
-                return Err(bot());
-              }
-              self.reg.tctx = save_tctx.unwrap();
               self.knt_ = MemKnt{
                 clk,
                 prev: knt.into(),
@@ -3583,9 +3612,9 @@ impl FastInterp {
               /*self.port = Port_::Enter;*/
             }
             IfStmCodeInterpCursor_::FinalBody(final_body_stmp) => {
-              if state.save_tctx.is_some() {
+              /*if state.save_tctx.is_some() {
                 return Err(bot());
-              }
+              }*/
               self.knt_ = MemKnt{
                 clk,
                 prev: knt.into(),
@@ -3602,27 +3631,39 @@ impl FastInterp {
         (Port_::Return, &mut MemKnt_::InterpIfStm(_cur_stm_code, ref mut state)) => {
           match &mut state.cur {
             &mut IfStmCodeInterpCursor_::Cond(cond, body, case_idx, ref cases, final_body) => {
-              let cases = cases.clone();
-              state.cur = IfStmCodeInterpCursor_::Body(body, case_idx, cases, final_body);
-              self.knt_ = knt.into();
-              self.port = Port_::Enter;
+              let save_tctx = state.save_tctx.pop();
+              if save_tctx.is_none() {
+                return Err(bot());
+              }
+              self.reg.tctx = save_tctx.unwrap();
+              let mat = self.get_mat_res()?;
+              if mat {
+                let cases = cases.clone();
+                state.cur = IfStmCodeInterpCursor_::Body(body, case_idx, cases, final_body);
+                self.knt_ = knt.into();
+                self.port = Port_::Enter;
+              } else {
+                if case_idx > cases.len() {
+                  return Err(bot());
+                } else if case_idx == cases.len() {
+                  if final_body.is_nil() {
+                    state.cur = IfStmCodeInterpCursor_::Fin;
+                  } else {
+                    state.cur = IfStmCodeInterpCursor_::FinalBody(final_body);
+                  }
+                } else {
+                  let cond = cases[case_idx].0;
+                  let body = cases[case_idx].1;
+                  let case_idx = case_idx + 1;
+                  let cases = cases.clone();
+                  state.cur = IfStmCodeInterpCursor_::Cond(cond, body, case_idx, cases, final_body);
+                }
+                self.knt_ = knt.into();
+                self.port = Port_::Enter;
+              }
             }
             &mut IfStmCodeInterpCursor_::Body(body, case_idx, ref cases, final_body) => {
-              if case_idx > cases.len() {
-                return Err(bot());
-              } else if case_idx == cases.len() {
-                if final_body.is_nil() {
-                  state.cur = IfStmCodeInterpCursor_::Fin;
-                } else {
-                  state.cur = IfStmCodeInterpCursor_::FinalBody(final_body);
-                }
-              } else {
-                let cond = cases[case_idx].0;
-                let body = cases[case_idx].1;
-                let case_idx = case_idx + 1;
-                let cases = cases.clone();
-                state.cur = IfStmCodeInterpCursor_::Cond(cond, body, case_idx, cases, final_body);
-              }
+              state.cur = IfStmCodeInterpCursor_::Fin;
               self.knt_ = knt.into();
               self.port = Port_::Enter;
             }
@@ -3971,7 +4012,7 @@ impl FastInterp {
                 TermContext_::Match => {
                   let lroot = self.find(clk, lterm)?;
                   let rroot = self.find(clk, rterm)?;
-                  self.res_.reg = ResReg_::Mat(lroot.cls == rroot.cls);
+                  self.res_.reg = ResReg_::Mat(lroot.ecls == rroot.ecls);
                 }
               }
               self.knt_ = knt.prev;
