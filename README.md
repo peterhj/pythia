@@ -43,6 +43,7 @@ and also unifies the logical frameworks in both [Praline](https://github.com/pet
 - [Dodona](https://arxiv.org/abs/2012.11401) (Daniel Selsam, Jesse Michael Han, Leonardo de Moura, Patrice Godefroid)
 - [Dusa](https://arxiv.org/abs/2405.19040) (Chris Martens, Robert J. Simmons, Michael Arntzenius)
 - [Executable semantic parsing](https://arxiv.org/abs/1603.06677) (Percy Liang)
+- [Operational semantics of smart choices](https://arxiv.org/abs/2007.08926) (Martín Abadi, Gordon D. Plotkin)
 - Prolog (Alain Colmerauer, Philippe Roussel, Robert Kowalski)
 
 ## License

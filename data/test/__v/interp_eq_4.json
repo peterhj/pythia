@@ -82,6 +82,15 @@
           "SNum_key": 23,
           "SNum_tag": 0
         },
+        "flat_val": {
+          "IntLitTerm": 1
+        }
+      },
+      {
+        "prim_key": {
+          "SNum_key": 24,
+          "SNum_tag": 0
+        },
         "flat_val": "_Top"
       },
       {

@@ -117,9 +117,22 @@ impl Function for ChoiceFun {
     let choice_ctr = te.xctr;
     if choice_ub.is_none() || choice_ctr < choice_ub.unwrap() {
       _traceln!(interp, "DEBUG: ChoiceFun::__apply__: choice ctr={} ub={:?}", choice_ctr, choice_ub);
-      let y = interp._fresh().into_term();
+      // FIXME(20250119): strictly, should lookup a lit val index.
       let val_ = LitVal_::Int(choice_ctr.into());
-      interp.put_val(clk, y, val_)?;
+      let y = match interp.env.lit_val_bind.get(&val_) {
+        Some(&y) => {
+          _traceln!(interp, "DEBUG: ChoiceFun::__apply__:   found lit term: y={:?} val={:?}", y, val_);
+          y
+        }
+        None => {
+          let y = interp._fresh();
+          _traceln!(interp, "DEBUG: ChoiceFun::__apply__:   fresh lit val: y={:?} val={:?}", y, val_);
+          interp.put_val(clk, y, val_.clone())?;
+          let prev_y = interp.env.lit_val_bind.insert(val_.clone(), y.into());
+          interp.log._append(clk, LogEntryRef_::Undo(UndoLogEntry_::BindLitVal(val_, prev_y).into()));
+          y
+        }
+      };
       interp.unify(clk, y, ret)?;
       Ok(None)
     } else {

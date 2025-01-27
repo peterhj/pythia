@@ -803,7 +803,7 @@ pub struct StrObj_ { inner: SafeStr }
 pub struct ListObj_ { buf: Vec<ENum> }
 
 // [Interp-API]
-#[derive(Clone, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum LitVal_ {
   None,
   Bool(bool),
@@ -1985,6 +1985,9 @@ pub struct FastEnv_ {
   raw_lit_index: FxHashMap<RawLit_, LitStrNum>,
   raw_lit_cache: FxHashMap<RawLit_, LitTerm_>,
   lit_term_bind: FxHashMap<LitTerm_, SNum>,
+  // NB: the following is basically a hash-cons-like cache for some
+  // sorts of literal values.
+  lit_val_bind:  FxHashMap<LitVal_, SNum>,
 
   unifier:  FastUnifier_,
 
@@ -2067,6 +2070,7 @@ pub enum UndoLogEntryInner_ {
   LoadRawLitStr(LitStrNum),
   BindIdent(IdentNum, SNum),
   BindLitStr(LitStrNum, Option<SNum>),
+  BindLitVal(LitVal_, Option<SNum>),
   RebindIdent(IdentNum, SNum, SNum),
   PutTerm(SNum),
   PutVal(SNum),
@@ -3133,6 +3137,14 @@ impl FastInterp {
           self.env.raw_id_bind.insert(raw_id, prev_x.into());
         }
       }
+      &UndoLogEntry_::BindLitVal(ref val, prev_y) => {
+        if prev_y.is_none() {
+          self.env.lit_val_bind.remove(&val);
+        } else {
+          // FIXME: unnecessary val.clone().
+          self.env.lit_val_bind.insert(val.clone(), prev_y.unwrap());
+        }
+      }
       &UndoLogEntry_::PutTerm(x) => {
         if self.env.table_full[SNUM_TERM_SORT as usize].remove(&x).is_none() {
           _debugln!(self, "DEBUG: FastInterp::_undo: PutTerm x={:?} nonexist", x);
@@ -3558,9 +3570,12 @@ impl FastInterp {
             }
             // FIXME: this quote _statement_ was a parsing hack.
             StmCode_::Quote{..} => {
+              self.knt_ = knt.into();
               self.port = Port_::Return;
             }
             StmCode_::Pass{..} => {
+              _traceln!(self, "DEBUG: FastInterp::resume_:   Enter  InterpStm: Pass: ...");
+              self.knt_ = knt.into();
               self.port = Port_::Return;
             }
             StmCode_::If{span, cases, final_case} => {
@@ -3577,10 +3592,12 @@ impl FastInterp {
             }
             StmCode_::Defproc{..} => {
               // FIXME
+              self.knt_ = knt.into();
               self.port = Port_::Return;
             }
             StmCode_::Defmatch{..} => {
               // FIXME
+              self.knt_ = knt.into();
               self.port = Port_::Return;
             }
             cur_stm_code_ => {
@@ -3588,11 +3605,16 @@ impl FastInterp {
             }
           }
         }
+        (Port_::Return, &mut MemKnt_::InterpStm(_cur_stm_code, ref mut state)) => {
+          self.knt_ = knt.prev.into();
+          /*self.port = Port_::Return;*/
+        }
         (Port_::Enter, &mut MemKnt_::InterpIfStm(_cur_stm_code, ref mut state)) => {
           match state.cur {
             IfStmCodeInterpCursor_::Cond(cond_term, ..) => {
               let save_tctx = self.reg.tctx;
               self.reg.tctx = TermContext_::Match;
+              _traceln!(self, "DEBUG: FastInterp::resume_:   Enter  InterpIfStm: Cond: save tctx={:?} push tctx={:?}", save_tctx, self.reg.tctx);
               if state.save_tctx.push(save_tctx).is_some() {
                 return Err(bot());
               }
@@ -3632,17 +3654,20 @@ impl FastInterp {
           match &mut state.cur {
             &mut IfStmCodeInterpCursor_::Cond(cond, body, case_idx, ref cases, final_body) => {
               let save_tctx = state.save_tctx.pop();
+              _traceln!(self, "DEBUG: FastInterp::resume_:   Return InterpIfStm: Cond: save tctx={:?} pop tctx={:?}", save_tctx, self.reg.tctx);
               if save_tctx.is_none() {
                 return Err(bot());
               }
               self.reg.tctx = save_tctx.unwrap();
               let mat = self.get_mat_res()?;
               if mat {
+                _traceln!(self, "DEBUG: FastInterp::resume_:   Return InterpIfStm: Cond:   match");
                 let cases = cases.clone();
                 state.cur = IfStmCodeInterpCursor_::Body(body, case_idx, cases, final_body);
                 self.knt_ = knt.into();
                 self.port = Port_::Enter;
               } else {
+                _traceln!(self, "DEBUG: FastInterp::resume_:   Return InterpIfStm: Cond:   fallthrough");
                 if case_idx > cases.len() {
                   return Err(bot());
                 } else if case_idx == cases.len() {
@@ -3727,8 +3752,8 @@ impl FastInterp {
                   let val = LitVal_::Atom(inner_val);
                   self.put_val(clk, y, val)?;
                   self.unify(clk, x, y)?;
-                  let prev_x = self.env.lit_term_bind.insert(lit_term_, x.into());
-                  self.log._append(clk, LogEntryRef_::Undo(UndoLogEntry_::BindLitStr(lit_str, prev_x).into()));
+                  /*let prev_x = self.env.lit_term_bind.insert(lit_term_, x.into());
+                  self.log._append(clk, LogEntryRef_::Undo(UndoLogEntry_::BindLitStr(lit_str, prev_x).into()));*/
                   x
                 }
                 Some(&x) => x
@@ -3745,16 +3770,24 @@ impl FastInterp {
                 None => {
                   let x = self._fresh();
                   self.put_term(clk, x, lit_term_.clone())?;
-                  let y = self._fresh();
-                  let val = LitVal_::Int(inner_val);
-                  self.put_val(clk, y, val)?;
-                  self.unify(clk, x, y)?;
-                  let prev_x = self.env.lit_term_bind.insert(lit_term_, x.into());
-                  self.log._append(clk, LogEntryRef_::Undo(UndoLogEntry_::BindLitStr(lit_str, prev_x).into()));
+                  /*let prev_x = self.env.lit_term_bind.insert(lit_term_, x.into());
+                  self.log._append(clk, LogEntryRef_::Undo(UndoLogEntry_::BindLitStr(lit_str, prev_x).into()));*/
                   x
                 }
                 Some(&x) => x
               };
+              let val = LitVal_::Int(inner_val);
+              let y = match self.env.lit_val_bind.get(&val) {
+                None => {
+                  let y = self._fresh();
+                  self.put_val(clk, y, val.clone())?;
+                  let prev_y = self.env.lit_val_bind.insert(val.clone(), y.into());
+                  self.log._append(clk, LogEntryRef_::Undo(UndoLogEntry_::BindLitVal(val, prev_y).into()));
+                  y
+                }
+                Some(&y) => y
+              };
+              self.unify(clk, x, y)?;
               self.put_res(x)?;
               self.knt_ = knt.prev;
               self.port = Port_::Return;
@@ -4002,9 +4035,10 @@ impl FastInterp {
               /*self.port = Port_::Enter;*/
             }
             EqualTermCodeInterpCursor_::Fin => {
-              _traceln!(self, "DEBUG: InterpEqualTerm: Enter:  Fin");
+              _traceln!(self, "DEBUG: InterpEqualTerm: Enter:  Fin: tctx = {:?}", self.reg.tctx);
               let lterm = state.lterm.unwrap().1;
               let rterm = state.rterm.unwrap().1;
+              _traceln!(self, "DEBUG: InterpEqualTerm: Enter:    lterm = {:?} rterm = {:?}", lterm, rterm);
               match self.reg.tctx {
                 TermContext_::Unify => {
                   self.unify(clk, lterm, rterm)?;
@@ -4012,7 +4046,10 @@ impl FastInterp {
                 TermContext_::Match => {
                   let lroot = self.find(clk, lterm)?;
                   let rroot = self.find(clk, rterm)?;
-                  self.res_.reg = ResReg_::Mat(lroot.ecls == rroot.ecls);
+                  let mat = lroot.ecls == rroot.ecls;
+                  _traceln!(self, "DEBUG: InterpEqualTerm: Enter:    lroot = {:?} rroot = {:?}", lroot, rroot);
+                  _traceln!(self, "DEBUG: InterpEqualTerm: Enter:    mat = {:?}", mat);
+                  self.res_.reg = ResReg_::Mat(mat);
                 }
               }
               self.knt_ = knt.prev;

@@ -102,6 +102,15 @@
       },
       {
         "prim_key": {
+          "SNum_key": 34,
+          "SNum_tag": 0
+        },
+        "flat_val": {
+          "IntLitTerm": 2481321132518023687
+        }
+      },
+      {
+        "prim_key": {
           "SNum_key": 30,
           "SNum_tag": 0
         },

@@ -1,5 +1,5 @@
 {
-  "clk": 45,
+  "clk": 109,
   "env": {
     "span": [],
     "code": [
@@ -103,14 +103,7 @@
       },
       {
         "prim_key": {
-          "SNum_key": 46,
-          "SNum_tag": 0
-        },
-        "flat_val": "TermCode"
-      },
-      {
-        "prim_key": {
-          "SNum_key": 48,
+          "SNum_key": 45,
           "SNum_tag": 0
         },
         "flat_val": "TermCode"
@@ -120,14 +113,133 @@
           "SNum_key": 50,
           "SNum_tag": 0
         },
+        "flat_val": "StmCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 52,
+          "SNum_tag": 0
+        },
         "flat_val": "TermCode"
       },
       {
         "prim_key": {
-          "SNum_key": 53,
+          "SNum_key": 54,
+          "SNum_tag": 0
+        },
+        "flat_val": "TermCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 58,
           "SNum_tag": 0
         },
         "flat_val": "StmCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 60,
+          "SNum_tag": 0
+        },
+        "flat_val": "TermCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 62,
+          "SNum_tag": 0
+        },
+        "flat_val": "TermCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 65,
+          "SNum_tag": 0
+        },
+        "flat_val": "TermCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 70,
+          "SNum_tag": 0
+        },
+        "flat_val": "TermCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 72,
+          "SNum_tag": 0
+        },
+        "flat_val": "TermCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 74,
+          "SNum_tag": 0
+        },
+        "flat_val": "TermCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 77,
+          "SNum_tag": 0
+        },
+        "flat_val": "StmCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 79,
+          "SNum_tag": 0
+        },
+        "flat_val": "TermCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 81,
+          "SNum_tag": 0
+        },
+        "flat_val": "TermCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 84,
+          "SNum_tag": 0
+        },
+        "flat_val": "TermCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 89,
+          "SNum_tag": 0
+        },
+        "flat_val": "StmCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 92,
+          "SNum_tag": 0
+        },
+        "flat_val": "StmCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 94,
+          "SNum_tag": 0
+        },
+        "flat_val": "TermCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 96,
+          "SNum_tag": 0
+        },
+        "flat_val": "TermCode"
+      },
+      {
+        "prim_key": {
+          "SNum_key": 99,
+          "SNum_tag": 0
+        },
+        "flat_val": "TermCode"
       }
     ],
     "ident": [
@@ -177,27 +289,7 @@
     "term": [
       {
         "prim_key": {
-          "SNum_key": 58,
-          "SNum_tag": 0
-        },
-        "flat_val": {
-          "IdentTerm": {
-            "raw": "choice"
-          }
-        }
-      },
-      {
-        "prim_key": {
-          "SNum_key": 65,
-          "SNum_tag": 0
-        },
-        "flat_val": {
-          "IntLitTerm": 1
-        }
-      },
-      {
-        "prim_key": {
-          "SNum_key": 57,
+          "SNum_key": 105,
           "SNum_tag": 0
         },
         "flat_val": {
@@ -208,16 +300,7 @@
       },
       {
         "prim_key": {
-          "SNum_key": 63,
-          "SNum_tag": 0
-        },
-        "flat_val": {
-          "IntLitTerm": 0
-        }
-      },
-      {
-        "prim_key": {
-          "SNum_key": 61,
+          "SNum_key": 117,
           "SNum_tag": 0
         },
         "flat_val": {
@@ -225,21 +308,21 @@
             "buf": [
               {
                 "ENum_cls": {
-                  "SNum_key": 58,
+                  "SNum_key": 114,
                   "SNum_tag": 0
                 },
                 "ENum_inst": {
-                  "SNum_key": 58,
+                  "SNum_key": 114,
                   "SNum_tag": 0
                 }
               },
               {
                 "ENum_cls": {
-                  "SNum_key": 59,
+                  "SNum_key": 115,
                   "SNum_tag": 0
                 },
                 "ENum_inst": {
-                  "SNum_key": 59,
+                  "SNum_key": 115,
                   "SNum_tag": 0
                 }
               }
@@ -249,11 +332,133 @@
       },
       {
         "prim_key": {
-          "SNum_key": 59,
+          "SNum_key": 118,
+          "SNum_tag": 0
+        },
+        "flat_val": {
+          "IntLitTerm": 3539956246506381832
+        }
+      },
+      {
+        "prim_key": {
+          "SNum_key": 115,
+          "SNum_tag": 0
+        },
+        "flat_val": {
+          "IntLitTerm": 2463786177131717127
+        }
+      },
+      {
+        "prim_key": {
+          "SNum_key": 114,
+          "SNum_tag": 0
+        },
+        "flat_val": {
+          "IdentTerm": {
+            "raw": "print"
+          }
+        }
+      },
+      {
+        "prim_key": {
+          "SNum_key": 113,
+          "SNum_tag": 0
+        },
+        "flat_val": {
+          "IntLitTerm": 1
+        }
+      },
+      {
+        "prim_key": {
+          "SNum_key": 111,
+          "SNum_tag": 0
+        },
+        "flat_val": {
+          "IntLitTerm": 0
+        }
+      },
+      {
+        "prim_key": {
+          "SNum_key": 109,
+          "SNum_tag": 0
+        },
+        "flat_val": {
+          "TupleTerm": {
+            "buf": [
+              {
+                "ENum_cls": {
+                  "SNum_key": 106,
+                  "SNum_tag": 0
+                },
+                "ENum_inst": {
+                  "SNum_key": 106,
+                  "SNum_tag": 0
+                }
+              },
+              {
+                "ENum_cls": {
+                  "SNum_key": 107,
+                  "SNum_tag": 0
+                },
+                "ENum_inst": {
+                  "SNum_key": 107,
+                  "SNum_tag": 0
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "prim_key": {
+          "SNum_key": 120,
+          "SNum_tag": 0
+        },
+        "flat_val": {
+          "TupleTerm": {
+            "buf": [
+              {
+                "ENum_cls": {
+                  "SNum_key": 114,
+                  "SNum_tag": 0
+                },
+                "ENum_inst": {
+                  "SNum_key": 114,
+                  "SNum_tag": 0
+                }
+              },
+              {
+                "ENum_cls": {
+                  "SNum_key": 118,
+                  "SNum_tag": 0
+                },
+                "ENum_inst": {
+                  "SNum_key": 118,
+                  "SNum_tag": 0
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "prim_key": {
+          "SNum_key": 107,
           "SNum_tag": 0
         },
         "flat_val": {
           "IntLitTerm": 2
+        }
+      },
+      {
+        "prim_key": {
+          "SNum_key": 106,
+          "SNum_tag": 0
+        },
+        "flat_val": {
+          "IdentTerm": {
+            "raw": "choice"
+          }
         }
       }
     ]

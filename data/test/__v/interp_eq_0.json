@@ -79,6 +79,15 @@
     "term": [
       {
         "prim_key": {
+          "SNum_key": 23,
+          "SNum_tag": 0
+        },
+        "flat_val": {
+          "IntLitTerm": 1
+        }
+      },
+      {
+        "prim_key": {
           "SNum_key": 21,
           "SNum_tag": 0
         },

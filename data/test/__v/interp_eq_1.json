@@ -131,6 +131,15 @@
             "raw": "x"
           }
         }
+      },
+      {
+        "prim_key": {
+          "SNum_key": 34,
+          "SNum_tag": 0
+        },
+        "flat_val": {
+          "IntLitTerm": 1
+        }
       }
     ]
   }
