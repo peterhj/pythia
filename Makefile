@@ -24,6 +24,12 @@ release:
 clean:
 	rm -rf target
 
+.PHONY: o oracle boot-oracle
+o: boot-oracle
+oracle: boot-oracle
+boot-oracle:
+	RUST_BACKTRACE=1 ./target/release/boot-oracle
+
 .PHONY: devint dev-int dev-boot-interp dev-boot-interp-test
 devint: dev-boot-interp-test
 dev-int: dev-boot-interp-test

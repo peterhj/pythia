@@ -26,21 +26,25 @@ lto = false
 
 [features]
 default = []
-pyo3 = []
+#default = ["pyo3"]
+#pyo3 = []
 #pyo3 = ["dep:pyo3-build-config", "dep:pyo3"]
+pyo3 = ["dep:pyo3", "dep:pyo3-ffi"]
 rayon = []
 #rayon = ["dep:rayon"]
 
-#[build-dependencies]
-#pyo3-build-config = { version = "^0.21", optional = true }
+[build-dependencies]
+#pyo3-build-config = { version = "^0.23", optional = true }
 
 [dependencies]
+byteorder = { version = "^1.5" }
 #crossbeam-utils = { version = "^0.8" }
 fxhash2 = { version = "^2" }
 libc = { version = "^0.2" }
 once_cell = { version = "^1" }
 paste = { version = "^1.0" }
-#pyo3 = { version = "^0.21", features = ["auto-initialize"], optional = true }
+pyo3 = { version = "^0.23", features = ["auto-initialize", "serde"], optional = true }
+pyo3-ffi = { version = "^0.23", optional = true }
 #rayon = { version = "^1.10" }
 rclite = { version = "^0.2" }
 regex = { version = "^1.10" }
@@ -56,26 +60,43 @@ time = { version = "^0.1" }
 crate-type = ["lib"]
 
 [[bin]]
+name = "pythia"
+path = "tools/interp.rs"
+
+[[bin]]
 name = "boot-interp-test"
 path = "tools/boot-interp-test.rs"
 
 [[bin]]
-name = "pythia"
-path = "tools/interp.rs"
+name = "boot-store"
+path = "tools/boot-store.rs"
+
+[[bin]]
+name = "boot-oracle"
+path = "tools/boot-oracle.rs"
 
 [patch.crates-io]
 aho-corasick = { path = "dep/aho-corasick" }
 branches = { path = "dep/branches" }
+byteorder = { path = "../byteorder" }
+cfg-if = { path = "../cfg-if" }
 #crossbeam-deque = { path = "dep/crossbeam/crossbeam-deque" }
 #crossbeam-utils = { path = "dep/crossbeam/crossbeam-utils" }
 #either = { path = "dep/either" }
 fxhash2 = { path = "dep/fxhash2" }
+heck = { path = "../heck" }
+indoc = { path = "../indoc" }
 itoa = { path = "dep/itoa" }
 libc = { path = "dep/libc" }
 memchr = { path = "dep/memchr" }
+memoffset = { path = "../memoffset" }
 once_cell = { path = "dep/once_cell" }
 paste = { path = "dep/paste" }
+portable-atomic = { path = "../portable-atomic" }
 proc-macro2 = { path = "dep/proc-macro2" }
+pyo3 = { path = "../pyo3" }
+pyo3-build-config = { path = "../pyo3/pyo3-build-config" }
+pyo3-ffi = { path = "../pyo3/pyo3-ffi" }
 quote = { path = "dep/quote" }
 #rayon = { path = "dep/rayon" }
 rclite = { path = "dep/rclite" }
@@ -87,6 +108,8 @@ serde_json = { path = "dep/serde_json" }
 signal_hook = { path = "dep/signal_hook" }
 smol_str = { path = "dep/smol_str" }
 syn = { path = "dep/syn" }
+target-lexicon = { path = "../target-lexicon" }
 term_colors = { path = "dep/term_colors" }
 time = { path = "dep/time-0.1" }
 unicode-ident = { path = "dep/unicode-ident" }
+unindent = { path = "../indoc/unindent" }

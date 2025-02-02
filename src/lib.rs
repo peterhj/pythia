@@ -1,6 +1,11 @@
+extern crate byteorder;
 extern crate libc;
 extern crate once_cell;
 extern crate paste;
+#[cfg(feature = "pyo3")]
+extern crate pyo3;
+#[cfg(feature = "pyo3")]
+extern crate pyo3_ffi;
 extern crate rclite;
 extern crate regex;
 extern crate serde;
@@ -9,12 +14,18 @@ extern crate signal_hook;
 extern crate smol_str;
 extern crate time;
 
+#[cfg(feature = "pyo3")]
+pub mod _extlib;
 pub mod algo;
 pub mod build;
 pub mod clock;
 pub mod interp;
+#[cfg(feature = "pyo3")]
+pub mod oracle;
 pub mod panick;
 pub mod parse;
 pub mod smp;
+pub mod src;
+pub mod store;
 pub mod sys;
 pub mod test_data;

@@ -1,5 +1,5 @@
-#[cfg(feature = "pyo3")]
-extern crate pyo3_build_config;
+//#[cfg(feature = "pyo3")]
+//extern crate pyo3_build_config;
 
 use std::fs::{File};
 use std::io::{Write, BufRead, Cursor};
@@ -78,7 +78,7 @@ fn _fixup_rpath_bins() {
 
 #[cfg(feature = "pyo3")]
 fn main() {
-  pyo3_build_config::add_extension_module_link_args();
+  //pyo3_build_config::add_extension_module_link_args();
   _fixup_rpath_bins();
   _main();
 }

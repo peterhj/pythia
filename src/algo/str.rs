@@ -1,3 +1,7 @@
+#[cfg(feature = "pyo3")]
+use pyo3::prelude::*;
+#[cfg(feature = "pyo3")]
+use pyo3::{IntoPyObjectExt};
 use serde::{Deserialize, Serialize};
 use serde::de::{Deserializer};
 use serde::ser::{Serializer};
@@ -86,6 +90,25 @@ impl From<String> for SafeStr {
 impl<'a> From<&'a str> for SafeStr {
   fn from(s: &'a str) -> SafeStr {
     SafeStr{raw: s.into()}
+  }
+}
+
+#[cfg(feature = "pyo3")]
+impl<'py> FromPyObject<'py> for SafeStr {
+  fn extract_bound(obj: &Bound<'py, PyAny>) -> PyResult<Self> {
+    let s: String = obj.extract()?;
+    Ok(s.into())
+  }
+}
+
+#[cfg(feature = "pyo3")]
+impl<'py> IntoPyObject<'py> for SafeStr {
+  type Target = PyAny;
+  type Output = Bound<'py, Self::Target>;
+  type Error  = PyErr;
+
+  fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+    Ok(self.raw.into_bound_py_any(py)?)
   }
 }
 
