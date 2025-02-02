@@ -273,7 +273,3 @@ version = "1.0.14"
 [[package]]
 name = "unindent"
 version = "0.2.3"
-
-[[patch.unused]]
-name = "serde-pyobject"
-version = "0.5.1"

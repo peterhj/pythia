@@ -74,6 +74,7 @@ path = "tools/boot-store.rs"
 [[bin]]
 name = "boot-oracle"
 path = "tools/boot-oracle.rs"
+required-features = ["pyo3"]
 
 [patch.crates-io]
 aho-corasick = { path = "dep/aho-corasick" }
