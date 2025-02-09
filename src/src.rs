@@ -1,88 +1,32 @@
-pub const SRC: &'static str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/src/src.rs"
-));
-pub const LIB: &'static str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/src/lib.rs"
-));
-pub const BUILD: &'static str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/src/build.rs"
-));
-pub const TEST_DATA: &'static str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/src/test_data.rs"
-));
-pub const _EXTLIB: &'static str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/src/_extlib.rs"
-));
-pub const ALGO: &'static str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/src/algo/mod.rs"
-));
-pub const ALGO_CELL: &'static str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/src/algo/cell.rs"
-));
-pub const ALGO_RC: &'static str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/src/algo/rc.rs"
-));
-pub const ALGO_STR: &'static str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/src/algo/str.rs"
-));
-pub const ALGO_TOKEN: &'static str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/src/algo/token.rs"
-));
-pub const CLOCK: &'static str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/src/clock.rs"
-));
-pub const INTERP: &'static str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/src/interp.rs"
-));
-pub const INTERP_PRELUDE: &'static str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/src/interp/prelude.rs"
-));
-pub const ORACLE: &'static str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/src/oracle.rs"
-));
-pub const PANICK: &'static str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/src/panick.rs"
-));
-pub const PARSE: &'static str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/src/parse.rs"
-));
-pub const SMP: &'static str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/src/smp/mod.rs"
-));
-pub const SMP_LINUX: &'static str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/src/smp/linux.rs"
-));
-pub const SMP_MACOS: &'static str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/src/smp/macos.rs"
-));
-pub const STORE: &'static str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/src/store.rs"
-));
-pub const SYS: &'static str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/src/sys/mod.rs"
-));
-pub const SYS_MMAP: &'static str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/src/sys/mmap.rs"
-));
+macro_rules! _src {
+  ($name:ident, $path:expr) => {
+    pub const $name: &'static str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), $path));
+  };
+}
+
+_src!(SRC, "/src/src.rs");
+_src!(_CARGO_TOML, "/Cargo.toml");
+_src!(_CARGO_LOCK, "/Cargo.lock");
+_src!(_BUILD, "/build.rs");
+_src!(_EXTLIB_APPROX_ORACLE_PY, "/_extlib/_approx_oracle.py");
+_src!(LIB, "/src/lib.rs");
+_src!(BUILD, "/src/build.rs");
+_src!(TEST_DATA, "/src/test_data.rs");
+_src!(_EXTLIB, "/src/_extlib.rs");
+_src!(ALGO, "/src/algo/mod.rs");
+_src!(ALGO_CELL, "/src/algo/cell.rs");
+_src!(ALGO_RC, "/src/algo/rc.rs");
+_src!(ALGO_STR, "/src/algo/str.rs");
+_src!(ALGO_TOKEN, "/src/algo/token.rs");
+_src!(CLOCK, "/src/clock.rs");
+_src!(INTERP, "/src/interp.rs");
+_src!(INTERP_PRELUDE, "/src/interp/prelude.rs");
+_src!(JOURNAL, "/src/journal.rs");
+_src!(ORACLE, "/src/oracle.rs");
+_src!(PANICK, "/src/panick.rs");
+_src!(PARSE, "/src/parse.rs");
+_src!(SMP, "/src/smp/mod.rs");
+_src!(SMP_LINUX, "/src/smp/linux.rs");
+_src!(SMP_MACOS, "/src/smp/macos.rs");
+_src!(SYS, "/src/sys/mod.rs");
+_src!(SYS_MMAP, "/src/sys/mmap.rs");

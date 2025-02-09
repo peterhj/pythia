@@ -61,3 +61,30 @@
 [submodule "dep/unicode-ident"]
 	path = dep/unicode-ident
 	url = https://github.com/peterhj/unicode-ident
+[submodule "dep/autocfg"]
+	path = dep/autocfg
+	url = https://github.com/peterhj/autocfg
+[submodule "dep/byteorder"]
+	path = dep/byteorder
+	url = https://github.com/peterhj/byteorder
+[submodule "dep/cfg-if"]
+	path = dep/cfg-if
+	url = https://github.com/peterhj/cfg-if
+[submodule "dep/heck"]
+	path = dep/heck
+	url = https://github.com/peterhj/heck
+[submodule "dep/indoc"]
+	path = dep/indoc
+	url = https://github.com/peterhj/indoc
+[submodule "dep/memoffset"]
+	path = dep/memoffset
+	url = https://github.com/peterhj/memoffset
+[submodule "dep/portable-atomic"]
+	path = dep/portable-atomic
+	url = https://github.com/peterhj/portable-atomic
+[submodule "dep/pyo3"]
+	path = dep/pyo3
+	url = https://github.com/peterhj/pyo3
+[submodule "dep/target-lexicon"]
+	path = dep/target-lexicon
+	url = https://github.com/peterhj/target-lexicon

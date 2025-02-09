@@ -20,12 +20,12 @@ pub mod algo;
 pub mod build;
 pub mod clock;
 pub mod interp;
+pub mod journal;
 #[cfg(feature = "pyo3")]
 pub mod oracle;
 pub mod panick;
 pub mod parse;
 pub mod smp;
 pub mod src;
-pub mod store;
 pub mod sys;
 pub mod test_data;

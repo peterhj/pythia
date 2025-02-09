@@ -8,46 +8,57 @@ use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write, Seek, SeekFrom};
 use std::path::{PathBuf};
 
-pub static _STORE: Lazy<DevelStore_> = Lazy::new(|| DevelStore_::cold_start());
+pub static _STORE: Lazy<DevelJournal_> = Lazy::new(|| DevelJournal_::cold_start());
 
 #[derive(Clone, Copy, Serialize, Deserialize, Debug)]
-pub enum StoreSort_ {
+pub enum JournalEntrySort_ {
+  #[serde(rename = "root")]
+  _Root,
   #[serde(rename = "approx-oracle")]
   ApproxOracle,
   #[serde(rename = "boot-test")]
   BootTest,
 }
 
-pub trait StoreSortExt {
-  fn _sort(&self) -> StoreSort_;
+pub trait JournalEntryExt {
+  fn _sort(&self) -> JournalEntrySort_;
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct _Root;
+
+impl JournalEntryExt for _Root {
+  fn _sort(&self) -> JournalEntrySort_ {
+    JournalEntrySort_::_Root
+  }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct BootTest;
 
-impl StoreSortExt for BootTest {
-  fn _sort(&self) -> StoreSort_ {
-    StoreSort_::BootTest
+impl JournalEntryExt for BootTest {
+  fn _sort(&self) -> JournalEntrySort_ {
+    JournalEntrySort_::BootTest
   }
 }
 
 #[derive(Serialize, Debug)]
 //#[derive(Serialize, Deserialize, Debug)]
-pub struct StoreLogEntry_<I> {
+pub struct JournalEntry_<I> {
   pub t:    Timestamp,
-  pub sort: StoreSort_,
+  pub sort: JournalEntrySort_,
   pub item: I,
 }
 
-pub struct DevelStore_ {
+pub struct DevelJournal_ {
   widx_mem: Vec<u32>,
   //wlog_mem: Vec<()>,
   widx_file: File,
   wlog_file: File,
 }
 
-impl DevelStore_ {
-  pub fn cold_start() -> DevelStore_ {
+impl DevelJournal_ {
+  pub fn cold_start() -> DevelJournal_ {
     let t0 = Timestamp::fresh();
     let root_path = PathBuf::from(concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -139,8 +150,8 @@ impl DevelStore_ {
       }
       break;
     }
-    println!("DEBUG: DevelStore_::_cold_start: widx len = {}", widx_mem.len());
-    println!("DEBUG: DevelStore_::_cold_start: truncate = {:?}", truncate);
+    println!("DEBUG: DevelJournal_::_cold_start: widx len = {}", widx_mem.len());
+    println!("DEBUG: DevelJournal_::_cold_start: truncate = {:?}", truncate);
     if truncate {
       let t0_s = t0.to_string().replace(":", "_");
       let mut wlog_dst_path = root_path.clone();
@@ -180,17 +191,21 @@ impl DevelStore_ {
     let wlog_file = OpenOptions::new()
         .append(true).create(true)
         .open(&wlog_path).unwrap();
-    DevelStore_{
+    let mut this = DevelJournal_{
       widx_mem,
       widx_file,
       wlog_file,
+    };
+    if this.widx_mem.len() <= 0 {
+      this.append(&_Root);
     }
+    this
   }
 
-  pub fn append<I: StoreSortExt + Serialize>(&mut self, item: &I) -> () {
+  pub fn append<I: JournalEntryExt + Serialize>(&mut self, item: &I) -> () {
     let t = Timestamp::fresh();
     let sort = item._sort();
-    let entry = StoreLogEntry_{
+    let entry = JournalEntry_{
       t,
       sort,
       item,
