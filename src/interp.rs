@@ -1,5 +1,5 @@
 use crate::algo::{
-  BTreeMap, BTreeSet, FxHashMap,
+  BTreeMap, BTreeSet, FxHashMap, FxHashSet,
   OptionExt,
   SmolStr,
 };
@@ -450,6 +450,11 @@ impl SNum {
     // FIXME: tag sort check.
     TermCodeNum(self.0)
   }
+
+  pub fn into_frame(self) -> FrameNum {
+    // FIXME: tag sort check.
+    FrameNum(self.0)
+  }
 }
 
 // [Interp-API]
@@ -477,9 +482,10 @@ pub struct AtomTerm_ {
 
 // [Interp-API]
 #[derive(Clone, Debug)]
-#[repr(transparent)]
+//#[repr(transparent)]
 pub struct IdentTerm_ {
-  raw:  SafeStr,
+  id:   IdentNum,
+  raw_id: RawIdent_,
 }
 
 // [Interp-API]
@@ -796,11 +802,19 @@ pub struct MsgTerm_ {
   buf:  Box<[ENum]>,
 }
 
-pub struct NoneObj_ {}
+// [Deprecated]
+/*pub struct NoneObj_ {}
 pub struct BoolObj_ { inner: bool }
 pub struct IntObj_ { inner: i64 }
 pub struct StrObj_ { inner: SafeStr }
-pub struct ListObj_ { buf: Vec<ENum> }
+pub struct ListObj_ { buf: Vec<ENum> }*/
+
+// [Interp-API]
+#[derive(Debug)]
+pub enum Val_ {
+  Lit(LitVal_),
+  Obj(ObjVal_),
+}
 
 // [Interp-API]
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -923,6 +937,7 @@ impl_snum_subtype!(SpanNum);
 impl_snum_subtype!(ModCodeNum);
 impl_snum_subtype!(StmCodeNum);
 impl_snum_subtype!(TermCodeNum);
+impl_snum_subtype!(FrameNum);
 
 impl_cell_num_subtype!(StmCodeCellNum);
 impl_cell_num_subtype!(TermCodeCellNum);
@@ -937,6 +952,8 @@ pub struct ModCode_ {
 pub enum StmCode_ {
   Just{span: SpanNum, term: TermCodeNum},
   Pass{span: SpanNum},
+  Global{span: SpanNum, id: IdentNum},
+  Nonlocal{span: SpanNum, static_scope: Option<i16>, id: IdentNum},
   If{span: SpanNum, cases: Vec<(TermCodeNum, StmCodeCellNum)>, final_case: StmCodeCellNum},
   With{span: SpanNum, ctx: TermCodeNum, stmp: StmCodeCellNum},
   // TODO
@@ -983,6 +1000,34 @@ impl TermCode_ {
       _ => return Err(())
     })
   }
+}
+
+// [Interp-API]
+#[derive(Clone, Copy, Debug)]
+#[repr(transparent)]
+pub struct DebruijnIndex{inner: i16}
+
+// [Interp-API]
+#[derive(Clone, Copy, Debug)]
+#[repr(transparent)]
+pub struct DebruijnLevel{inner: i16}
+
+impl DebruijnLevel {
+  pub fn root() -> DebruijnLevel {
+    DebruijnLevel{inner: 0}
+  }
+
+  pub fn push(self) -> DebruijnLevel {
+    DebruijnLevel{inner: self.inner + 1}
+  }
+}
+
+// [Interp-API]
+#[derive(Debug)]
+pub struct Frame_ {
+  level: DebruijnLevel,
+  //ids:  Vec<IdentNum>,
+  ids:  FxHashSet<IdentNum>,
 }
 
 // [Interp-API]
@@ -1933,18 +1978,20 @@ pub trait Function: Any + Debug {
 }
 
 // [Interp-API]
-pub trait ObjectCls: Any + Debug {
+pub trait ObjCls: Any + Debug {
   fn as_any(&self) -> &dyn Any;
   fn __create__(&mut self, interp: &mut FastInterp, this_span: SpanNum, this_term: SNum, tup: &[ENum], ret: SNum, knt: BorrowedMemKnt, ) -> Result<(), InterpCheck>;
 }
 
 // [Interp-API]
-pub trait ObjectVal: Any + Debug {
+pub trait ObjVal: Any + Debug {
   fn as_any(&self) -> &dyn Any;
   fn __init__(&mut self, interp: &mut FastInterp, this_span: SpanNum, this_term: SNum, tup: &[ENum], ret: SNum, knt: BorrowedMemKnt, ) -> Result<(), InterpCheck>;
   fn __destroy__(&mut self, interp: &mut FastInterp, this_span: SpanNum, this_term: SNum, tup: &[ENum], ret: SNum, knt: BorrowedMemKnt, ) -> Result<(), InterpCheck>;
   fn __request__(&mut self, interp: &mut FastInterp, this_span: SpanNum, this_term: SNum, tup: &[ENum], ret: SNum, knt: BorrowedMemKnt, ) -> Result<(), InterpCheck>;
 }
+
+pub type ObjVal_ = Box<dyn ObjVal>;
 
 // [Interp-API]
 pub struct Namespace {
@@ -1964,7 +2011,7 @@ pub struct FastEnv_ {
 
   // FIXME: may want to fold this in as a sort in the tableau below.
   obj_cls_name: FxHashMap<IdentNum, SNum>,
-  obj_cls_full: FxHashMap<SNum, TransparentBox<dyn ObjectCls>>,
+  obj_cls_full: FxHashMap<SNum, TransparentBox<dyn ObjCls>>,
 
   // TODO: tabled term storage should likely store tuples of _ENum_
   // instead of _SNum_.
@@ -1973,9 +2020,16 @@ pub struct FastEnv_ {
   //table_prev:   Vec<FxHashMap<SNum, Box<dyn Tabled>>>,
   //table_new:    Vec<FxHashMap<SNum, Box<dyn Tabled>>>,
 
+  frame_super:  FxHashMap<FrameNum, FrameNum>,
+  frame_full:   FxHashMap<FrameNum, Frame_>,
+  frame_codex:  FxHashMap<StmCodeNum, FrameNum>,
+
   raw_span_index: FxHashMap<RawSpan_, SpanNum>,
   raw_id_index: FxHashMap<RawIdent_, IdentNum>,
-  raw_id_bind:  FxHashMap<RawIdent_, SNum>,
+  // TODO: deprecate id_bind for id_global_bind.
+  id_bind:      FxHashMap<IdentNum, SNum>,
+  id_global_bind: FxHashMap<IdentNum, SNum>,
+  id_builtin_bind: FxHashMap<IdentNum, SNum>,
 
   // TODO: a "qual id" is a pair of a term-like Num and an ident.
   qual_id_index: FxHashMap<(SNum, RawIdent_), IdentNum>,
@@ -1989,7 +2043,7 @@ pub struct FastEnv_ {
   // sorts of literal values.
   lit_val_bind:  FxHashMap<LitVal_, SNum>,
 
-  unifier:  FastUnifier_,
+  unifier:      FastUnifier_,
 
   rule_index:   FxHashMap<StmCodeNum, ()>,
 }
@@ -2059,8 +2113,8 @@ pub enum UndoLogEntryInner_ {
   AllocCell(CellNum),
   LinkCells(CellNum, CellNum, CellNum, CellNum),
   LoadFunction(FunNum),
-  LoadObjectCls(ObjClsNum),
-  LoadObjectVal(ObjValNum),
+  LoadObjCls(ObjClsNum),
+  LoadObjVal(ObjValNum),
   LoadRawSpan(SpanNum),
   LoadRawMod(ModCodeNum),
   LoadRawStm(StmCodeNum),
@@ -2069,6 +2123,7 @@ pub enum UndoLogEntryInner_ {
   LoadRawLit(LitNum),
   LoadRawLitStr(LitStrNum),
   BindIdent(IdentNum, SNum),
+  BindGlobalIdent(IdentNum, SNum, SNum),
   BindLitStr(LitStrNum, Option<SNum>),
   BindLitVal(LitVal_, Option<SNum>),
   RebindIdent(IdentNum, SNum, SNum),
@@ -2159,7 +2214,7 @@ pub enum FlatTabled_ {
   ModCode,
   StmCode,
   TermCode,
-  IdentTerm{raw: SafeStr},
+  IdentTerm{raw_id: SafeStr},
   //AtomTerm,
   NoneLitTerm,
   TrueLitTerm,
@@ -2290,7 +2345,7 @@ impl FastInterp {
     let mut stmp: CellNum = nil();
     let mut cur_stmp: CellNum = nil();
     for raw_stm in raw_mod.body.iter() {
-      let stm = self._load_raw_stm(raw_stm)?;
+      let stm = self._load_raw_stm(DebruijnLevel::root(), nil(), raw_stm)?;
       let next_stmp = self._alloc_cell(stm.into());
       self._link_cells(cur_stmp, next_stmp)?;
       if stmp.is_nil() {
@@ -2305,7 +2360,7 @@ impl FastInterp {
   }
 
   // [Interp-API]
-  pub fn _load_raw_stm(&mut self, raw_stm: &RawStm_) -> Result<StmCodeNum, InterpCheck> {
+  pub fn _load_raw_stm(&mut self, sup_level: DebruijnLevel, sup_frame: FrameNum, raw_stm: &RawStm_) -> Result<StmCodeNum, InterpCheck> {
     let clk = self.clkctr._get_clock();
     let x = self._fresh().into_stm_code();
     self.log._append(clk, LogEntryRef_::Undo(UndoLogEntry_::LoadRawStm(x).into()));
@@ -2325,6 +2380,22 @@ impl FastInterp {
         self.env.table_full[SNUM_CODE_SORT as usize].insert(x.into(), Box::new(code));
         return Ok(x);
       }
+      &RawStm_::Global(ref raw_span, ref raw_id) => {
+        let span = self._load_raw_span(raw_span)?;
+        let id = self._load_raw_ident(raw_id)?;
+        let code = StmCode_::Global{span, id};
+        _traceln!(self, "DEBUG: FastInterp::_load_raw_stm: x={:?} code={:?}", x, code);
+        self.env.table_full[SNUM_CODE_SORT as usize].insert(x.into(), Box::new(code));
+        return Ok(x);
+      }
+      &RawStm_::Nonlocal(ref raw_span, static_scope, ref raw_id) => {
+        let span = self._load_raw_span(raw_span)?;
+        let id = self._load_raw_ident(raw_id)?;
+        let code = StmCode_::Nonlocal{span, static_scope, id};
+        _traceln!(self, "DEBUG: FastInterp::_load_raw_stm: x={:?} code={:?}", x, code);
+        self.env.table_full[SNUM_CODE_SORT as usize].insert(x.into(), Box::new(code));
+        return Ok(x);
+      }
       &RawStm_::If(ref raw_span, ref raw_cases, ref raw_final_case) => {
         let span = self._load_raw_span(raw_span)?;
         let mut cases = Vec::new();
@@ -2333,7 +2404,7 @@ impl FastInterp {
           let mut body: CellNum = nil();
           let mut cur_body: CellNum = nil();
           for raw_body_stm in raw_body.iter() {
-            let stm = self._load_raw_stm(raw_body_stm)?;
+            let stm = self._load_raw_stm(sup_level, sup_frame, raw_body_stm)?;
             let next_body = self._alloc_cell(stm.into());
             self._link_cells(cur_body, next_body)?;
             cur_body = next_body;
@@ -2349,7 +2420,7 @@ impl FastInterp {
           let mut body: CellNum = nil();
           let mut cur_body: CellNum = nil();
           for raw_body_stm in raw_body.iter() {
-            let stm = self._load_raw_stm(raw_body_stm)?;
+            let stm = self._load_raw_stm(sup_level, sup_frame, raw_body_stm)?;
             let next_body = self._alloc_cell(stm.into());
             self._link_cells(cur_body, next_body)?;
             cur_body = next_body;
@@ -2368,11 +2439,21 @@ impl FastInterp {
       }
       &RawStm_::Defproc(ref raw_span, prefix, .., ref raw_body) => {
         //_debugln!(self, "DEBUG: FastInterp::_load_raw_stm: raw span={:?} Defproc: prefix={:?}", raw_span, prefix);
+        let level = sup_level.push();
+        let frame = self._fresh().into_frame();
+        if !sup_frame.is_nil() {
+          // TODO: maybe also use cells for frame supers,
+          // but w/ 1-way link.
+          self.env.frame_super.insert(frame, sup_frame);
+        }
+        let frame_ = Frame_{level, ids: Default::default()};
+        self.env.frame_full.insert(frame, frame_.into());
         let span = self._load_raw_span(raw_span)?;
         let mut body: CellNum = nil();
         let mut cur_body: CellNum = nil();
         for raw_body_stm in raw_body.iter() {
-          let stm = self._load_raw_stm(raw_body_stm)?;
+          // TODO: stms in this def body should update the frame.
+          let stm = self._load_raw_stm(level, frame, raw_body_stm)?;
           let next_body = self._alloc_cell(stm.into());
           self._link_cells(cur_body, next_body)?;
           cur_body = next_body;
@@ -2382,8 +2463,9 @@ impl FastInterp {
         }
         let body_stmp = body.into_stm_code();
         let code = StmCode_::Defproc{span, body_stmp};
-        _traceln!(self, "DEBUG: FastInterp::_load_raw_stm: x={:?} code={:?}", x, code);
+        _traceln!(self, "DEBUG: FastInterp::_load_raw_stm: x={:?} frame={:?} code={:?}", x, frame, code);
         self.env.table_full[SNUM_CODE_SORT as usize].insert(x.into(), Box::new(code));
+        self.env.frame_codex.insert(x.into(), frame);
         match prefix {
           None => {}
           Some(RawDefPrefix_::Rule) => {
@@ -2398,7 +2480,7 @@ impl FastInterp {
         let mut body: CellNum = nil();
         let mut cur_body: CellNum = nil();
         for raw_body_stm in raw_body.iter() {
-          let stm = self._load_raw_stm(raw_body_stm)?;
+          let stm = self._load_raw_stm(sup_level, sup_frame, raw_body_stm)?;
           let next_body = self._alloc_cell(stm.into());
           self._link_cells(cur_body, next_body)?;
           cur_body = next_body;
@@ -2721,17 +2803,17 @@ impl FastInterp {
   }
 
   // [Interp-API]
-  pub fn _load_obj_cls<V: ObjectCls>(&mut self, cls: V) -> Result<ObjClsNum, InterpCheck> {
+  pub fn _load_obj_cls<V: ObjCls>(&mut self, cls: V) -> Result<ObjClsNum, InterpCheck> {
     let clk = self.clkctr._get_clock();
     let x = self._fresh().into_obj_cls();
-    self.log._append(clk, LogEntryRef_::Undo(UndoLogEntry_::LoadObjectCls(x).into()));
+    self.log._append(clk, LogEntryRef_::Undo(UndoLogEntry_::LoadObjCls(x).into()));
     _traceln!(self, "DEBUG: FastInterp::_load_object: x={:?} obj cls={:?}", x, cls);
-    self.env.obj_cls_full.insert(x.into(), (Box::new(cls) as Box<dyn ObjectCls>).into());
+    self.env.obj_cls_full.insert(x.into(), (Box::new(cls) as Box<dyn ObjCls>).into());
     Ok(x)
   }
 
   // [Interp-API]
-  pub fn _register_builtin_obj_cls<RawId: Into<RawIdent_>, V: ObjectCls>(&mut self, raw_id: RawId, cls: V) -> Result<ObjClsNum, InterpCheck> {
+  pub fn _register_builtin_obj_cls<RawId: Into<RawIdent_>, V: ObjCls>(&mut self, raw_id: RawId, cls: V) -> Result<ObjClsNum, InterpCheck> {
     let clk = self.clkctr._get_clock();
     let id = self._load_raw_ident(&raw_id.into())?;
     // FIXME: should the id belong in the "builtin" namespace?
@@ -3007,7 +3089,7 @@ impl FastInterp {
   }
 
   // [Interp-API]: This is part of the interpreter private API.
-  pub fn get_vals(&self, clk: LClk, query: ENum) -> Result<Vec<(ENum, LitVal_)>, InterpCheck> {
+  pub fn get_vals(&self, clk: LClk, query: ENum) -> Result<Vec<(ENum, Val_)>, InterpCheck> {
     let keys = self.env.unifier._findall(&self.clkinval, clk, query.inst).map_err(|e| e.into_check())?;
     _debugln!(self, "DEBUG: FastInterp::get_vals: query={:?} keys={:?}", query, keys);
     let mut vals = Vec::new();
@@ -3023,9 +3105,9 @@ impl FastInterp {
         }
         Some(entry) => {
           if let Some(val) = entry.as_any().downcast_ref::<LitVal_>() {
-            vals.push((key, val.clone()));
+            vals.push((key, Val_::Lit(val.clone())));
           } else {
-            _debugln!(self, "DEBUG: FastInterp::get_vals: not an LitVal_: query={:?} key={:?}", query, key);
+            _debugln!(self, "DEBUG: FastInterp::get_vals: currently only supporting LitVal_: query={:?} key={:?}", query, key);
           }
         }
       }
@@ -3116,7 +3198,11 @@ impl FastInterp {
     }
   }
 
-  pub fn _undo(&mut self, clk: LClk, entry: UndoLogEntryRef) -> Result<(), InterpCheck> {
+  // [Interp-API]: This is part of the interpreter private API.
+  //
+  // Currently only used in the `Yield::Fail` case of `interp_`
+  // for cleaning up after failure.
+  pub fn undo(&mut self, clk: LClk, entry: UndoLogEntryRef) -> Result<(), InterpCheck> {
     match &*entry {
       &UndoLogEntry_::Unify(ref state) => {
         self.env.unifier._link(state.oroot, state.onext);
@@ -3130,11 +3216,20 @@ impl FastInterp {
         }
       }
       &UndoLogEntry_::BindIdent(id, prev_x) => {
-        let raw_id = self.lookup_raw_ident(id)?.clone();
+        /*let raw_id = self.lookup_raw_ident(id)?.clone();*/
         if prev_x.is_nil() {
-          self.env.raw_id_bind.remove(&raw_id);
+          self.env.id_bind.remove(&id);
         } else {
-          self.env.raw_id_bind.insert(raw_id, prev_x.into());
+          self.env.id_bind.insert(id, prev_x.into());
+        }
+      }
+      &UndoLogEntry_::BindGlobalIdent(id, prev_x, prev_global_x) => {
+        if prev_x.is_nil() {
+          self.env.id_bind.remove(&id);
+          self.env.id_global_bind.remove(&id);
+        } else {
+          self.env.id_bind.insert(id, prev_x.into());
+          self.env.id_global_bind.insert(id, prev_global_x.into());
         }
       }
       &UndoLogEntry_::BindLitVal(ref val, prev_y) => {
@@ -3196,7 +3291,7 @@ impl FastInterp {
       let flat_val = if let Some(_) = entry.as_any().downcast_ref::<Cell_>() {
         FlatTabled_::Cell
       } else if let Some(ref t) = entry.as_any().downcast_ref::<IdentTerm_>() {
-        FlatTabled_::IdentTerm{raw: t.raw.clone()}
+        FlatTabled_::IdentTerm{raw_id: t.raw_id.clone()}
       } else if let Some(ref t) = entry.as_any().downcast_ref::<LitTerm_>() {
         match t._unpack() {
           UnpackedLitTerm_::None => {
@@ -3243,6 +3338,10 @@ impl FastInterp {
     self._register_builtin_function("eval",     self::prelude::EvalFun::default())?;
     self._register_builtin_function("print",    self::prelude::PrintFun::default())?;
     self._register_builtin_obj_cls("TokenTrie", self::prelude::TokenTrieCls::default())?;
+    // TODO
+    //self._register_builtin_obj_cls("List", self::prelude::ListCls::default())?;
+    //self._register_builtin_obj_cls("Set",  self::prelude::SetCls::default())?;
+    //self._register_builtin_obj_cls("Dict", self::prelude::DictCls::default())?;
     _debugln!(self, "DEBUG: FastInterp::pre_init: done");
     Ok(())
   }
@@ -3382,7 +3481,7 @@ impl FastInterp {
               match &self.log.buf[logp].val {
                 &LogEntryRef_::Undo(ref e) => {
                   _debugln!(self, "DEBUG: FastInterp::interp_: yield:   trace.buf[{}]: undo[{}]: clk={:?} entry={:?}", p, logp, self.log.buf[logp].clk, e);
-                  self._undo(self.log.buf[logp].clk, e.clone())?;
+                  self.undo(self.log.buf[logp].clk, e.clone())?;
                 }
                 _ => return Err(bot())
               }
@@ -3578,6 +3677,18 @@ impl FastInterp {
               self.knt_ = knt.into();
               self.port = Port_::Return;
             }
+            StmCode_::Global{span, id} => {
+              _traceln!(self, "DEBUG: FastInterp::resume_:   Enter  InterpStm: Global: ...");
+              // FIXME
+              self.knt_ = knt.into();
+              self.port = Port_::Return;
+            }
+            StmCode_::Nonlocal{span, static_scope, id} => {
+              _traceln!(self, "DEBUG: FastInterp::resume_:   Enter  InterpStm: Nonlocal: ...");
+              // FIXME
+              self.knt_ = knt.into();
+              self.port = Port_::Return;
+            }
             StmCode_::If{span, cases, final_case} => {
               _traceln!(self, "DEBUG: FastInterp::resume_:   Enter  InterpStm: If: ");
               self.knt_ = MemKnt{
@@ -3711,7 +3822,7 @@ impl FastInterp {
           match cur_term_code_ {
             TermCode_::Ident{span, id} => {
               let raw_id = self.lookup_raw_ident(id)?.clone();
-              match self.env.raw_id_bind.get(&raw_id) {
+              match self.env.id_bind.get(&id) {
                 Some(&x) => {
                   self.put_res(x)?;
                   self.knt_ = knt.prev;
@@ -3719,11 +3830,18 @@ impl FastInterp {
                 }
                 None => {
                   let x = self._fresh().into_term();
-                  let term_ = IdentTerm_{raw: raw_id.clone()};
+                  let term_ = IdentTerm_{id, raw_id: raw_id.clone()};
                   self.put_term(clk, x, term_)?;
-                  let prev_x = self.env.raw_id_bind.insert(raw_id.clone(), x.into()).try_into_nil()
+                  let prev_x = self.env.id_bind.insert(id, x.into()).try_into_nil()
                       .map_err(|_| format!("nil-bound ident: id = {:?} raw id = {:?}", id, raw_id).into_check())?;
-                  self.log._append(clk, LogEntryRef_::Undo(UndoLogEntry_::BindIdent(id, prev_x).into()));
+                  // FIXME: global scope.
+                  if false {
+                    let prev_global_x = self.env.id_global_bind.insert(id, x.into()).try_into_nil()
+                        .map_err(|_| format!("nil-bound global ident: id = {:?} raw id = {:?}", id, raw_id).into_check())?;
+                    self.log._append(clk, LogEntryRef_::Undo(UndoLogEntry_::BindGlobalIdent(id, prev_x, prev_global_x).into()));
+                  } else {
+                    self.log._append(clk, LogEntryRef_::Undo(UndoLogEntry_::BindIdent(id, prev_x).into()));
+                  }
                   self.put_res(x)?;
                   self.knt_ = knt.prev;
                   self.port = Port_::Return;
@@ -4202,7 +4320,8 @@ impl FastInterp {
             if let Some(fun_head_term) = self.env.table_full[SNUM_TERM_SORT as usize].get(&fun_head.into()) {
               _traceln!(self, "DEBUG: InterpApplyTerm: Enter:  fun head is term = {:?}", fun_head_term);
               if let Some(id_term) = fun_head_term.as_any().downcast_ref::<IdentTerm_>() {
-                if let Some(&id) = self.env.raw_id_index.get(&id_term.raw) {
+                //if let Some(&id) = self.env.raw_id_index.get(&id_term.raw_id) {
+                  let id = id_term.id;
                   if let Some(&fun_head) = self.env.fun_name.get(&id) {
                     _traceln!(self, "DEBUG: InterpApplyTerm: Enter:  fun apply...");
                     let span = self.lookup_term_code(cur_term_code)?._span()?;
@@ -4227,7 +4346,7 @@ impl FastInterp {
                       }
                     }
                   }
-                }
+                //}
               }
             }
             self.put_res(x)?;

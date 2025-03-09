@@ -131,6 +131,8 @@ pub enum Token {
   EqEq,
   Equal,
   SlashEq,
+  Star,
+  StarStar,
   TTTickUnquote,
   TTTickQuote,
   TTTick,
@@ -154,16 +156,21 @@ pub enum Token {
   Par,
   And,
   As,
+  Async,
+  Await,
   Break,
   Case,
   Cases,
   //Choice,
   //Choices,
+  Class,
   Continue,
   Def,
+  Defclass,
   Defmatch,
   Defproc,
   Defrule,
+  Del,
   Elif,
   Else,
   Enum,
@@ -172,6 +179,7 @@ pub enum Token {
   //Exec,
   Finally,
   For,
+  Forall,
   From,
   Global,
   If,
@@ -181,6 +189,8 @@ pub enum Token {
   Lambda,
   Let,
   Match,
+  //Namespace,
+  Nonlocal,
   Not,
   Of,
   Or,
@@ -266,6 +276,8 @@ impl<S> Tokenizer<S> {
     map.push(r"^==", |_| Token::EqEq);
     map.push(r"^=",  |_| Token::Equal);
     map.push(r"^/=", |_| Token::SlashEq);
+    map.push(r"^\*\*", |_| Token::StarStar);
+    map.push(r"^\*", |_| Token::Star);
     map.push(r"^```unquote", |_| Token::TTTickUnquote);
     map.push(r"^```quote", |_| Token::TTTickQuote);
     map.push(r"^```", |_| Token::TTTick);
@@ -289,17 +301,21 @@ impl<S> Tokenizer<S> {
     map.push(r"^Para",  |_| Token::Par);
     map.push(r"^Par",   |_| Token::Par);
     map.push(r"^and", |_| Token::And);
+    map.push(r"^async", |_| Token::Async);
     map.push(r"^as",  |_| Token::As);
+    map.push(r"^await", |_| Token::Await);
     map.push(r"^break", |_| Token::Break);
     map.push(r"^cases", |_| Token::Cases);
     map.push(r"^case", |_| Token::Case);
     //map.push(r"^choices", |_| Token::Choices);
     //map.push(r"^choice", |_| Token::Choice);*/
+    map.push(r"^class", |_| Token::Class);
     map.push(r"^continue", |_| Token::Continue);
     map.push(r"^defmatch", |_| Token::Defmatch);
     map.push(r"^defproc", |_| Token::Defproc);
     map.push(r"^defrule", |_| Token::Defrule);
     map.push(r"^def", |_| Token::Def);
+    map.push(r"^del", |_| Token::Del);
     map.push(r"^elif", |_| Token::Elif);
     map.push(r"^else", |_| Token::Else);
     //map.push(r"^enum", |_| Token::Enum);
@@ -317,6 +333,8 @@ impl<S> Tokenizer<S> {
     map.push(r"^lambda", |_| Token::Lambda);
     map.push(r"^let", |_| Token::Let);
     map.push(r"^match", |_| Token::Match);
+    map.push(r"^nonlocal", |_| Token::Nonlocal);
+    map.push(r"^not", |_| Token::Not);
     map.push(r"^of", |_| Token::Of);
     map.push(r"^or", |_| Token::Or);
     map.push(r"^pass", |_| Token::Pass);
@@ -331,6 +349,7 @@ impl<S> Tokenizer<S> {
     map.push(r"^yield", |_| Token::Yield);
     let mut imap = RegexMapBuilder::new();
     imap.push(r"^[0-9]+", |s| Token::IntLit(s.into()));
+    imap.push(r"^\-[0-9]+", |s| Token::IntLit(s.into()));
     imap.push(r"^\.[a-zA-Z_][a-zA-Z0-9_]*", |s| Token::DotIdent(s.into()));
     imap.push(r"^:[a-zA-Z_][a-zA-Z0-9_]*", |s| Token::ColonIdent(s.into()));
     imap.push(r"^[a-zA-Z_][a-zA-Z0-9_]*", |s| Token::Ident(s.into()));
@@ -713,6 +732,8 @@ pub enum Stm {
   // TODO TODO
   Just(Span, TermRef),
   Pass(Span),
+  Global(Span, Ident),
+  Nonlocal(Span, Option<i16>, Ident),
   With(Span, TermRef, Vec<StmRef>),
   Try,
   If(Span, Vec<(TermRef, Vec<StmRef>)>, Option<Vec<StmRef>>),
@@ -874,6 +895,8 @@ pub enum ParseError {
   Unexpected(Token),
   ExpectedStm,
   ExpectedBunch,
+  ExpectedIntLit,
+  InvalidIntLit,
   Unimpl_,
   Unimpl(Token),
   _Bot,
@@ -1224,8 +1247,76 @@ impl<S: AsRef<str>> Parser<S> {
     // TODO: allow `rule` prefix before def-like stm.
     match &cur.tok {
       &Token::Global => {
+        _debugln!(self, "DEBUG: Parser::stm: global: tok={:?}", &cur.tok);
+        let start = cur.span.clone();
+        // FIXME: spaces are required here.
+        self.maybe_spaces_deprecated();
+        let term = self.term(this_ctx.term())?;
+        let ident = match term {
+          Term::Ident(_, ident) => ident,
+          _ => {
+            return Err((self.cur_span(), ParseError::ExpectedIdent).into());
+          }
+        };
+        // FIXME: check that this really is an ident.
+        let span = cur.span.hull(self.pos());
+        return Ok(Some((Stm::Global(span, ident.into()), this_ctx)));
+        /*
         // FIXME: multiple prefixes, support certain orders.
         return Err((self.cur_span(), ParseError::Unimpl(cur.tok.clone())).into());
+        */
+      }
+      &Token::Nonlocal => {
+        _debugln!(self, "DEBUG: Parser::stm: nonlocal: tok={:?}", &cur.tok);
+        let start = cur.span.clone();
+        // FIXME: spaces are required here.
+        self.maybe_spaces_deprecated();
+        // TODO: optional syntax extension for debruijn levels or indices.
+        let mut static_scope = None;
+        let save_pos = self.pos();
+        self.next();
+        let cur = self.cur();
+        match &cur.tok {
+          &Token::LBrack => {
+            let term = self.term(this_ctx.term())?;
+            let static_scope_: i16 = match term {
+              Term::IntLit(_, s) => {
+                match s.as_raw_str().parse() {
+                  Err(_) => {
+                    return Err((self.cur_span(), ParseError::InvalidIntLit).into());
+                  }
+                  Ok(v) => v
+                }
+              }
+              _ => {
+                return Err((self.cur_span(), ParseError::ExpectedIntLit).into());
+              }
+            };
+            static_scope = Some(static_scope_);
+            self.next();
+            let cur = self.cur();
+            match &cur.tok {
+              &Token::RBrack => {}
+              _ => {
+                return Err((self.cur_span(), ParseError::Expected(Token::RBrack)).into());
+              }
+            }
+            self.maybe_spaces_deprecated();
+          }
+          _ => {
+            self.restore(&save_pos);
+          }
+        }
+        let term = self.term(this_ctx.term())?;
+        let ident = match term {
+          Term::Ident(_, ident) => ident,
+          _ => {
+            return Err((self.cur_span(), ParseError::ExpectedIdent).into());
+          }
+        };
+        // FIXME: check that this really is an ident.
+        let span = cur.span.hull(self.pos());
+        return Ok(Some((Stm::Nonlocal(span, static_scope, ident.into()), this_ctx)));
       }
       &Token::Rule => {
         match prefix {
@@ -2050,6 +2141,13 @@ impl<S: AsRef<str>> Printer<S> {
       }
       &Stm::Pass(_) => {
         println!("pass");
+      }
+      &Stm::Global(_, ref ident) => {
+        println!("global {}", ident);
+      }
+      &Stm::Nonlocal(_, _, ref ident) => {
+        // TODO: static scope (debruijn level/index).
+        println!("nonlocal {}", ident);
       }
       &Stm::With(_, ref head, ref body) => {
         print!("with ");

@@ -77,7 +77,7 @@
         },
         "flat_val": {
           "IdentTerm": {
-            "raw": "triangle"
+            "raw_id": "triangle"
           }
         }
       }

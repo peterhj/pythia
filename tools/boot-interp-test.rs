@@ -21,6 +21,7 @@ fn main() {
   //let mut results = Vec::new();
   let results: Vec<_> = test_data_cfg.iter_interp_tests().enumerate()
   .map(|(idx, item)| {
+    println!("DEBUG: boot: test[{idx}]: ==========");
     println!("DEBUG: boot: test[{idx}]: key = {:?}", item.key);
     let t0 = Timestamp::fresh();
     let mut interp = FastInterp::default();
@@ -61,6 +62,7 @@ fn main() {
     let flatinterp = interp.flatten_();
     println!("DEBUG: boot: test[{idx}]: flat = {:?}", flatinterp);
     test_data_cfg.set_vector_file(&item.key, &flatinterp.vectorize());
+    println!("DEBUG: boot: test[{idx}]: ----------");
     return (item.key, item.src, TestResult::OK(t1-t0, t2-t1, yield_));
   }).collect();
   //.collect_into_vec(&mut results);

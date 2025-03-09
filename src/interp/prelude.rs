@@ -38,7 +38,7 @@ impl Function for ChoiceFun {
       _traceln!(interp, "DEBUG: ChoiceFun::__apply__:   vals={:?}", vals);
       for &(key, ref val) in vals.iter() {
         match val {
-          &LitVal_::Int(v) => {
+          &Val_::Lit(LitVal_::Int(v)) => {
             choice_ub = Some(v.try_into().unwrap());
             // TODO: when to catch contradictory vals?
             break;
@@ -211,18 +211,19 @@ impl Function for PrintFun {
       _traceln!(interp, "DEBUG: PrintFun::__apply__:   tup={:?}", tup);
       let vals = interp.get_vals(clk, tup[1])?;
       _traceln!(interp, "DEBUG: PrintFun::__apply__:   vals={:?}", vals);
+      // TODO: might want to print via interp I/O services.
       for &(key, ref val) in vals.iter() {
         match val {
-          &LitVal_::None => {
+          &Val_::Lit(LitVal_::None) => {
             println!("None");
           }
-          &LitVal_::Bool(v) => {
+          &Val_::Lit(LitVal_::Bool(v)) => {
             println!("{}", v);
           }
-          &LitVal_::Int(v) => {
+          &Val_::Lit(LitVal_::Int(v)) => {
             println!("{}", v);
           }
-          &LitVal_::Atom(ref v) => {
+          &Val_::Lit(LitVal_::Atom(ref v)) => {
             println!("{}", v);
           }
           _ => {
@@ -239,11 +240,102 @@ impl Function for PrintFun {
 }
 
 #[derive(Debug, Default)]
+pub struct ListCls {
+  // TODO
+}
+
+impl ObjCls for ListCls {
+  fn as_any(&self) -> &dyn Any {
+    self
+  }
+
+  fn __create__(&mut self, interp: &mut FastInterp, this_span: SpanNum, this_term: SNum, tup: &[ENum], ret: SNum, knt: BorrowedMemKnt, ) -> Result<(), InterpCheck> {
+    // TODO
+    unimplemented!();
+  }
+}
+
+#[derive(Debug, Default)]
+pub struct ListVal {
+  // TODO
+  buf:  Vec<ENum>,
+}
+
+impl ObjVal for ListVal {
+  fn as_any(&self) -> &dyn Any {
+    self
+  }
+
+  fn __init__(&mut self, interp: &mut FastInterp, this_span: SpanNum, this_term: SNum, tup: &[ENum], ret: SNum, knt: BorrowedMemKnt, ) -> Result<(), InterpCheck> {
+    // TODO
+    unimplemented!();
+  }
+
+  fn __destroy__(&mut self, interp: &mut FastInterp, this_span: SpanNum, this_term: SNum, tup: &[ENum], ret: SNum, knt: BorrowedMemKnt, ) -> Result<(), InterpCheck> {
+    // TODO
+    unimplemented!();
+  }
+
+  fn __request__(&mut self, interp: &mut FastInterp, this_span: SpanNum, this_term: SNum, tup: &[ENum], ret: SNum, knt: BorrowedMemKnt, ) -> Result<(), InterpCheck> {
+    // TODO
+    unimplemented!();
+  }
+}
+
+#[derive(Debug, Default)]
+pub struct DictCls {
+  // TODO
+}
+
+impl ObjCls for DictCls {
+  fn as_any(&self) -> &dyn Any {
+    self
+  }
+
+  fn __create__(&mut self, interp: &mut FastInterp, this_span: SpanNum, this_term: SNum, tup: &[ENum], ret: SNum, knt: BorrowedMemKnt, ) -> Result<(), InterpCheck> {
+    // TODO
+    unimplemented!();
+  }
+}
+
+#[derive(Debug, Default)]
+pub struct SetCls {
+  // TODO
+}
+
+impl ObjCls for SetCls {
+  fn as_any(&self) -> &dyn Any {
+    self
+  }
+
+  fn __create__(&mut self, interp: &mut FastInterp, this_span: SpanNum, this_term: SNum, tup: &[ENum], ret: SNum, knt: BorrowedMemKnt, ) -> Result<(), InterpCheck> {
+    // TODO
+    unimplemented!();
+  }
+}
+
+#[derive(Debug, Default)]
+pub struct OrdMapCls {
+  // TODO
+}
+
+impl ObjCls for OrdMapCls {
+  fn as_any(&self) -> &dyn Any {
+    self
+  }
+
+  fn __create__(&mut self, interp: &mut FastInterp, this_span: SpanNum, this_term: SNum, tup: &[ENum], ret: SNum, knt: BorrowedMemKnt, ) -> Result<(), InterpCheck> {
+    // TODO
+    unimplemented!();
+  }
+}
+
+#[derive(Debug, Default)]
 pub struct TokenTrieCls {
   // TODO
 }
 
-impl ObjectCls for TokenTrieCls {
+impl ObjCls for TokenTrieCls {
   fn as_any(&self) -> &dyn Any {
     self
   }

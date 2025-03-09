@@ -170,7 +170,7 @@
         },
         "flat_val": {
           "IdentTerm": {
-            "raw": "choice"
+            "raw_id": "choice"
           }
         }
       },
@@ -181,7 +181,7 @@
         },
         "flat_val": {
           "IdentTerm": {
-            "raw": "k"
+            "raw_id": "k"
           }
         }
       },

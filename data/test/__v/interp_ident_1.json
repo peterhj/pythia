@@ -133,7 +133,7 @@
         },
         "flat_val": {
           "IdentTerm": {
-            "raw": "xyz"
+            "raw_id": "xyz"
           }
         }
       },
@@ -176,7 +176,7 @@
         },
         "flat_val": {
           "IdentTerm": {
-            "raw": "abc"
+            "raw_id": "abc"
           }
         }
       },
@@ -187,7 +187,7 @@
         },
         "flat_val": {
           "IdentTerm": {
-            "raw": "triangle"
+            "raw_id": "triangle"
           }
         }
       },
