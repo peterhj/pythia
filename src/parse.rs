@@ -1,11 +1,15 @@
 use crate::algo::{SmolStr};
+use crate::algo::cell::{RefCell};
 use crate::algo::str::{SafeStr, StrParserConfig, StrParser};
-use crate::panick::{Loc, loc, _debugln};
+use crate::panick::{Loc, loc};
+use crate::tap::{TAPOutput, _debugln};
 
+use bitflags::{bitflags, bitflags_match};
 use regex::{Regex, RegexSet};
 
-use std::cell::{RefCell};
+//use std::cell::{RefCell};
 use std::fmt::{Debug, Formatter, Result as FmtResult};
+use std::io::{Write};
 use std::mem::{replace};
 use std::ops::{Range};
 use std::panic::{Location};
@@ -180,6 +184,7 @@ pub enum Token {
   Finally,
   For,
   Forall,
+  Fresh,
   From,
   Global,
   If,
@@ -209,7 +214,8 @@ pub enum Token {
   PlaceIdent(SafeStr),
   Ident(SafeStr),
   DotIdent(SafeStr),
-  ColonIdent(SafeStr),
+  // NB: deprecated syntax.
+  /*ColonIdent(SafeStr),*/
   //_Utf8Error(Box<[u8]>),
   _Eof,
 }
@@ -226,15 +232,26 @@ impl From<(Span, Token)> for SpanToken {
   }
 }
 
+bitflags! {
+  #[derive(Clone, Copy, PartialEq, Eq)]
+  pub struct TokenizerFlag_: u8 {
+    const BOL = 1;
+    const EOF = 2;
+    const PYTHON = 4;
+    const PYTHIA = 8;
+  }
+}
+
 pub struct Tokenizer<S> {
   imap: RegexMap<Token>,
   map:  RegexMap<Token>,
   buf:  S,
   pos:  usize,
   ind:  RawIndent,
-  bol:  bool,
-  eof:  bool,
-  verbose:  i8,
+  flag: TokenizerFlag_,
+  //writer:   RefCell<Box<dyn Write>>,
+  //verbose:  i8,
+  tap:  TAPOutput,
 }
 
 impl<S> Tokenizer<S> {
@@ -324,6 +341,7 @@ impl<S> Tokenizer<S> {
     //map.push(r"^exec", |_| Token::Exec);
     map.push(r"^finally", |_| Token::Finally);
     map.push(r"^for", |_| Token::For);
+    map.push(r"^fresh", |_| Token::Fresh);
     map.push(r"^from", |_| Token::From);
     map.push(r"^global", |_| Token::Global);
     map.push(r"^if", |_| Token::If);
@@ -351,18 +369,51 @@ impl<S> Tokenizer<S> {
     imap.push(r"^[0-9]+", |s| Token::IntLit(s.into()));
     imap.push(r"^\-[0-9]+", |s| Token::IntLit(s.into()));
     imap.push(r"^\.[a-zA-Z_][a-zA-Z0-9_]*", |s| Token::DotIdent(s.into()));
-    imap.push(r"^:[a-zA-Z_][a-zA-Z0-9_]*", |s| Token::ColonIdent(s.into()));
+    // NB: deprecated syntax.
+    /*imap.push(r"^:[a-zA-Z_][a-zA-Z0-9_]*", |s| Token::ColonIdent(s.into()));*/
     imap.push(r"^[a-zA-Z_][a-zA-Z0-9_]*", |s| Token::Ident(s.into()));
+    let tap = TAPOutput::default();
     Tokenizer{
       imap: imap.into(),
       map:  map.into(),
       buf,
       pos:  0,
       ind:  0,
-      bol:  true,
-      eof:  false,
-      verbose:  0,
+      flag: TokenizerFlag_::BOL,
+      //writer:   RefCell::new(Box::new(std::io::stdout())),
+      //verbose:  0,
+      tap,
     }
+  }
+
+  pub fn bol(&self) -> bool {
+    bitflags_match!(self.flag & TokenizerFlag_::BOL, {
+      TokenizerFlag_::BOL => true,
+      _ => false
+    })
+  }
+
+  pub fn set_bol(&mut self) {
+    self.flag |= TokenizerFlag_::BOL;
+  }
+
+  pub fn unset_bol(&mut self) {
+    self.flag &= !TokenizerFlag_::BOL;
+  }
+
+  pub fn eof(&self) -> bool {
+    bitflags_match!(self.flag & TokenizerFlag_::EOF, {
+      TokenizerFlag_::EOF => true,
+      _ => false
+    })
+  }
+
+  pub fn set_eof(&mut self) {
+    self.flag |= TokenizerFlag_::EOF;
+  }
+
+  pub fn unset_eof(&mut self) {
+    self.flag &= !TokenizerFlag_::EOF;
   }
 
   pub fn _pos(&self) -> Span {
@@ -383,20 +434,20 @@ impl<S: AsRef<str>> Iterator for Tokenizer<S> {
   type Item = SpanToken;
 
   fn next(&mut self) -> Option<SpanToken> {
-    if self.eof {
+    if self.eof() {
       let end = self.pos;
       let span = Span{start: end, end};
       let tok = Token::_Eof;
       return Some((span, tok).into());
     }
     let c = self.peek_char();
-    if self.bol {
+    if self.bol() {
       if let Some(c) = c {
         _debugln!(self, "DEBUG: Tokenizer::next: bol: c=0x{:x}", c as u32);
       } else {
         _debugln!(self, "DEBUG: Tokenizer::next: bol: eof");
       }
-      self.bol = false;
+      self.unset_bol();
       if c == Some(' ') || c == Some('\t') {
         let mut indent = 0;
         let mut o = 0;
@@ -425,19 +476,19 @@ impl<S: AsRef<str>> Iterator for Tokenizer<S> {
       return Some((span, tok).into());
     }
     if c == Some('\n') {
-      self.bol = true;
+      self.set_bol();
       let span = self._advance(1);
       let tok = Token::NL;
       return Some((span, tok).into());
     }
     else if c == Some('\r') {
-      self.bol = true;
+      self.set_bol();
       let span = self._advance(1);
       let tok = Token::CR;
       return Some((span, tok).into());
     }
-    // TODO: re-enable python-style comments in python compat mode?
-    /*else if c == Some('#') {
+    // NB: re-enable python-style comments in python compat mode.
+    else if /*self.compat && */c == Some('#') {
       let mut o = 0;
       for c in self.buf.as_ref().get(self.pos .. ).unwrap().chars() {
         o += 1;
@@ -450,8 +501,9 @@ impl<S: AsRef<str>> Iterator for Tokenizer<S> {
       }
       let span = self._advance(o);
       let tok = Token::Comment(self.buf.as_ref().get(span.clone()).unwrap().into());
+      self.flag |= TokenizerFlag_::PYTHON;
       return Some((span, tok).into());
-    }*/
+    }
     else if c == Some('-') {
       if let Some('-') = self.peek_char2() {
         let mut o = 0;
@@ -466,6 +518,7 @@ impl<S: AsRef<str>> Iterator for Tokenizer<S> {
         }
         let span = self._advance(o);
         let tok = Token::Comment(self.buf.as_ref().get(span.clone()).unwrap().into());
+        self.flag |= TokenizerFlag_::PYTHIA;
         return Some((span, tok).into());
       }
     }
@@ -540,7 +593,7 @@ impl<S: AsRef<str>> Iterator for Tokenizer<S> {
     {
       (None, None) => {
         _debugln!(self, "DEBUG: Tokenizer::next:   non match");
-        self.eof = true;
+        self.set_eof();
         let end = self.pos;
         let span = Span{start: end, end};
         let tok = Token::_Eof;
@@ -552,7 +605,7 @@ impl<S: AsRef<str>> Iterator for Tokenizer<S> {
         self.pos = span.end;
         match &tok {
           &Token::NL | &Token::CR => {
-            self.bol = true;
+            self.set_bol();
           }
           _ => {}
         }
@@ -579,17 +632,17 @@ impl<S: AsRef<str>> Tokenizer<S> {
     assert!(start <= buf_len);
     self.pos = start;
     if start == 0 {
-      self.bol = true;
+      self.set_bol();
     } else {
       let v = self.buf.as_ref().as_bytes()[start-1];
       if v == b'\n' || v == b'\r' {
-        self.bol = true;
+        self.set_bol();
       }
     }
     if start == buf_len {
-      self.eof = true;
+      self.set_eof();
     } else {
-      self.eof = false;
+      self.unset_eof();
     }
   }
 
@@ -612,7 +665,7 @@ impl<S: AsRef<str>> Tokenizer<S> {
   }
 }
 
-pub struct DebugTokenizer<S> {
+/*pub struct DebugTokenizer<S> {
   inner: Tokenizer<S>,
   verbose:  i8,
 }
@@ -654,7 +707,7 @@ impl<S: AsRef<str>> DebugTokenizer<S> {
     }
     c
   }
-}
+}*/
 
 // FIXME
 pub type Ident = SafeStr;
@@ -731,6 +784,7 @@ impl Term {
 pub enum Stm {
   // TODO TODO
   Just(Span, TermRef),
+  Comment(Span, ()),
   Pass(Span),
   Global(Span, Ident),
   Nonlocal(Span, Option<i16>, Ident),
@@ -925,7 +979,8 @@ pub struct FastParser<S> {
   //tab:  _,
   cur:      Option<SpanToken>,
   peek:     Option<SpanToken>,
-  verbose:  i8,
+  tap:      TAPOutput,
+  //verbose:  i8,
 }
 
 impl<S: AsRef<str>> Parser<S> {
@@ -934,12 +989,13 @@ impl<S: AsRef<str>> Parser<S> {
     //let tokens = DebugTokenizer::new(buf);
     let cur = None;
     let peek = None;
-    let verbose = 0;
-    Parser{tokens, cur, peek, verbose}
+    //let verbose = 0;
+    let tap = TAPOutput::default();
+    Parser{tokens, cur, peek, tap}
   }
 
   pub fn set_verbose(&mut self, v: i8) {
-    self.verbose = v;
+    self.tap.verbose = v;
   }
 
   pub fn set_debug(&mut self) {
@@ -962,7 +1018,8 @@ impl<S: AsRef<str>> Parser<S> {
       &Token::LQueryEq => {
         120
       }
-      &Token::ColonIdent(_) |
+      // NB: deprecated syntax.
+      /*&Token::ColonIdent(_) |*/
       &Token::LParen => {
         400
       }
@@ -1322,6 +1379,7 @@ impl<S: AsRef<str>> Parser<S> {
         match prefix {
           StmPrefix::_Nil => {
             self.maybe_spaces_deprecated();
+            self.tokens.flag |= TokenizerFlag_::PYTHIA;
             return self._stm(this_ctx, StmPrefix::Rule);
           }
           StmPrefix::Rule => {
@@ -1391,6 +1449,7 @@ impl<S: AsRef<str>> Parser<S> {
       }
       &Token::TTTick => {
         _debugln!(self, "DEBUG: Parser::stm: end block quote: tok={:?}", &cur.tok);
+        self.tokens.flag |= TokenizerFlag_::PYTHIA;
         return Ok(Some((Stm::_EndQuote(cur.span.clone()), this_ctx)));
       }
       &Token::Pass => {
@@ -1572,7 +1631,8 @@ impl<S: AsRef<str>> Parser<S> {
         return Ok(Some((Stm::With(span, head.into(), body), this_ctx)));
       }
       &Token::Defmatch |
-      &Token::Defproc => {
+      &Token::Defproc |
+      &Token::Def => {
         let org_tok = cur.tok.clone();
         _debugln!(self, "DEBUG: Parser::stm: defmatch/defproc: tok={:?}", &cur.tok);
         let start = cur.span.clone();
@@ -1646,10 +1706,17 @@ impl<S: AsRef<str>> Parser<S> {
         match &org_tok {
           &Token::Defmatch => {
             _debugln!(self, "DEBUG: Parser::stm: ok: defmatch");
+            self.tokens.flag |= TokenizerFlag_::PYTHIA;
             return Ok(Some((Stm::Defmatch(span, prefix.into_def(), head, params, body), this_ctx)));
           }
           &Token::Defproc => {
             _debugln!(self, "DEBUG: Parser::stm: ok: defproc");
+            self.tokens.flag |= TokenizerFlag_::PYTHIA;
+            return Ok(Some((Stm::Defproc(span, prefix.into_def(), head, params, body), this_ctx)));
+          }
+          &Token::Def => {
+            _debugln!(self, "DEBUG: Parser::stm: ok: def");
+            self.tokens.flag |= TokenizerFlag_::PYTHON;
             return Ok(Some((Stm::Defproc(span, prefix.into_def(), head, params, body), this_ctx)));
           }
           _ => {}
@@ -1686,6 +1753,7 @@ impl<S: AsRef<str>> Parser<S> {
             &Stm::_EndQuote(_) => {
               let span = start.hull(self.pos());
               _debugln!(self, "DEBUG: Parser::stm: ok: block quote");
+              self.tokens.flag |= TokenizerFlag_::PYTHIA;
               return Ok(Some((Stm::Quote(span, (), body), this_ctx)));
             }
             _ => {}
@@ -1884,11 +1952,12 @@ impl<S: AsRef<str>> Parser<S> {
       &Token::_Eof => {
         return Err((cur.span, ParseError::Eof).into());
       }
-      &Token::ColonIdent(ref s) => {
+      // NB: deprecated syntax.
+      /*&Token::ColonIdent(ref s) => {
         let start = lterm.span();
         let span = start.hull(self.pos());
         return Ok(Term::QualIdent(span, lterm.into(), s.clone()));
-      }
+      }*/
       &Token::Query => {
         // FIXME: if lterm is an apply tuple, might convert this into
         // an apply-query term.

@@ -45,3 +45,19 @@ interp: boot-interp-test
 boot-interp: boot-interp-test
 boot-interp-test:
 	./target/release/boot-interp-test
+
+.PHONY: 1 i1 int1 interp1
+1: boot-interp-test-1
+i1: boot-interp-test-1
+int1: boot-interp-test-1
+interp1: boot-interp-test-1
+boot-interp-test-1:
+	./target/release/boot-interp-test-1
+
+.PHONY: last ilast int-last interp-last
+last: boot-interp-test-last
+ilast: boot-interp-test-last
+int-last: boot-interp-test-last
+interp-last: boot-interp-test-last
+boot-interp-test-last:
+	./target/release/boot-interp-test-last

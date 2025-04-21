@@ -1,0 +1,506 @@
+{"_event": "pre_init"}
+{
+  "clkctr": {"rctr": 0},
+  "ctr": {"rctr": 12},
+  "reg": {
+    "xlb": "SNum(nil)",
+    "rst_clk": "LClk(nil)",
+    "tctx": {
+      "TermContext_": "Unify"
+    }
+  },
+  "exc_": {"_err": null},
+  "res_": {"clk": "LClk(nil)", "reg": "Emp", "_log": []},
+  "port": "Quiescent",
+  "knt_": [],
+  "env": {
+    "fun_name": {
+      "IdentNum(5.0)": "SNum(6.0)",
+      "IdentNum(3.0)": "SNum(4.0)",
+      "IdentNum(9.0)": "SNum(10.0)",
+      "IdentNum(1.0)": "SNum(2.0)",
+      "IdentNum(7.0)": "SNum(8.0)"
+    },
+    "table_full": {
+      "Ident": {
+        "SNum(11.0)": "TokenTrie",
+        "SNum(5.0)": "eval",
+        "SNum(3.0)": "failure",
+        "SNum(9.0)": "print",
+        "SNum(1.0)": "choice",
+        "SNum(7.0)": "input"
+      }
+    },
+    "e_table_full": {
+    },
+    "frame_super": {
+    },
+    "frame_full": {
+    },
+    "frame_codex": {
+    },
+    "__sentinel__": null
+  },
+  "clkinval": {
+    "inner": {}
+  },
+  "_event": "snapshot"
+}
+{"_event": "cold-start"}
+{
+  "clkctr": {"rctr": 0},
+  "ctr": {"rctr": 19},
+  "reg": {
+    "xlb": "SNum(nil)",
+    "rst_clk": "LClk(nil)",
+    "tctx": {
+      "TermContext_": "Unify"
+    }
+  },
+  "exc_": {"_err": null},
+  "res_": {"clk": "LClk(nil)", "reg": "Emp", "_log": []},
+  "port": "Enter",
+  "knt_": [
+    {"clk": "LClk(0)", "cur": {"InterpMod": ["ModCodeNum(13.0)", {"__type__": "ModCodeInterpState_", "stmp": "StmCodeCellNum(nil)"}]}}
+  ],
+  "env": {
+    "fun_name": {
+      "IdentNum(5.0)": "SNum(6.0)",
+      "IdentNum(3.0)": "SNum(4.0)",
+      "IdentNum(9.0)": "SNum(10.0)",
+      "IdentNum(1.0)": "SNum(2.0)",
+      "IdentNum(7.0)": "SNum(8.0)"
+    },
+    "table_full": {
+      "Span": {
+        "SNum(14.0)": {"start": 0, "end": 9},
+        "SNum(17.0)": {"start": 0, "end": 8}
+      },
+      "Code": {
+        "SNum(13.0)": {"__type__": "ModCode_", "span": "SpanNum(14.0)", "stmp": "StmCodeCellNum(19.0)"},
+        "SNum(16.0)": {"TermCode_": "Ident", "span": "SpanNum(17.0)", "id": "IdentNum(18.0)"},
+        "SNum(15.0)": {"StmCode_": "Just", "span": "SpanNum(14.0)", "term": "TermCodeNum(16.0)"}
+      },
+      "Ident": {
+        "SNum(11.0)": "TokenTrie",
+        "SNum(5.0)": "eval",
+        "SNum(18.0)": "triangle",
+        "SNum(3.0)": "failure",
+        "SNum(9.0)": "print",
+        "SNum(1.0)": "choice",
+        "SNum(7.0)": "input"
+      },
+      "Cell": {
+        "SNum(19.0)": {"__type__": "Cell_", "dptr": "SNum(15.0)", "next": "CellNum(nil)", "prev": "CellNum(nil)"}
+      }
+    },
+    "e_table_full": {
+    },
+    "frame_super": {
+    },
+    "frame_full": {
+    },
+    "frame_codex": {
+    },
+    "__sentinel__": null
+  },
+  "clkinval": {
+    "inner": {}
+  },
+  "_event": "snapshot"
+}
+{"_event": "resume-step"}
+{
+  "clkctr": {"rctr": 1},
+  "ctr": {"rctr": 19},
+  "reg": {
+    "xlb": "SNum(19.0)",
+    "rst_clk": "LClk(nil)",
+    "tctx": {
+      "TermContext_": "Unify"
+    }
+  },
+  "exc_": {"_err": null},
+  "res_": {"clk": "LClk(nil)", "reg": "Emp", "_log": []},
+  "port": "Enter",
+  "knt_": [
+    {"clk": "LClk(1)", "cur": {"InterpStmp": ["StmCodeCellNum(19.0)", {"__type__": "StmCodeCellInterpState_", "stmp": "StmCodeCellNum(19.0)"}]}},
+    {"clk": "LClk(0)", "cur": {"InterpMod": ["ModCodeNum(13.0)", {"__type__": "ModCodeInterpState_", "stmp": "StmCodeCellNum(19.0)"}]}}
+  ],
+  "env": {
+    "fun_name": {
+      "IdentNum(5.0)": "SNum(6.0)",
+      "IdentNum(3.0)": "SNum(4.0)",
+      "IdentNum(9.0)": "SNum(10.0)",
+      "IdentNum(1.0)": "SNum(2.0)",
+      "IdentNum(7.0)": "SNum(8.0)"
+    },
+    "table_full": {
+      "Span": {
+        "SNum(14.0)": {"start": 0, "end": 9},
+        "SNum(17.0)": {"start": 0, "end": 8}
+      },
+      "Code": {
+        "SNum(13.0)": {"__type__": "ModCode_", "span": "SpanNum(14.0)", "stmp": "StmCodeCellNum(19.0)"},
+        "SNum(16.0)": {"TermCode_": "Ident", "span": "SpanNum(17.0)", "id": "IdentNum(18.0)"},
+        "SNum(15.0)": {"StmCode_": "Just", "span": "SpanNum(14.0)", "term": "TermCodeNum(16.0)"}
+      },
+      "Ident": {
+        "SNum(11.0)": "TokenTrie",
+        "SNum(5.0)": "eval",
+        "SNum(18.0)": "triangle",
+        "SNum(3.0)": "failure",
+        "SNum(9.0)": "print",
+        "SNum(1.0)": "choice",
+        "SNum(7.0)": "input"
+      },
+      "Cell": {
+        "SNum(19.0)": {"__type__": "Cell_", "dptr": "SNum(15.0)", "next": "CellNum(nil)", "prev": "CellNum(nil)"}
+      }
+    },
+    "e_table_full": {
+    },
+    "frame_super": {
+    },
+    "frame_full": {
+    },
+    "frame_codex": {
+    },
+    "__sentinel__": null
+  },
+  "clkinval": {
+    "inner": {}
+  },
+  "_event": "snapshot"
+}
+{"_event": "resume-step"}
+{
+  "clkctr": {"rctr": 2},
+  "ctr": {"rctr": 19},
+  "reg": {
+    "xlb": "SNum(19.0)",
+    "rst_clk": "LClk(nil)",
+    "tctx": {
+      "TermContext_": "Unify"
+    }
+  },
+  "exc_": {"_err": null},
+  "res_": {"clk": "LClk(nil)", "reg": "Emp", "_log": []},
+  "port": "Enter",
+  "knt_": [
+    {"clk": "LClk(2)", "cur": {"InterpStm": ["StmCodeNum(15.0)", {"__type__": "StmCodeInterpState_"}]}},
+    {"clk": "LClk(1)", "cur": {"InterpStmp": ["StmCodeCellNum(19.0)", {"__type__": "StmCodeCellInterpState_", "stmp": "StmCodeCellNum(nil)"}]}},
+    {"clk": "LClk(0)", "cur": {"InterpMod": ["ModCodeNum(13.0)", {"__type__": "ModCodeInterpState_", "stmp": "StmCodeCellNum(19.0)"}]}}
+  ],
+  "env": {
+    "fun_name": {
+      "IdentNum(5.0)": "SNum(6.0)",
+      "IdentNum(3.0)": "SNum(4.0)",
+      "IdentNum(9.0)": "SNum(10.0)",
+      "IdentNum(1.0)": "SNum(2.0)",
+      "IdentNum(7.0)": "SNum(8.0)"
+    },
+    "table_full": {
+      "Span": {
+        "SNum(14.0)": {"start": 0, "end": 9},
+        "SNum(17.0)": {"start": 0, "end": 8}
+      },
+      "Code": {
+        "SNum(13.0)": {"__type__": "ModCode_", "span": "SpanNum(14.0)", "stmp": "StmCodeCellNum(19.0)"},
+        "SNum(16.0)": {"TermCode_": "Ident", "span": "SpanNum(17.0)", "id": "IdentNum(18.0)"},
+        "SNum(15.0)": {"StmCode_": "Just", "span": "SpanNum(14.0)", "term": "TermCodeNum(16.0)"}
+      },
+      "Ident": {
+        "SNum(11.0)": "TokenTrie",
+        "SNum(5.0)": "eval",
+        "SNum(18.0)": "triangle",
+        "SNum(3.0)": "failure",
+        "SNum(9.0)": "print",
+        "SNum(1.0)": "choice",
+        "SNum(7.0)": "input"
+      },
+      "Cell": {
+        "SNum(19.0)": {"__type__": "Cell_", "dptr": "SNum(15.0)", "next": "CellNum(nil)", "prev": "CellNum(nil)"}
+      }
+    },
+    "e_table_full": {
+    },
+    "frame_super": {
+    },
+    "frame_full": {
+    },
+    "frame_codex": {
+    },
+    "__sentinel__": null
+  },
+  "clkinval": {
+    "inner": {}
+  },
+  "_event": "snapshot"
+}
+{"_event": "resume-step"}
+{
+  "clkctr": {"rctr": 3},
+  "ctr": {"rctr": 19},
+  "reg": {
+    "xlb": "SNum(19.0)",
+    "rst_clk": "LClk(nil)",
+    "tctx": {
+      "TermContext_": "Unify"
+    }
+  },
+  "exc_": {"_err": null},
+  "res_": {"clk": "LClk(nil)", "reg": "Emp", "_log": [["LClk(nil)", "Emp"]]},
+  "port": "Enter",
+  "knt_": [
+    {"clk": "LClk(3)", "cur": {"InterpTerm": ["TermCodeNum(16.0)", {"__type__": "TermCodeInterpState_"}]}},
+    {"clk": "LClk(1)", "cur": {"InterpStmp": ["StmCodeCellNum(19.0)", {"__type__": "StmCodeCellInterpState_", "stmp": "StmCodeCellNum(nil)"}]}},
+    {"clk": "LClk(0)", "cur": {"InterpMod": ["ModCodeNum(13.0)", {"__type__": "ModCodeInterpState_", "stmp": "StmCodeCellNum(19.0)"}]}}
+  ],
+  "env": {
+    "fun_name": {
+      "IdentNum(5.0)": "SNum(6.0)",
+      "IdentNum(3.0)": "SNum(4.0)",
+      "IdentNum(9.0)": "SNum(10.0)",
+      "IdentNum(1.0)": "SNum(2.0)",
+      "IdentNum(7.0)": "SNum(8.0)"
+    },
+    "table_full": {
+      "Span": {
+        "SNum(14.0)": {"start": 0, "end": 9},
+        "SNum(17.0)": {"start": 0, "end": 8}
+      },
+      "Code": {
+        "SNum(13.0)": {"__type__": "ModCode_", "span": "SpanNum(14.0)", "stmp": "StmCodeCellNum(19.0)"},
+        "SNum(16.0)": {"TermCode_": "Ident", "span": "SpanNum(17.0)", "id": "IdentNum(18.0)"},
+        "SNum(15.0)": {"StmCode_": "Just", "span": "SpanNum(14.0)", "term": "TermCodeNum(16.0)"}
+      },
+      "Ident": {
+        "SNum(11.0)": "TokenTrie",
+        "SNum(5.0)": "eval",
+        "SNum(18.0)": "triangle",
+        "SNum(3.0)": "failure",
+        "SNum(9.0)": "print",
+        "SNum(1.0)": "choice",
+        "SNum(7.0)": "input"
+      },
+      "Cell": {
+        "SNum(19.0)": {"__type__": "Cell_", "dptr": "SNum(15.0)", "next": "CellNum(nil)", "prev": "CellNum(nil)"}
+      }
+    },
+    "e_table_full": {
+    },
+    "frame_super": {
+    },
+    "frame_full": {
+    },
+    "frame_codex": {
+    },
+    "__sentinel__": null
+  },
+  "clkinval": {
+    "inner": {}
+  },
+  "_event": "snapshot"
+}
+{"_event": "resume-step"}
+{
+  "clkctr": {"rctr": 4},
+  "ctr": {"rctr": 20},
+  "reg": {
+    "xlb": "SNum(19.0)",
+    "rst_clk": "LClk(nil)",
+    "tctx": {
+      "TermContext_": "Unify"
+    }
+  },
+  "exc_": {"_err": null},
+  "res_": {"clk": "LClk(4)", "reg": {"Key": "SNum(20.0)"}, "_log": [["LClk(nil)", "Emp"]]},
+  "port": "Return",
+  "knt_": [
+    {"clk": "LClk(1)", "cur": {"InterpStmp": ["StmCodeCellNum(19.0)", {"__type__": "StmCodeCellInterpState_", "stmp": "StmCodeCellNum(nil)"}]}},
+    {"clk": "LClk(0)", "cur": {"InterpMod": ["ModCodeNum(13.0)", {"__type__": "ModCodeInterpState_", "stmp": "StmCodeCellNum(19.0)"}]}}
+  ],
+  "env": {
+    "fun_name": {
+      "IdentNum(5.0)": "SNum(6.0)",
+      "IdentNum(3.0)": "SNum(4.0)",
+      "IdentNum(9.0)": "SNum(10.0)",
+      "IdentNum(1.0)": "SNum(2.0)",
+      "IdentNum(7.0)": "SNum(8.0)"
+    },
+    "table_full": {
+      "Span": {
+        "SNum(14.0)": {"start": 0, "end": 9},
+        "SNum(17.0)": {"start": 0, "end": 8}
+      },
+      "Code": {
+        "SNum(13.0)": {"__type__": "ModCode_", "span": "SpanNum(14.0)", "stmp": "StmCodeCellNum(19.0)"},
+        "SNum(16.0)": {"TermCode_": "Ident", "span": "SpanNum(17.0)", "id": "IdentNum(18.0)"},
+        "SNum(15.0)": {"StmCode_": "Just", "span": "SpanNum(14.0)", "term": "TermCodeNum(16.0)"}
+      },
+      "Ident": {
+        "SNum(11.0)": "TokenTrie",
+        "SNum(5.0)": "eval",
+        "SNum(18.0)": "triangle",
+        "SNum(3.0)": "failure",
+        "SNum(9.0)": "print",
+        "SNum(1.0)": "choice",
+        "SNum(7.0)": "input"
+      },
+      "Cell": {
+        "SNum(19.0)": {"__type__": "Cell_", "dptr": "SNum(15.0)", "next": "CellNum(nil)", "prev": "CellNum(nil)"}
+      },
+      "Term": {
+        "SNum(20.0)": {"__type__": "IdentTerm_", "id": "IdentNum(18.0)", "raw_id": "triangle"}
+      }
+    },
+    "e_table_full": {
+    },
+    "frame_super": {
+    },
+    "frame_full": {
+    },
+    "frame_codex": {
+    },
+    "__sentinel__": null
+  },
+  "clkinval": {
+    "inner": {}
+  },
+  "_event": "snapshot"
+}
+{"_event": "resume-step"}
+{
+  "clkctr": {"rctr": 5},
+  "ctr": {"rctr": 20},
+  "reg": {
+    "xlb": "SNum(20.0)",
+    "rst_clk": "LClk(nil)",
+    "tctx": {
+      "TermContext_": "Unify"
+    }
+  },
+  "exc_": {"_err": null},
+  "res_": {"clk": "LClk(4)", "reg": {"Key": "SNum(20.0)"}, "_log": [["LClk(nil)", "Emp"]]},
+  "port": "Enter",
+  "knt_": [
+    {"clk": "LClk(1)", "cur": {"InterpStmp": ["StmCodeCellNum(19.0)", {"__type__": "StmCodeCellInterpState_", "stmp": "StmCodeCellNum(nil)"}]}},
+    {"clk": "LClk(0)", "cur": {"InterpMod": ["ModCodeNum(13.0)", {"__type__": "ModCodeInterpState_", "stmp": "StmCodeCellNum(19.0)"}]}}
+  ],
+  "env": {
+    "fun_name": {
+      "IdentNum(5.0)": "SNum(6.0)",
+      "IdentNum(3.0)": "SNum(4.0)",
+      "IdentNum(9.0)": "SNum(10.0)",
+      "IdentNum(1.0)": "SNum(2.0)",
+      "IdentNum(7.0)": "SNum(8.0)"
+    },
+    "table_full": {
+      "Span": {
+        "SNum(14.0)": {"start": 0, "end": 9},
+        "SNum(17.0)": {"start": 0, "end": 8}
+      },
+      "Code": {
+        "SNum(13.0)": {"__type__": "ModCode_", "span": "SpanNum(14.0)", "stmp": "StmCodeCellNum(19.0)"},
+        "SNum(16.0)": {"TermCode_": "Ident", "span": "SpanNum(17.0)", "id": "IdentNum(18.0)"},
+        "SNum(15.0)": {"StmCode_": "Just", "span": "SpanNum(14.0)", "term": "TermCodeNum(16.0)"}
+      },
+      "Ident": {
+        "SNum(11.0)": "TokenTrie",
+        "SNum(5.0)": "eval",
+        "SNum(18.0)": "triangle",
+        "SNum(3.0)": "failure",
+        "SNum(9.0)": "print",
+        "SNum(1.0)": "choice",
+        "SNum(7.0)": "input"
+      },
+      "Cell": {
+        "SNum(19.0)": {"__type__": "Cell_", "dptr": "SNum(15.0)", "next": "CellNum(nil)", "prev": "CellNum(nil)"}
+      },
+      "Term": {
+        "SNum(20.0)": {"__type__": "IdentTerm_", "id": "IdentNum(18.0)", "raw_id": "triangle"}
+      }
+    },
+    "e_table_full": {
+    },
+    "frame_super": {
+    },
+    "frame_full": {
+    },
+    "frame_codex": {
+    },
+    "__sentinel__": null
+  },
+  "clkinval": {
+    "inner": {}
+  },
+  "_event": "snapshot"
+}
+{"_event": "resume-step"}
+{
+  "clkctr": {"rctr": 6},
+  "ctr": {"rctr": 20},
+  "reg": {
+    "xlb": "SNum(20.0)",
+    "rst_clk": "LClk(nil)",
+    "tctx": {
+      "TermContext_": "Unify"
+    }
+  },
+  "exc_": {"_err": null},
+  "res_": {"clk": "LClk(4)", "reg": {"Key": "SNum(20.0)"}, "_log": [["LClk(nil)", "Emp"]]},
+  "port": "Return",
+  "knt_": [
+    {"clk": "LClk(0)", "cur": {"InterpMod": ["ModCodeNum(13.0)", {"__type__": "ModCodeInterpState_", "stmp": "StmCodeCellNum(19.0)"}]}}
+  ],
+  "env": {
+    "fun_name": {
+      "IdentNum(5.0)": "SNum(6.0)",
+      "IdentNum(3.0)": "SNum(4.0)",
+      "IdentNum(9.0)": "SNum(10.0)",
+      "IdentNum(1.0)": "SNum(2.0)",
+      "IdentNum(7.0)": "SNum(8.0)"
+    },
+    "table_full": {
+      "Span": {
+        "SNum(14.0)": {"start": 0, "end": 9},
+        "SNum(17.0)": {"start": 0, "end": 8}
+      },
+      "Code": {
+        "SNum(13.0)": {"__type__": "ModCode_", "span": "SpanNum(14.0)", "stmp": "StmCodeCellNum(19.0)"},
+        "SNum(16.0)": {"TermCode_": "Ident", "span": "SpanNum(17.0)", "id": "IdentNum(18.0)"},
+        "SNum(15.0)": {"StmCode_": "Just", "span": "SpanNum(14.0)", "term": "TermCodeNum(16.0)"}
+      },
+      "Ident": {
+        "SNum(11.0)": "TokenTrie",
+        "SNum(5.0)": "eval",
+        "SNum(18.0)": "triangle",
+        "SNum(3.0)": "failure",
+        "SNum(9.0)": "print",
+        "SNum(1.0)": "choice",
+        "SNum(7.0)": "input"
+      },
+      "Cell": {
+        "SNum(19.0)": {"__type__": "Cell_", "dptr": "SNum(15.0)", "next": "CellNum(nil)", "prev": "CellNum(nil)"}
+      },
+      "Term": {
+        "SNum(20.0)": {"__type__": "IdentTerm_", "id": "IdentNum(18.0)", "raw_id": "triangle"}
+      }
+    },
+    "e_table_full": {
+    },
+    "frame_super": {
+    },
+    "frame_full": {
+    },
+    "frame_codex": {
+    },
+    "__sentinel__": null
+  },
+  "clkinval": {
+    "inner": {}
+  },
+  "_event": "snapshot"
+}
+{"_event": "resume-step"}

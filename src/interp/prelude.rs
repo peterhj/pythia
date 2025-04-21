@@ -1,6 +1,7 @@
 use crate::algo::token::*;
 use crate::interp::*;
-use crate::panick::{_debugln, _traceln};
+//use crate::interp::services::*;
+use crate::tap::{_debugln, _traceln};
 
 use std::any::{Any};
 
@@ -188,6 +189,40 @@ impl Function for EvalFun {
 }
 
 #[derive(Debug, Default)]
+pub struct InputFun {
+}
+
+impl Function for InputFun {
+  fn as_any(&self) -> &dyn Any {
+    self
+  }
+
+  fn __apply__(&mut self, interp: &mut FastInterp, this_span: SpanNum, this_term: SNum, tup: &[ENum], ret: SNum, knt: BorrowedMemKnt, ) -> Result<Option<Yield_>, InterpCheck> {
+    let clk = interp.clkctr._get_clock();
+    let nextclk = interp.clkctr._next_clock();
+    let xlb = interp.reg.xlb;
+    _traceln!(interp, "DEBUG: InputFun::__apply__: clk={:?} nextclk={:?} xlb={:?} tup.len={}", clk, nextclk, xlb, tup.len());
+
+    if tup.len() > 1 {
+      _traceln!(interp, "DEBUG: InputFun::__apply__:   trailing tup={:?}", tup);
+      return Err(bot());
+    }
+
+    if tup.len() < 1 {
+      _traceln!(interp, "DEBUG: InputFun::__apply__:   missing tup={:?}", tup);
+      return Err(bot());
+    }
+
+    {
+      _traceln!(interp, "DEBUG: InputFun::__apply__:   tup={:?}", tup);
+      // TODO
+    }
+
+    Ok(None)
+  }
+}
+
+#[derive(Debug, Default)]
 pub struct PrintFun {
 }
 
@@ -203,11 +238,11 @@ impl Function for PrintFun {
     _traceln!(interp, "DEBUG: PrintFun::__apply__: clk={:?} nextclk={:?} xlb={:?} tup.len={}", clk, nextclk, xlb, tup.len());
 
     if tup.len() > 2 {
-      _traceln!(interp, "DEBUG: PrintFun::__apply__:   tup={:?}", tup);
+      _traceln!(interp, "DEBUG: PrintFun::__apply__:   trailing tup={:?}", tup);
       return Err(bot());
     }
 
-    if tup.len() > 1 {
+    if tup.len() == 2 {
       _traceln!(interp, "DEBUG: PrintFun::__apply__:   tup={:?}", tup);
       let vals = interp.get_vals(clk, tup[1])?;
       _traceln!(interp, "DEBUG: PrintFun::__apply__:   vals={:?}", vals);

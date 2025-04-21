@@ -6,7 +6,7 @@ use crate::algo::{
 use crate::algo::cell::{RefCell};
 use crate::algo::rc::{Arc, Rc};
 use crate::algo::str::{SafeStr, safe_ascii};
-use crate::panick::{Loc, loc, _debugln, _traceln};
+use crate::panick::{Loc, loc};
 use crate::parse::{
   Printer as DebugPrinter,
   FastParser,
@@ -18,16 +18,19 @@ use crate::parse::{
   Lit as RawLit_,
   DefPrefix as RawDefPrefix_,
 };
+use crate::tap::{TAPOutput, _debugln, _traceln};
 
 use paste::{paste};
 use serde::{Serialize};
 use serde::ser::{Serializer, SerializeStruct};
+use serde_json_fmt::{JsonFormat};
 
 use std::any::{Any, type_name};
 use std::cell::{Cell};
 use std::cmp::{Ordering, max, min};
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 use std::hash::{Hash, Hasher};
+use std::io::{Write};
 use std::mem::{replace};
 use std::panic::{Location};
 use std::path::{PathBuf};
@@ -57,6 +60,52 @@ pub const SNUM_TERM_SORT:   RawSNum = 9;
 pub const SNUM_VAL_SORT:    RawSNum = 10;
 pub const _SNUM_MAX_SORT:   RawSNum = 10;
 
+// NB: must sync repr type w/ RawSNum.
+#[derive(Clone, Copy, Hash, Debug)]
+#[repr(u32)]
+pub enum SNumSort {
+  Unsort = 0,
+  Span  = 1,
+  Code  = 2,
+  Ident = 3,
+  Cell  = 7,
+  Litstr = 8,
+  Term  = 9,
+  Val   = 10,
+}
+
+impl SNumSort {
+  pub fn _max() -> RawSNum {
+    // FIXME: must sync w/ enum variants (above).
+    10
+  }
+}
+
+impl TryFrom<RawSNum> for SNumSort {
+  type Error = RawSNum;
+
+  fn try_from(raw_sort: RawSNum) -> Result<SNumSort, RawSNum> {
+    // FIXME: must sync w/ enum variants (above).
+    Ok(match raw_sort {
+      0 => SNumSort::Unsort,
+      1 => SNumSort::Span,
+      2 => SNumSort::Code,
+      3 => SNumSort::Ident,
+      7 => SNumSort::Cell,
+      8 => SNumSort::Litstr,
+      9 => SNumSort::Term,
+      10 => SNumSort::Val,
+      _ => return Err(raw_sort)
+    })
+  }
+}
+
+impl Serialize for SNumSort {
+  fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str(&format!("{:?}", self))
+  }
+}
+
 #[derive(Clone, Copy, Hash)]
 #[repr(transparent)]
 pub struct SNum(RawSNum);
@@ -77,10 +126,15 @@ impl SNum {
 
 impl Serialize for SNum {
   fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-    let mut state = serializer.serialize_struct("SNum", 2)?;
+    /*let mut state = serializer.serialize_struct("SNum", 2)?;
     state.serialize_field("SNum_key", &self._key())?;
     state.serialize_field("SNum_tag", &self._tag())?;
-    state.end()
+    state.end()*/
+    if self.is_nil() {
+      serializer.serialize_str("SNum(nil)")
+    } else {
+      serializer.serialize_str(&format!("SNum({}.{})", self._key(), self._tag()))
+    }
   }
 }
 
@@ -142,9 +196,19 @@ impl Ord for SNum {
 }
 
 // Simulation logical (linearizable) clock time.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 #[repr(transparent)]
 pub struct LClk(RawLClk);
+
+impl Serialize for LClk {
+  fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+    if self.is_nil() {
+      serializer.serialize_str("LClk(nil)")
+    } else {
+      serializer.serialize_str(&format!("LClk({})", self.0))
+    }
+  }
+}
 
 impl LClk {
   pub fn _into_raw(self) -> RawLClk {
@@ -257,7 +321,7 @@ pub fn unimpl<T: Unimpl>() -> T {
 
 pub type SCtr = SNumCtr;
 
-#[derive(Debug)]
+#[derive(Serialize, Debug)]
 pub struct SNumCtr {
   rctr: Cell<RawSNum>,
 }
@@ -292,7 +356,7 @@ impl SNumCtr {
   }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct LClkCtr {
   rctr: Cell<RawLClk>,
 }
@@ -329,7 +393,7 @@ pub struct LClkRange {
   pub ub: LClk,
 }
 
-#[derive(Default)]
+#[derive(Default, Serialize)]
 pub struct LClkInvalidSet {
   inner: BTreeMap<LClk, LClk>,
 }
@@ -460,7 +524,8 @@ impl SNum {
 // [Interp-API]
 //
 // A tuple-cell, or _cell_, is one element in a linked-list repr of a tuple.
-#[derive(Clone, Debug)]
+#[derive(Clone, Serialize, Debug)]
+#[serde(tag = "__type__")]
 pub struct Cell_ {
   pub dptr: SNum,
   pub next: Cell<CellNum>,
@@ -474,14 +539,16 @@ impl Cell_ {
 }
 
 // [Interp-API]
-#[derive(Clone, Debug)]
+#[derive(Clone, Serialize, Debug)]
+#[serde(tag = "__type__")]
 #[repr(transparent)]
 pub struct AtomTerm_ {
   raw:  SafeStr,
 }
 
 // [Interp-API]
-#[derive(Clone, Debug)]
+#[derive(Clone, Serialize, Debug)]
+#[serde(tag = "__type__")]
 //#[repr(transparent)]
 pub struct IdentTerm_ {
   id:   IdentNum,
@@ -660,6 +727,45 @@ impl Hash for LitTerm_ {
   }
 }
 
+impl Serialize for LitTerm_ {
+  fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+    let tag = self.raw_tptr & LIT_TERM_TAG_MASK;
+    let raw_ptr = self.raw_tptr ^ tag;
+    match tag {
+      LIT_TERM_TAG_NONE => {
+        serializer.serialize_str(&format!("LitTerm_(None)"))
+      }
+      LIT_TERM_TAG_TRUE => {
+        serializer.serialize_str(&format!("LitTerm_(True)"))
+      }
+      LIT_TERM_TAG_FALSE => {
+        serializer.serialize_str(&format!("LitTerm_(False)"))
+      }
+      LIT_TERM_TAG_INT => {
+        unsafe {
+          let ptr = Arc::from_raw(raw_ptr as *const i64);
+          let ret = serializer.serialize_str(&format!("LitTerm_(Int={:?})", ptr));
+          let _ = Arc::into_raw(ptr);
+          ret
+        }
+      }
+      LIT_TERM_TAG_STR => {
+        unsafe {
+          let ptr = Arc::from_raw(raw_ptr as *const SafeStr);
+          // NB: ptr is a boxed SafeStr, so okay to directly display;
+          // also, debug print adds an unnecessary quotation level.
+          let ret = serializer.serialize_str(&format!("LitTerm_(Str={})", ptr));
+          let _ = Arc::into_raw(ptr);
+          ret
+        }
+      }
+      _ => {
+        serializer.serialize_str(&format!("LitTerm_(raw={:x}.{})", raw_ptr, tag))
+      }
+    }
+  }
+}
+
 impl Debug for LitTerm_ {
   fn fmt(&self, f: &mut Formatter) -> FmtResult {
     let tag = self.raw_tptr & LIT_TERM_TAG_MASK;
@@ -783,6 +889,7 @@ impl LitTerm_ {
 
 // [Interp-API]
 #[derive(Clone, Serialize, Debug)]
+#[serde(tag = "__type__")]
 #[repr(transparent)]
 pub struct NEqualTerm_ {
   buf:  [ENum; 2],
@@ -790,6 +897,7 @@ pub struct NEqualTerm_ {
 
 // [Interp-API]
 #[derive(Clone, Serialize, Debug)]
+#[serde(tag = "__type__")]
 #[repr(transparent)]
 pub struct TupleTerm_ {
   buf:  Box<[ENum]>,
@@ -817,7 +925,8 @@ pub enum Val_ {
 }
 
 // [Interp-API]
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Debug)]
+//#[serde(tag = "LitVal_")]
 pub enum LitVal_ {
   None,
   Bool(bool),
@@ -850,11 +959,31 @@ macro_rules! impl_snum_subtype {
       }
     }
 
+    impl Serialize for $T {
+      fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        if self.is_nil() {
+          serializer.serialize_str(concat!(stringify!($T), "(nil)"))
+        } else {
+          let x = self._into_snum();
+          serializer.serialize_str(&format!(concat!(stringify!($T), "({}.{})"), x._key(), x._tag()))
+        }
+      }
+    }
+
     impl Debug for $T {
       fn fmt(&self, f: &mut Formatter) -> FmtResult {
-        let key = self.0 >> SNUM_TAG_BITS;
-        let tag = self.0 & SNUM_TAG_MASK;
-        write!(f, concat!(stringify!($T), "({}.{})"), key, tag)
+        if self.is_nil() {
+          write!(f, concat!(stringify!($T), "(nil)"))
+        } else {
+          let x = self._into_snum();
+          write!(f, concat!(stringify!($T), "({}.{})"), x._key(), x._tag())
+        }
+      }
+    }
+
+    impl $T {
+      fn _into_snum(self) -> SNum {
+        SNum(self.0)
       }
     }
   };
@@ -942,13 +1071,15 @@ impl_snum_subtype!(FrameNum);
 impl_cell_num_subtype!(StmCodeCellNum);
 impl_cell_num_subtype!(TermCodeCellNum);
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Serialize, Debug)]
+#[serde(tag = "__type__")]
 pub struct ModCode_ {
   span: SpanNum,
   stmp: StmCodeCellNum,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Serialize, Debug)]
+#[serde(tag = "StmCode_")]
 pub enum StmCode_ {
   Just{span: SpanNum, term: TermCodeNum},
   Pass{span: SpanNum},
@@ -965,7 +1096,8 @@ pub enum StmCode_ {
   Quote{span: SpanNum},
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Serialize, Debug)]
+#[serde(tag = "TermCode_")]
 pub enum TermCode_ {
   Ident{span: SpanNum, id: IdentNum},
   QualIdent{span: SpanNum, term: TermCodeNum, id: IdentNum},
@@ -1003,12 +1135,14 @@ impl TermCode_ {
 }
 
 // [Interp-API]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Serialize, Debug)]
+#[serde(tag = "__type__")]
 #[repr(transparent)]
 pub struct DebruijnIndex{inner: i16}
 
 // [Interp-API]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Serialize, Debug)]
+#[serde(tag = "__type__")]
 #[repr(transparent)]
 pub struct DebruijnLevel{inner: i16}
 
@@ -1023,7 +1157,8 @@ impl DebruijnLevel {
 }
 
 // [Interp-API]
-#[derive(Debug)]
+#[derive(Serialize, Debug)]
+#[serde(tag = "__type__")]
 pub struct Frame_ {
   level: DebruijnLevel,
   //ids:  Vec<IdentNum>,
@@ -1067,7 +1202,8 @@ pub struct BorrowedMemKnt<'prev> {
 // associated with micro-states (e.g. `ModCodeInterpState_`).
 //
 // Quiescent control state corresponds to a nil continuation "pointer".
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Default, Serialize, Debug)]
+//#[serde(tag = "MemKnt_")]
 pub enum MemKnt_ {
   #[default]
   Uninit,
@@ -1093,18 +1229,21 @@ pub enum MemKnt_ {
 // [Interp-API]
 //
 // This controls the context of term interpretation.
-#[derive(Clone, Copy, Default, Debug)]
+#[derive(Clone, Copy, Default, Serialize, Debug)]
+#[serde(tag = "TermContext_")]
 #[repr(u8)]
 pub enum TermContext_ {
   // NB: easier to default to Just.
   #[default]
   /*Uninit,*/
   Unify,
+  // FIXME: Match vs ProcMatch for procedural conditional (`if`).
   Match,
   //ProcMatch,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Serialize, Debug)]
+#[serde(tag = "__type__")]
 pub struct ModCodeInterpState_ {
   stmp: StmCodeCellNum,
 }
@@ -1117,7 +1256,8 @@ impl ModCodeInterpState_ {
   }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Serialize, Debug)]
+#[serde(tag = "__type__")]
 pub struct StmCodeCellInterpState_ {
   stmp: StmCodeCellNum,
 }
@@ -1130,7 +1270,8 @@ impl StmCodeCellInterpState_ {
   }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Serialize, Debug)]
+#[serde(tag = "__type__")]
 pub struct StmCodeInterpState_ {
 }
 
@@ -1141,15 +1282,30 @@ impl StmCodeInterpState_ {
   }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Serialize, Debug)]
+#[serde(tag = "IfStmCodeInterpCursor_")]
 pub enum IfStmCodeInterpCursor_ {
-  Cond(TermCodeNum, StmCodeCellNum, usize, Vec<(TermCodeNum, StmCodeCellNum)>, StmCodeCellNum),
-  Body(StmCodeCellNum, usize, Vec<(TermCodeNum, StmCodeCellNum)>, StmCodeCellNum),
-  FinalBody(StmCodeCellNum),
+  Cond{
+    cond: TermCodeNum,
+    body: StmCodeCellNum,
+    case_idx: usize,
+    cases: Vec<(TermCodeNum, StmCodeCellNum)>,
+    final_body: StmCodeCellNum,
+  },
+  Body{
+    body: StmCodeCellNum,
+    case_idx: usize,
+    cases: Vec<(TermCodeNum, StmCodeCellNum)>,
+    final_body: StmCodeCellNum,
+  },
+  FinalBody{
+    final_body: StmCodeCellNum,
+  },
   Fin,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Serialize, Debug)]
+#[serde(tag = "__type__")]
 pub struct IfStmCodeInterpState_ {
   cur:  IfStmCodeInterpCursor_,
   save_tctx: Option<TermContext_>,
@@ -1158,13 +1314,20 @@ pub struct IfStmCodeInterpState_ {
 impl IfStmCodeInterpState_ {
   pub fn fresh(cases: Vec<(TermCodeNum, StmCodeCellNum)>, final_case: StmCodeCellNum) -> IfStmCodeInterpState_ {
     IfStmCodeInterpState_{
-      cur:  IfStmCodeInterpCursor_::Cond(cases[0].0, cases[0].1, 1, cases, final_case),
+      cur:  IfStmCodeInterpCursor_::Cond{
+        cond: cases[0].0,
+        body: cases[0].1,
+        case_idx: 1,
+        cases,
+        final_body: final_case,
+      },
       save_tctx: None,
     }
   }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Serialize, Debug)]
+#[serde(tag = "__type__")]
 pub struct TermCodeInterpState_ {
 }
 
@@ -1175,14 +1338,16 @@ impl TermCodeInterpState_ {
   }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Serialize, Debug)]
+#[serde(tag = "__type__")]
 pub enum QualIdentTermCodeInterpCursor_ {
-  Term(TermCodeNum, IdentNum),
-  Ident(IdentNum),
+  Term{term: TermCodeNum, ident: IdentNum},
+  Ident{ident: IdentNum},
   Fin,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Serialize, Debug)]
+#[serde(tag = "__type__")]
 pub struct QualIdentTermCodeInterpState_ {
   term:     Option<(TermCodeNum, SNum)>,
   ident:    Option<(IdentNum, SNum)>,
@@ -1190,16 +1355,17 @@ pub struct QualIdentTermCodeInterpState_ {
 }
 
 impl QualIdentTermCodeInterpState_ {
-  pub fn fresh(term: TermCodeNum, id: IdentNum) -> QualIdentTermCodeInterpState_ {
+  pub fn fresh(term: TermCodeNum, ident: IdentNum) -> QualIdentTermCodeInterpState_ {
     QualIdentTermCodeInterpState_{
       term: None,
       ident: None,
-      cur:  QualIdentTermCodeInterpCursor_::Term(term, id),
+      cur:  QualIdentTermCodeInterpCursor_::Term{term, ident},
     }
   }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Serialize, Debug)]
+#[serde(tag = "__type__")]
 pub struct BunchTermCodeInterpState_ {
   tup:  Vec<(TermCodeNum, SNum)>,
   cur:  TermCodeCellNum,
@@ -1216,14 +1382,16 @@ impl BunchTermCodeInterpState_ {
 
 macro_rules! impl_binop_term_code_interp_state {
   ($T:ident) => { paste! {
-    #[derive(Clone, Copy, Debug)]
+    #[derive(Clone, Copy, Serialize, Debug)]
+    #[serde(tag = "__variant__")]
     pub enum [<$T TermCodeInterpCursor_>] {
-      LTerm(TermCodeNum, TermCodeNum),
-      RTerm(TermCodeNum),
+      LTerm{lterm: TermCodeNum, rterm: TermCodeNum},
+      RTerm{rterm: TermCodeNum},
       Fin,
     }
 
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Serialize, Debug)]
+    #[serde(tag = "__type__")]
     pub struct [<$T TermCodeInterpState_>] {
       lterm: Option<(TermCodeNum, SNum)>,
       rterm: Option<(TermCodeNum, SNum)>,
@@ -1235,7 +1403,7 @@ macro_rules! impl_binop_term_code_interp_state {
         [<$T TermCodeInterpState_>]{
           lterm: None,
           rterm: None,
-          cur:  [<$T TermCodeInterpCursor_>]::LTerm(lterm, rterm),
+          cur:  [<$T TermCodeInterpCursor_>]::LTerm{lterm, rterm},
         }
       }
     }
@@ -1246,14 +1414,16 @@ impl_binop_term_code_interp_state!(Equal);
 impl_binop_term_code_interp_state!(NEqual);
 impl_binop_term_code_interp_state!(QEqual);
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Serialize, Debug)]
+#[serde(tag = "BindLTermCodeInterpCursor_")]
 pub enum BindLTermCodeInterpCursor_ {
-  LBind(TermCodeNum, TermCodeNum),
-  RTerm(TermCodeNum),
+  LBind{lbind: TermCodeNum, rterm: TermCodeNum},
+  RTerm{rterm: TermCodeNum},
   Fin,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Serialize, Debug)]
+#[serde(tag = "__type__")]
 pub struct BindLTermCodeInterpState_ {
   lbind:    Option<(TermCodeNum, SNum)>,
   rterm:    Option<(TermCodeNum, SNum)>,
@@ -1265,19 +1435,21 @@ impl BindLTermCodeInterpState_ {
     BindLTermCodeInterpState_{
       lbind: None,
       rterm: None,
-      cur:  BindLTermCodeInterpCursor_::LBind(lbind, rterm),
+      cur:  BindLTermCodeInterpCursor_::LBind{lbind, rterm},
     }
   }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Serialize, Debug)]
+#[serde(tag = "BindRTermCodeInterpCursor_")]
 pub enum BindRTermCodeInterpCursor_ {
-  LTerm(TermCodeNum, TermCodeNum),
-  RBind(TermCodeNum),
+  LTerm{lterm: TermCodeNum, rbind: TermCodeNum},
+  RBind{rbind: TermCodeNum},
   Fin,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Serialize, Debug)]
+#[serde(tag = "__type__")]
 pub struct BindRTermCodeInterpState_ {
   lterm:    Option<(TermCodeNum, SNum)>,
   rbind:    Option<(TermCodeNum, SNum)>,
@@ -1289,19 +1461,21 @@ impl BindRTermCodeInterpState_ {
     BindRTermCodeInterpState_{
       lterm: None,
       rbind: None,
-      cur:  BindRTermCodeInterpCursor_::LTerm(lterm, rbind),
+      cur:  BindRTermCodeInterpCursor_::LTerm{lterm, rbind},
     }
   }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Serialize, Debug)]
+#[serde(tag = "SubstTermCodeInterpCursor_")]
 pub enum SubstTermCodeInterpCursor_ {
-  LTerm(TermCodeNum, TermCodeNum),
-  RTerm(TermCodeNum),
+  LTerm{lterm: TermCodeNum, rterm: TermCodeNum},
+  RTerm{rterm: TermCodeNum},
   Fin,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Serialize, Debug)]
+#[serde(tag = "__type__")]
 pub struct SubstTermCodeInterpState_ {
   lterm:    Option<(TermCodeNum, SNum)>,
   rterm:    Option<(TermCodeNum, SNum)>,
@@ -1313,12 +1487,13 @@ impl SubstTermCodeInterpState_ {
     SubstTermCodeInterpState_{
       lterm: None,
       rterm: None,
-      cur:  SubstTermCodeInterpCursor_::LTerm(lterm, rterm),
+      cur:  SubstTermCodeInterpCursor_::LTerm{lterm, rterm},
     }
   }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Serialize, Debug)]
+#[serde(tag = "__type__")]
 pub struct ApplyTermCodeInterpState_ {
   tup:  Vec<(TermCodeNum, SNum)>,
   cur:  TermCodeCellNum,
@@ -1333,14 +1508,16 @@ impl ApplyTermCodeInterpState_ {
   }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Serialize, Debug)]
+#[serde(tag = "ApplyBindLTermCodeInterpCursor_")]
 pub enum ApplyBindLTermCodeInterpCursor_ {
-  Bind(TermCodeNum, TermCodeCellNum),
-  Tup(TermCodeCellNum),
+  Bind{bind: TermCodeNum, tup: TermCodeCellNum},
+  Tup{tup: TermCodeCellNum},
   Fin,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Serialize, Debug)]
+#[serde(tag = "__type__")]
 pub struct ApplyBindLTermCodeInterpState_ {
   bind:     Option<(TermCodeNum, SNum)>,
   tup:      Vec<(TermCodeNum, SNum)>,
@@ -1352,19 +1529,21 @@ impl ApplyBindLTermCodeInterpState_ {
     ApplyBindLTermCodeInterpState_{
       bind: None,
       tup:  Vec::new(),
-      cur:  ApplyBindLTermCodeInterpCursor_::Bind(bind_cur, tup_cur),
+      cur:  ApplyBindLTermCodeInterpCursor_::Bind{bind: bind_cur, tup: tup_cur},
     }
   }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Serialize, Debug)]
+#[serde(tag = "ApplyBindRTermCodeInterpCursor_")]
 pub enum ApplyBindRTermCodeInterpCursor_ {
-  Tup(TermCodeCellNum, TermCodeNum),
-  Bind(TermCodeNum),
+  Tup{tup: TermCodeCellNum, bind: TermCodeNum},
+  Bind{bind: TermCodeNum},
   Fin,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Serialize, Debug)]
+#[serde(tag = "__type__")]
 pub struct ApplyBindRTermCodeInterpState_ {
   tup:      Vec<(TermCodeNum, SNum)>,
   bind:     Option<(TermCodeNum, SNum)>,
@@ -1376,19 +1555,21 @@ impl ApplyBindRTermCodeInterpState_ {
     ApplyBindRTermCodeInterpState_{
       tup:  Vec::new(),
       bind: None,
-      cur:  ApplyBindRTermCodeInterpCursor_::Tup(tup_cur, bind_cur),
+      cur:  ApplyBindRTermCodeInterpCursor_::Tup{tup: tup_cur, bind: bind_cur},
     }
   }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Serialize, Debug)]
+#[serde(tag = "EffectTermCodeInterpCursor_")]
 pub enum EffectTermCodeInterpCursor_ {
-  LTerm(TermCodeNum, TermCodeCellNum),
-  RTup(TermCodeCellNum),
+  LTerm{lterm: TermCodeNum, rtup: TermCodeCellNum},
+  RTup{rtup: TermCodeCellNum},
   Fin,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Serialize, Debug)]
+#[serde(tag = "__type__")]
 pub struct EffectTermCodeInterpState_ {
   lterm:    Option<(TermCodeNum, SNum)>,
   rtup:     Vec<(TermCodeNum, SNum)>,
@@ -1400,20 +1581,22 @@ impl EffectTermCodeInterpState_ {
     EffectTermCodeInterpState_{
       lterm: None,
       rtup: Vec::new(),
-      cur:  EffectTermCodeInterpCursor_::LTerm(lterm_cur, rtup_cur),
+      cur:  EffectTermCodeInterpCursor_::LTerm{lterm: lterm_cur, rtup: rtup_cur},
     }
   }
 }
 
 // [Interp-API]
-#[derive(Clone, Debug)]
+#[derive(Clone, Serialize, Debug)]
+#[serde(tag = "__type__")]
 pub struct Error_ {
   pub loc:  Loc,
   pub msg:  SmolStr,
 }
 
 // [Interp-API]
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Default, Serialize, Debug)]
+//#[serde(tag = "__type__")]
 pub struct Except_ {
   // FIXME
   //_reg: Option<SNum>,
@@ -1443,7 +1626,8 @@ impl Except_ {
 }
 
 // [Interp-API]
-#[derive(Clone, Copy, Default, Debug)]
+#[derive(Clone, Copy, Default, Serialize, Debug)]
+//#[serde(tag = "ResReg_")]
 pub enum ResReg_ {
   #[default]
   Emp,
@@ -1452,21 +1636,35 @@ pub enum ResReg_ {
 }
 
 // [Interp-API]
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Serialize, Debug)]
+//#[serde(tag = "__type__")]
 pub struct Result_ {
+  clk:  LClk,
   reg:  ResReg_,
   // FIXME: debugging.
-  _log: Vec<ResReg_>,
+  _log: Vec<(LClk, ResReg_)>,
+}
+
+impl Default for Result_ {
+  fn default() -> Result_ {
+    Result_{
+      clk:  LClk::nil(),
+      reg:  ResReg_::default(),
+      _log: Vec::new(),
+    }
+  }
 }
 
 impl Result_ {
   pub fn reset(&mut self) -> ResReg_ {
+    let clk = replace(&mut self.clk, LClk::nil());
     let x = replace(&mut self.reg, ResReg_::Emp);
-    self._log.push(x);
+    self._log.push((clk, x));
     x
   }
 
-  pub fn put(&mut self, reg: ResReg_) -> ResReg_ {
+  pub fn put(&mut self, clk: LClk, reg: ResReg_) -> ResReg_ {
+    self.clk = clk;
     replace(&mut self.reg, reg)
   }
 
@@ -1482,6 +1680,7 @@ impl Result_ {
 // [Interp-API]
 pub trait Tabled: Any + Debug {
   fn as_any(&self) -> &dyn Any;
+  fn _snapshot(&self) -> Option<String>;
 }
 
 // [Interp-API]
@@ -1492,6 +1691,21 @@ macro_rules! impl_tabled {
   ($T:tt) => {
     impl Tabled for $T {
       fn as_any(&self) -> &dyn Any { self }
+
+      fn _snapshot(&self) -> Option<String> {
+        let json_format = JsonFormat::new()
+            .ascii(true)
+            .comma(", ").unwrap()
+            .colon(": ").unwrap()
+        ;
+        let ret = json_format.to_string(self);
+        if ret.is_err() {
+          println!("DEBUG: <{} as Tabled>::_snapshot: json format error = {:?} self = {:?}",
+              stringify!($T), ret, self
+          );
+        }
+        ret.ok()
+      }
     }
   };
 }
@@ -1793,7 +2007,7 @@ impl FastUnifier_ {
 }
 
 // [Interp-API]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Serialize, Debug)]
 pub struct FastReg_ {
   // `xlb` is saved at the beginning of a step (in resume_).
   xlb:      SNum,
@@ -1816,7 +2030,7 @@ impl Default for FastReg_ {
 }
 
 // [Interp-API]
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Default, Serialize, Debug)]
 pub struct FastCtlReg_ {
   exc_: Except_,
   res_: Result_,
@@ -2020,8 +2234,12 @@ pub struct FastEnv_ {
   //table_prev:   Vec<FxHashMap<SNum, Box<dyn Tabled>>>,
   //table_new:    Vec<FxHashMap<SNum, Box<dyn Tabled>>>,
 
+  // TODO
+  //e_table_full: Vec<FxHashMap<SNum, Box<dyn Tabled>>>,
+
   frame_super:  FxHashMap<FrameNum, FrameNum>,
   frame_full:   FxHashMap<FrameNum, Frame_>,
+  // NB: i.e. "code[-to-frame] index".
   frame_codex:  FxHashMap<StmCodeNum, FrameNum>,
 
   raw_span_index: FxHashMap<RawSpan_, SpanNum>,
@@ -2052,7 +2270,7 @@ impl FastEnv_ {
   // [Interp-API]
   pub fn _pre_init(&mut self, ctr: &SNumCtr) {
     // TODO: tableau lookup order.
-    while self.table_full.len() <= _SNUM_MAX_SORT as _ {
+    while self.table_full.len() <= SNumSort::_max() as _ {
       self.table_full.push(Default::default());
     }
   }
@@ -2066,7 +2284,7 @@ impl FastEnv_ {
 // The port is conventionally set at the end of a control state transition.
 // Control transitions themselves are switched on the pair of (1) port and
 // (2) continuation.
-#[derive(Clone, Copy, Default, Debug)]
+#[derive(Clone, Copy, Default, Serialize, Debug)]
 pub enum Port_ {
   #[default]
   Quiescent,
@@ -2075,7 +2293,7 @@ pub enum Port_ {
 }
 
 // [Interp-API]
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Serialize, Debug)]
 pub enum Yield_ {
   // FIXME: these generally need labels (?).
   Quiescent,
@@ -2278,18 +2496,33 @@ impl FlatInterp {
   }
 }
 
+pub fn json_format_to_string_pretty_indent<T: ?Sized + Serialize>(obj: &T) -> Option<String> {
+  textwrap::indent(
+      &serde_json::to_string_pretty(obj).unwrap(),
+      "  "
+  ).get(2 .. ).map(|s| s.to_string())
+}
+
+pub fn json_format_to_string_pretty_indent_4<T: ?Sized + Serialize>(obj: &T) -> Option<String> {
+  textwrap::indent(
+      &serde_json::to_string_pretty(obj).unwrap(),
+      "    "
+  ).get(4 .. ).map(|s| s.to_string())
+}
+
 #[derive(Default)]
 pub struct FastInterp {
   clkctr:   LClkCtr,
   ctr:      SNumCtr,
 
-  env:      FastEnv_,
-
   reg:      FastReg_,
   exc_:     Except_,
   res_:     Result_,
   port:     Port_,
+
   knt_:     MemKntRef,
+
+  env:      FastEnv_,
 
   log:      FastLog_,
   trace:    FastTrace_,
@@ -2301,14 +2534,37 @@ pub struct FastInterp {
   // - "oracles"
   pv_cache: SlowPVCache_,
 
-  verbose:  i8,
+  snapshot: RefCell<Option<Box<dyn Write>>>,
+  //writer:   RefCell<Box<dyn Write>>,
+  //verbose:  i8,
+  tap:      TAPOutput,
   parser_v: i8,
 }
 
 impl FastInterp {
   // [Interp-API-Pub]
+  pub fn set_snapshot_writer(&mut self, writer: Box<dyn Write>) -> Option<Box<dyn Write>> {
+    replace(&mut *self.snapshot.borrow_mut(), Some(writer))
+  }
+
+  // [Interp-API-Pub]
+  pub fn unset_snapshot_writer(&mut self) -> Option<Box<dyn Write>> {
+    replace(&mut *self.snapshot.borrow_mut(), None)
+  }
+
+  // [Interp-API-Pub]
+  pub fn set_tap_writer(&mut self, writer: Box<dyn Write>) -> Box<dyn Write> {
+    replace(&mut *self.tap.writer.borrow_mut(), writer)
+  }
+
+  // [Interp-API-Pub]
+  pub fn unset_tap_writer(&mut self) -> Box<dyn Write> {
+    replace(&mut *self.tap.writer.borrow_mut(), TAPOutput::stdout_writer())
+  }
+
+  // [Interp-API-Pub]
   pub fn set_verbose(&mut self, v: i8) {
-    self.verbose = v;
+    self.tap.verbose = v;
   }
 
   // [Interp-API-Pub]
@@ -2355,7 +2611,7 @@ impl FastInterp {
     }
     let code = ModCode_{span, stmp: stmp.into_stm_code()};
     _traceln!(self, "DEBUG: FastInterp::_load_raw_mod: x={:?} code={:?}", x, code);
-    self.env.table_full[SNUM_CODE_SORT as usize].insert(x.into(), Box::new(code));
+    self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
     Ok(x)
   }
 
@@ -2370,14 +2626,14 @@ impl FastInterp {
         let term = self._load_raw_term(raw_term)?;
         let code = StmCode_::Just{span, term};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_stm: x={:?} code={:?}", x, code);
-        self.env.table_full[SNUM_CODE_SORT as usize].insert(x.into(), Box::new(code));
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
         return Ok(x);
       }
       &RawStm_::Pass(ref raw_span) => {
         let span = self._load_raw_span(raw_span)?;
         let code = StmCode_::Pass{span};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_stm: x={:?} code={:?}", x, code);
-        self.env.table_full[SNUM_CODE_SORT as usize].insert(x.into(), Box::new(code));
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
         return Ok(x);
       }
       &RawStm_::Global(ref raw_span, ref raw_id) => {
@@ -2385,7 +2641,7 @@ impl FastInterp {
         let id = self._load_raw_ident(raw_id)?;
         let code = StmCode_::Global{span, id};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_stm: x={:?} code={:?}", x, code);
-        self.env.table_full[SNUM_CODE_SORT as usize].insert(x.into(), Box::new(code));
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
         return Ok(x);
       }
       &RawStm_::Nonlocal(ref raw_span, static_scope, ref raw_id) => {
@@ -2393,7 +2649,7 @@ impl FastInterp {
         let id = self._load_raw_ident(raw_id)?;
         let code = StmCode_::Nonlocal{span, static_scope, id};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_stm: x={:?} code={:?}", x, code);
-        self.env.table_full[SNUM_CODE_SORT as usize].insert(x.into(), Box::new(code));
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
         return Ok(x);
       }
       &RawStm_::If(ref raw_span, ref raw_cases, ref raw_final_case) => {
@@ -2434,7 +2690,7 @@ impl FastInterp {
         let final_case = final_case.try_into_nil()?;
         let code = StmCode_::If{span, cases, final_case};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_stm: x={:?} code={:?}", x, code);
-        self.env.table_full[SNUM_CODE_SORT as usize].insert(x.into(), Box::new(code));
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
         return Ok(x);
       }
       &RawStm_::Defproc(ref raw_span, prefix, .., ref raw_body) => {
@@ -2464,7 +2720,7 @@ impl FastInterp {
         let body_stmp = body.into_stm_code();
         let code = StmCode_::Defproc{span, body_stmp};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_stm: x={:?} frame={:?} code={:?}", x, frame, code);
-        self.env.table_full[SNUM_CODE_SORT as usize].insert(x.into(), Box::new(code));
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
         self.env.frame_codex.insert(x.into(), frame);
         match prefix {
           None => {}
@@ -2491,7 +2747,7 @@ impl FastInterp {
         let body_stmp = body.into_stm_code();
         let code = StmCode_::Defmatch{span, body_stmp};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_stm: x={:?} code={:?}", x, code);
-        self.env.table_full[SNUM_CODE_SORT as usize].insert(x.into(), Box::new(code));
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
         match prefix {
           None => {}
           Some(RawDefPrefix_::Rule) => {
@@ -2505,7 +2761,7 @@ impl FastInterp {
         let span = self._load_raw_span(raw_span)?;
         let code = StmCode_::Quote{span};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_stm: x={:?} code={:?}", x, code);
-        self.env.table_full[SNUM_CODE_SORT as usize].insert(x.into(), Box::new(code));
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
         return Ok(x);
       }
       _ => {}
@@ -2525,7 +2781,7 @@ impl FastInterp {
         let id = self._load_raw_ident(raw_id)?;
         let code = TermCode_::Ident{span, id};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_term: x={:?} code={:?}", x, code);
-        self.env.table_full[SNUM_CODE_SORT as usize].insert(x.into(), Box::new(code));
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
         return Ok(x);
       }
       &RawTerm_::QualIdent(ref raw_span, ref raw_term, ref raw_id) => {
@@ -2534,7 +2790,7 @@ impl FastInterp {
         let id = self._load_raw_ident(raw_id)?;
         let code = TermCode_::QualIdent{span, term, id};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_term: x={:?} code={:?}", x, code);
-        self.env.table_full[SNUM_CODE_SORT as usize].insert(x.into(), Box::new(code));
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
         return Ok(x);
       }
       &RawTerm_::AtomLit(ref raw_span, ref raw_lit) => {
@@ -2542,7 +2798,7 @@ impl FastInterp {
         let lit_str = self._load_raw_lit_str(raw_lit)?;
         let code = TermCode_::AtomLit{span, lit_str};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_term: x={:?} code={:?}", x, code);
-        self.env.table_full[SNUM_CODE_SORT as usize].insert(x.into(), Box::new(code));
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
         return Ok(x);
       }
       &RawTerm_::IntLit(ref raw_span, ref raw_lit) => {
@@ -2550,7 +2806,7 @@ impl FastInterp {
         let lit_str = self._load_raw_lit_str(raw_lit)?;
         let code = TermCode_::IntLit{span, lit_str};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_term: x={:?} code={:?}", x, code);
-        self.env.table_full[SNUM_CODE_SORT as usize].insert(x.into(), Box::new(code));
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
         return Ok(x);
       }
       &RawTerm_::BoolLit(ref raw_span, ref raw_lit) => {
@@ -2558,7 +2814,7 @@ impl FastInterp {
         let lit_str = self._load_raw_lit_str(raw_lit)?;
         let code = TermCode_::BoolLit{span, lit_str};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_term: x={:?} code={:?}", x, code);
-        self.env.table_full[SNUM_CODE_SORT as usize].insert(x.into(), Box::new(code));
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
         return Ok(x);
       }
       &RawTerm_::NoneLit(ref raw_span, ref raw_lit) => {
@@ -2566,7 +2822,7 @@ impl FastInterp {
         let lit_str = self._load_raw_lit_str(raw_lit)?;
         let code = TermCode_::NoneLit{span, lit_str};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_term: x={:?} code={:?}", x, code);
-        self.env.table_full[SNUM_CODE_SORT as usize].insert(x.into(), Box::new(code));
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
         return Ok(x);
       }
       &RawTerm_::ListLit(ref raw_span, ref raw_tup) => {
@@ -2587,7 +2843,7 @@ impl FastInterp {
         let tup = tup.into_term_code();
         let code = TermCode_::ListCon{span, tup};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_term: x={:?} code={:?}", x, code);
-        self.env.table_full[SNUM_CODE_SORT as usize].insert(x.into(), Box::new(code));
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
         return Ok(x);
       }
       &RawTerm_::Bunch(ref raw_span, ref raw_tup) => {
@@ -2606,7 +2862,7 @@ impl FastInterp {
         let tup = tup.into_term_code();
         let code = TermCode_::Bunch{span, tup};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_term: x={:?} code={:?}", x, code);
-        self.env.table_full[SNUM_CODE_SORT as usize].insert(x.into(), Box::new(code));
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
         return Ok(x);
       }
       &RawTerm_::Equal(ref raw_span, ref raw_lterm, ref raw_rterm) => {
@@ -2615,7 +2871,7 @@ impl FastInterp {
         let rterm = self._load_raw_term(raw_rterm)?;
         let code = TermCode_::Equal{span, lterm, rterm};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_term: x={:?} code={:?}", x, code);
-        self.env.table_full[SNUM_CODE_SORT as usize].insert(x.into(), Box::new(code));
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
         return Ok(x);
       }
       &RawTerm_::NEqual(ref raw_span, ref raw_lterm, ref raw_rterm) => {
@@ -2624,7 +2880,7 @@ impl FastInterp {
         let rterm = self._load_raw_term(raw_rterm)?;
         let code = TermCode_::NEqual{span, lterm, rterm};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_term: x={:?} code={:?}", x, code);
-        self.env.table_full[SNUM_CODE_SORT as usize].insert(x.into(), Box::new(code));
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
         return Ok(x);
       }
       &RawTerm_::QEqual(ref raw_span, ref raw_lterm, ref raw_rterm) => {
@@ -2633,7 +2889,7 @@ impl FastInterp {
         let rterm = self._load_raw_term(raw_rterm)?;
         let code = TermCode_::QEqual{span, lterm, rterm};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_term: x={:?} code={:?}", x, code);
-        self.env.table_full[SNUM_CODE_SORT as usize].insert(x.into(), Box::new(code));
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
         return Ok(x);
       }
       &RawTerm_::BindL(ref raw_span, ref raw_lterm, ref raw_rterm) => {
@@ -2642,7 +2898,7 @@ impl FastInterp {
         let rterm = self._load_raw_term(raw_rterm)?;
         let code = TermCode_::BindL{span, lterm, rterm};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_term: x={:?} code={:?}", x, code);
-        self.env.table_full[SNUM_CODE_SORT as usize].insert(x.into(), Box::new(code));
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
         return Ok(x);
       }
       &RawTerm_::Apply(ref raw_span, ref raw_tup) => {
@@ -2661,7 +2917,7 @@ impl FastInterp {
         let tup = tup.into_term_code();
         let code = TermCode_::Apply{span, tup};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_term: x={:?} code={:?}", x, code);
-        self.env.table_full[SNUM_CODE_SORT as usize].insert(x.into(), Box::new(code));
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
         return Ok(x);
       }
       &RawTerm_::ApplyBindL(ref raw_span, ref raw_lterm, ref raw_tup) => {
@@ -2681,7 +2937,7 @@ impl FastInterp {
         let tup = tup.into_term_code();
         let code = TermCode_::ApplyBindL{span, lterm, tup};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_term: x={:?} code={:?}", x, code);
-        self.env.table_full[SNUM_CODE_SORT as usize].insert(x.into(), Box::new(code));
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
         return Ok(x);
       }
       &RawTerm_::ApplyBindR(ref raw_span, ref raw_tup, ref raw_rterm) => {
@@ -2701,7 +2957,7 @@ impl FastInterp {
         let rterm = self._load_raw_term(raw_rterm)?;
         let code = TermCode_::ApplyBindR{span, tup, rterm};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_term: x={:?} code={:?}", x, code);
-        self.env.table_full[SNUM_CODE_SORT as usize].insert(x.into(), Box::new(code));
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
         return Ok(x);
       }
       &RawTerm_::Effect(ref raw_span, ref raw_lterm, ref raw_rtup) => {
@@ -2721,7 +2977,7 @@ impl FastInterp {
         let rtup = rtup.into_term_code();
         let code = TermCode_::Effect{span, lterm, rtup};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_term: x={:?} code={:?}", x, code);
-        self.env.table_full[SNUM_CODE_SORT as usize].insert(x.into(), Box::new(code));
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
         return Ok(x);
       }
       _ => {}
@@ -2742,7 +2998,7 @@ impl FastInterp {
     let x = self._fresh().into_ident();
     self.log._append(clk, LogEntryRef_::Undo(UndoLogEntry_::LoadRawIdent(x).into()));
     _traceln!(self, "DEBUG: FastInterp::_load_raw_ident: x={:?} raw ident={:?}", x, raw_id);
-    self.env.table_full[SNUM_IDENT_SORT as usize].insert(x.into(), Box::new(raw_id.clone()));
+    self.env.table_full[SNumSort::Ident as usize].insert(x.into(), Box::new(raw_id.clone()));
     self.env.raw_id_index.insert(raw_id.clone(), x.into());
     Ok(x)
   }
@@ -2931,7 +3187,7 @@ impl FastInterp {
   // [Interp-API]: This is part of the interpreter private API.
   #[track_caller]
   pub fn lookup_mod_code(&self, x: ModCodeNum) -> Result<ModCode_, InterpCheck> {
-    match self.env.table_full[SNUM_CODE_SORT as usize].get(&x.into()) {
+    match self.env.table_full[SNumSort::Code as usize].get(&x.into()) {
       None => {
         Err(format!("failed to lookup ModCode_: x = {x:?}").into())
       }
@@ -2951,7 +3207,7 @@ impl FastInterp {
   // [Interp-API]: This is part of the interpreter private API.
   #[track_caller]
   pub fn lookup_stm_code(&self, x: StmCodeNum) -> Result<StmCode_, InterpCheck> {
-    match self.env.table_full[SNUM_CODE_SORT as usize].get(&x.into()) {
+    match self.env.table_full[SNumSort::Code as usize].get(&x.into()) {
       None => {
         Err(format!("failed to lookup StmCode_: x = {x:?}").into())
       }
@@ -2995,7 +3251,7 @@ impl FastInterp {
   // [Interp-API]: This is part of the interpreter private API.
   #[track_caller]
   pub fn lookup_term_code(&self, x: TermCodeNum) -> Result<TermCode_, InterpCheck> {
-    match self.env.table_full[SNUM_CODE_SORT as usize].get(&x.into()) {
+    match self.env.table_full[SNumSort::Code as usize].get(&x.into()) {
       None => {
         Err(format!("failed to lookup TermCode_: x = {x:?}").into())
       }
@@ -3039,7 +3295,7 @@ impl FastInterp {
   // [Interp-API]: This is part of the interpreter private API.
   #[track_caller]
   pub fn lookup_raw_ident(&self, id: IdentNum) -> Result<&RawIdent_, InterpCheck> {
-    match self.env.table_full[SNUM_IDENT_SORT as usize].get(&id.into()) {
+    match self.env.table_full[SNumSort::Ident as usize].get(&id.into()) {
       None => {
         Err(format!("failed to lookup raw ident: id = {id:?}").into())
       }
@@ -3099,7 +3355,7 @@ impl FastInterp {
         return Err(bot());
       }
       // NB: invariant: table lookups go through the ENum _instance_.
-      match self.env.table_full[SNUM_VAL_SORT as usize].get(&key.inst) {
+      match self.env.table_full[SNumSort::Val as usize].get(&key.inst) {
         None => {
           _debugln!(self, "DEBUG: FastInterp::get_vals: not a val: query={:?} key={:?}", query, key);
         }
@@ -3119,7 +3375,7 @@ impl FastInterp {
   pub fn put_term<K: Into<SNum>, V: Tabled>(&mut self, clk: LClk, key: K, term: V) -> Result<(), InterpCheck> {
     let x = key.into();
     _traceln!(self, "DEBUG: FastInterp::put_term: clk={:?} x={:?} term={:?}", clk, x, term);
-    self.env.table_full[SNUM_TERM_SORT as usize].insert(x, Box::new(term));
+    self.env.table_full[SNumSort::Term as usize].insert(x, Box::new(term));
     self.log._append(clk, LogEntryRef_::Undo(UndoLogEntry_::PutTerm(x).into()));
     Ok(())
   }
@@ -3127,7 +3383,7 @@ impl FastInterp {
   // [Interp-API]: This is part of the interpreter private API.
   pub fn put_val<K: Into<SNum>, V: Tabled>(&mut self, clk: LClk, key: K, val: V) -> Result<(), InterpCheck> {
     let x = key.into();
-    self.env.table_full[SNUM_VAL_SORT as usize].insert(x, Box::new(val));
+    self.env.table_full[SNumSort::Val as usize].insert(x, Box::new(val));
     self.log._append(clk, LogEntryRef_::Undo(UndoLogEntry_::PutVal(x).into()));
     Ok(())
   }
@@ -3141,8 +3397,9 @@ impl FastInterp {
 
   // [Interp-API]: This is part of the interpreter private API.
   pub fn put_mat_res(&mut self, v: bool) -> Result<(), InterpCheck> {
+    let clk = self.clkctr._get_clock();
     let x = ResReg_::Mat(v);
-    match self.res_.put(x) {
+    match self.res_.put(clk, x) {
       ResReg_::Emp => {
         Ok(())
       }
@@ -3170,9 +3427,10 @@ impl FastInterp {
   // [Interp-API]: This is part of the interpreter private API.
   #[track_caller]
   pub fn put_res<K: Into<SNum>>(&mut self, key: K) -> Result<(), InterpCheck> {
+    let clk = self.clkctr._get_clock();
     let x = key.into();
     let x = ResReg_::Key(x);
-    match self.res_.put(x) {
+    match self.res_.put(clk, x) {
       ResReg_::Emp => {
         Ok(())
       }
@@ -3226,9 +3484,12 @@ impl FastInterp {
       &UndoLogEntry_::BindGlobalIdent(id, prev_x, prev_global_x) => {
         if prev_x.is_nil() {
           self.env.id_bind.remove(&id);
-          self.env.id_global_bind.remove(&id);
         } else {
           self.env.id_bind.insert(id, prev_x.into());
+        }
+        if prev_global_x.is_nil() {
+          self.env.id_global_bind.remove(&id);
+        } else {
           self.env.id_global_bind.insert(id, prev_global_x.into());
         }
       }
@@ -3241,13 +3502,13 @@ impl FastInterp {
         }
       }
       &UndoLogEntry_::PutTerm(x) => {
-        if self.env.table_full[SNUM_TERM_SORT as usize].remove(&x).is_none() {
+        if self.env.table_full[SNumSort::Term as usize].remove(&x).is_none() {
           _debugln!(self, "DEBUG: FastInterp::_undo: PutTerm x={:?} nonexist", x);
           return Err(bot());
         }
       }
       &UndoLogEntry_::PutVal(x) => {
-        if self.env.table_full[SNUM_VAL_SORT as usize].remove(&x).is_none() {
+        if self.env.table_full[SNumSort::Val as usize].remove(&x).is_none() {
           _debugln!(self, "DEBUG: FastInterp::_undo: PutVal x={:?} nonexist", x);
           return Err(bot());
         }
@@ -3257,6 +3518,7 @@ impl FastInterp {
     Ok(())
   }
 
+  // FIXME: separate flat interp is annoying to maintain...
   // [Interp-API-Pub]
   pub fn flatten_(&self) -> FlatInterp {
     let clk = self.clkctr._get_clock();
@@ -3265,7 +3527,7 @@ impl FastInterp {
       env:  FlatEnv::default(),
     };
     // FIXME: sort flattened env sections (table_full is FxHashMap).
-    for (&prim_key, entry) in self.env.table_full[SNUM_CODE_SORT as usize].iter() {
+    for (&prim_key, entry) in self.env.table_full[SNumSort::Code as usize].iter() {
       let flat_val = if let Some(ref code) = entry.as_any().downcast_ref::<ModCode_>() {
         FlatTabled_::ModCode
       } else if let Some(ref code) = entry.as_any().downcast_ref::<StmCode_>() {
@@ -3278,7 +3540,7 @@ impl FastInterp {
       interp.env.code.push(FlatCode{prim_key, flat_val});
     }
     interp.env.code.sort_by_key(|e| e.prim_key);
-    for (&prim_key, entry) in self.env.table_full[SNUM_IDENT_SORT as usize].iter() {
+    for (&prim_key, entry) in self.env.table_full[SNumSort::Ident as usize].iter() {
       let flat_val = if let Some(val) = entry.as_any().downcast_ref::<RawIdent_>() {
         //FlatTabled_::RawIdent(val.clone())
         val.clone()
@@ -3287,7 +3549,7 @@ impl FastInterp {
       };
       interp.env.ident.push(FlatIdent{prim_key, flat_val});
     }
-    for (&prim_key, entry) in self.env.table_full[SNUM_TERM_SORT as usize].iter() {
+    for (&prim_key, entry) in self.env.table_full[SNumSort::Term as usize].iter() {
       let flat_val = if let Some(_) = entry.as_any().downcast_ref::<Cell_>() {
         FlatTabled_::Cell
       } else if let Some(ref t) = entry.as_any().downcast_ref::<IdentTerm_>() {
@@ -3327,21 +3589,161 @@ impl FastInterp {
     interp
   }
 
+  // [Interp-API]
+  pub fn write_snapshot(&self) -> () {
+    if let Some(snapshot) = self.snapshot.borrow_mut().as_mut() {
+      writeln!(snapshot, "{{").unwrap();
+
+      // FIXME: timestamp makes this non-reproducible,
+      // but would still be useful to have...
+      /*writeln!(snapshot, "  \"_timestamp\": \"{}\",", _).unwrap();*/
+
+      let json_format = JsonFormat::new()
+          .ascii(true)
+          .comma(", ").unwrap()
+          .colon(": ").unwrap()
+      ;
+
+      writeln!(snapshot, "  \"clkctr\": {},",
+          json_format.to_string(&self.clkctr).unwrap()
+      ).unwrap();
+      writeln!(snapshot, "  \"ctr\": {},",
+          json_format.to_string(&self.ctr).unwrap()
+      ).unwrap();
+
+      writeln!(snapshot, "  \"reg\": {},",
+          json_format_to_string_pretty_indent(&self.reg).unwrap()
+      ).unwrap();
+      writeln!(snapshot, "  \"exc_\": {},",
+          json_format.to_string(&self.exc_).unwrap()
+      ).unwrap();
+      writeln!(snapshot, "  \"res_\": {},",
+          json_format.to_string(&self.res_).unwrap()
+      ).unwrap();
+      writeln!(snapshot, "  \"port\": {},",
+          json_format.to_string(&self.port).unwrap()
+      ).unwrap();
+
+      if let Some(knt) = self.knt_.as_ref() {
+        writeln!(snapshot, "  \"knt_\": [").unwrap();
+        write!(snapshot, "    {{\"clk\": {}, \"cur\": {}}}",
+            json_format.to_string(&knt.clk).unwrap(),
+            json_format.to_string(&knt.cur).unwrap()
+        ).unwrap();
+        let mut kprev = knt.prev.as_ref();
+        loop {
+          if kprev.is_none() {
+            break;
+          }
+          let knt = kprev.unwrap();
+          write!(snapshot, ",\n    {{\"clk\": {}, \"cur\": {}}}",
+              json_format.to_string(&knt.clk).unwrap(),
+              json_format.to_string(&knt.cur).unwrap()
+          ).unwrap();
+          kprev = knt.prev.as_ref();
+        }
+        writeln!(snapshot, "\n  ],").unwrap();
+      } else {
+        writeln!(snapshot, "  \"knt_\": [],").unwrap();
+      }
+
+      writeln!(snapshot, "  \"env\": {{").unwrap();
+      writeln!(snapshot, "    \"fun_name\": {{").unwrap();
+      for (i, (key, item)) in self.env.fun_name.iter().enumerate() {
+        if i > 0 {
+          write!(snapshot, ",\n").unwrap();
+        }
+        write!(snapshot, "      {}: {}",
+            json_format.to_string(key).unwrap(),
+            json_format.to_string(item).unwrap()
+        ).unwrap();
+      }
+      writeln!(snapshot, "\n    }},").unwrap();
+      writeln!(snapshot, "    \"table_full\": {{").unwrap();
+      let mut sort_ctr = 0;
+      for (sort_rank, sort_tab) in self.env.table_full.iter().enumerate() {
+        if sort_tab.is_empty() {
+          continue;
+        }
+        let sort = SNumSort::try_from(sort_rank as RawSNum).unwrap();
+        if sort_ctr > 0 {
+          write!(snapshot, ",\n").unwrap();
+        }
+        writeln!(snapshot, "      {}: {{",
+            json_format.to_string(&sort).unwrap()
+        ).unwrap();
+        for (i, (key, item)) in sort_tab.iter().enumerate() {
+          if i > 0 {
+            write!(snapshot, ",\n").unwrap();
+          }
+          write!(snapshot, "        {}: {}",
+              json_format.to_string(key).unwrap(),
+              item._snapshot().unwrap()
+          ).unwrap();
+        }
+        write!(snapshot, "\n      }}").unwrap();
+        sort_ctr += 1;
+      }
+      writeln!(snapshot, "\n    }},").unwrap();
+      writeln!(snapshot, "    \"e_table_full\": {{").unwrap();
+      writeln!(snapshot, "    }},").unwrap();
+      writeln!(snapshot, "    \"frame_super\": {{").unwrap();
+      for (key, item) in self.env.frame_super.iter() {
+        writeln!(snapshot, "      {}: {},",
+            json_format.to_string(key).unwrap(),
+            json_format.to_string(item).unwrap()
+        ).unwrap();
+      }
+      writeln!(snapshot, "    }},").unwrap();
+      writeln!(snapshot, "    \"frame_full\": {{").unwrap();
+      for (key, item) in self.env.frame_full.iter() {
+        writeln!(snapshot, "      {}: {},",
+            json_format.to_string(key).unwrap(),
+            json_format.to_string(item).unwrap()
+        ).unwrap();
+      }
+      writeln!(snapshot, "    }},").unwrap();
+      writeln!(snapshot, "    \"frame_codex\": {{").unwrap();
+      for (key, item) in self.env.frame_codex.iter() {
+        writeln!(snapshot, "      {}: {},",
+            json_format.to_string(key).unwrap(),
+            json_format.to_string(item).unwrap()
+        ).unwrap();
+      }
+      writeln!(snapshot, "    }},").unwrap();
+      writeln!(snapshot, "    \"__sentinel__\": null").unwrap();
+      writeln!(snapshot, "  }},").unwrap();
+
+      writeln!(snapshot, "  \"clkinval\": {},",
+          json_format_to_string_pretty_indent(&self.clkinval).unwrap()
+      ).unwrap();
+
+      // NB: let this be the last row to avoid comma logic.
+      writeln!(snapshot, "  \"_event\": \"snapshot\"").unwrap();
+      writeln!(snapshot, "}}").unwrap();
+    }
+  }
+
   // [Interp-API-Pub]
   //
   // This pre-initializes the interpreter with the builtin prelude.
   pub fn pre_init(&mut self) -> Result<(), InterpCheck> {
     _debugln!(self, "DEBUG: FastInterp::pre_init: ...");
+    if let Some(snapshot) = self.snapshot.borrow_mut().as_mut() {
+      writeln!(snapshot, "{{\"_event\": \"pre_init\"}}").unwrap();
+    }
     self.env._pre_init(&self.ctr);
     self._register_builtin_function("choice",   self::prelude::ChoiceFun::default())?;
     self._register_builtin_function("failure",  self::prelude::FailureFun::default())?;
     self._register_builtin_function("eval",     self::prelude::EvalFun::default())?;
+    self._register_builtin_function("input",    self::prelude::InputFun::default())?;
     self._register_builtin_function("print",    self::prelude::PrintFun::default())?;
     self._register_builtin_obj_cls("TokenTrie", self::prelude::TokenTrieCls::default())?;
     // TODO
     //self._register_builtin_obj_cls("List", self::prelude::ListCls::default())?;
     //self._register_builtin_obj_cls("Set",  self::prelude::SetCls::default())?;
     //self._register_builtin_obj_cls("Dict", self::prelude::DictCls::default())?;
+    self.write_snapshot();
     _debugln!(self, "DEBUG: FastInterp::pre_init: done");
     Ok(())
   }
@@ -3349,20 +3751,23 @@ impl FastInterp {
   // [Interp-API-Pub]
   //
   // This loads the given source code into the interpreter.
-  pub fn load_(&mut self, src: &str) -> Result<(), InterpCheck> {
-    _debugln!(self, "DEBUG: FastInterp::load_: ...");
-    if _debugln!(self, "DEBUG: FastInterp::load_: parse...") {
+  pub fn cold_start(&mut self, src: &str) -> Result<(), InterpCheck> {
+    _debugln!(self, "DEBUG: FastInterp::cold_start: ...");
+    if let Some(snapshot) = self.snapshot.borrow_mut().as_mut() {
+      writeln!(snapshot, "{{\"_event\": \"cold-start\"}}").unwrap();
+    }
+    if _debugln!(self, "DEBUG: FastInterp::cold_start: parse...") {
     }
     let mut parser = FastParser::new(src);
     if self.parser_v > 0 {
       parser.set_verbose(self.parser_v);
     }
     let y = parser.mod_().map_err(|e| format!("parse error: {:?}", e))?;
-    if _debugln!(self, "DEBUG: FastInterp::load_: pretty print...") {
+    if _debugln!(self, "DEBUG: FastInterp::cold_start: pretty print...") {
       let printer = DebugPrinter::new(src);
       printer.pretty_print(&y);
     }
-    _debugln!(self, "DEBUG: FastInterp::load_: load...");
+    _debugln!(self, "DEBUG: FastInterp::cold_start: load...");
     let x = self._load_raw_mod(&y)?;
     drop(parser);
     let clk = self.clkctr._get_clock();
@@ -3372,7 +3777,8 @@ impl FastInterp {
       prev: nil(),
     }.into_ref();
     self.port = Port_::Enter;
-    _debugln!(self, "DEBUG: FastInterp::load_: done");
+    self.write_snapshot();
+    _debugln!(self, "DEBUG: FastInterp::cold_start: done");
     Ok(())
   }
 
@@ -3433,7 +3839,7 @@ impl FastInterp {
             _ => {}
           }
           _debugln!(self, "DEBUG: FastInterp::interp_: env:  id   tab={:?}",
-              &self.env.table_full[SNUM_IDENT_SORT as usize]);
+              &self.env.table_full[SNumSort::Ident as usize]);
           _debugln!(self, "DEBUG: FastInterp::interp_:       id   idx={:?}",
               &self.env.raw_id_index);
           _debugln!(self, "DEBUG: FastInterp::interp_:       fun  nom={:?}",
@@ -3445,9 +3851,9 @@ impl FastInterp {
           _debugln!(self, "DEBUG: FastInterp::interp_:       ocls tab={:?}",
               &self.env.obj_cls_full);
           _debugln!(self, "DEBUG: FastInterp::interp_:       term tab={:?}",
-              &self.env.table_full[SNUM_TERM_SORT as usize]);
+              &self.env.table_full[SNumSort::Term as usize]);
           _debugln!(self, "DEBUG: FastInterp::interp_:       val  tab={:?}",
-              &self.env.table_full[SNUM_VAL_SORT as usize]);
+              &self.env.table_full[SNumSort::Val as usize]);
           for &x in self.env.unifier.root.iter() {
             _debugln!(self, "DEBUG: FastInterp::interp_:       unifier[{:?}]={:?}", x, self.env.unifier._findall(&self.clkinval, clk, x)?);
           }
@@ -3526,7 +3932,7 @@ impl FastInterp {
           }
           _debugln!(self, "DEBUG: FastInterp::interp_: yield:   halt");
           _debugln!(self, "DEBUG: FastInterp::interp_: env:  id   tab={:?}",
-              &self.env.table_full[SNUM_IDENT_SORT as usize]);
+              &self.env.table_full[SNumSort::Ident as usize]);
           _debugln!(self, "DEBUG: FastInterp::interp_:       id   idx={:?}",
               &self.env.raw_id_index);
           _debugln!(self, "DEBUG: FastInterp::interp_:       fun  nom={:?}",
@@ -3538,9 +3944,9 @@ impl FastInterp {
           _debugln!(self, "DEBUG: FastInterp::interp_:       ocls tab={:?}",
               &self.env.obj_cls_full);
           _debugln!(self, "DEBUG: FastInterp::interp_:       term tab={:?}",
-              &self.env.table_full[SNUM_TERM_SORT as usize]);
+              &self.env.table_full[SNumSort::Term as usize]);
           _debugln!(self, "DEBUG: FastInterp::interp_:       val  tab={:?}",
-              &self.env.table_full[SNUM_VAL_SORT as usize]);
+              &self.env.table_full[SNumSort::Val as usize]);
           for &x in self.env.unifier.root.iter() {
             _debugln!(self, "DEBUG: FastInterp::interp_:       unifier[{:?}]={:?}", x, self.env.unifier._findall(&self.clkinval, clk, x)?);
           }
@@ -3569,6 +3975,9 @@ impl FastInterp {
   pub fn resume_(&mut self) -> Result<Yield_, InterpCheck> {
     _traceln!(self, "DEBUG: FastInterp::resume_: ...");
     loop {
+      if let Some(snapshot) = self.snapshot.borrow_mut().as_mut() {
+        writeln!(snapshot, "{{\"_event\": \"resume-step\"}}").unwrap();
+      }
       if self.exc_.is_some() {
         /*self.port = Port_::Except;*/
         return Ok(Yield_::Raise);
@@ -3597,7 +4006,7 @@ impl FastInterp {
           kprev = knt.prev.as_ref();
         }
       }
-      _traceln!(self, "DEBUG: FastInterp::resume_: env:  id   tab={:?}", &self.env.table_full[SNUM_IDENT_SORT as usize]);
+      _traceln!(self, "DEBUG: FastInterp::resume_: env:  id   tab={:?}", &self.env.table_full[SNumSort::Ident as usize]);
       _traceln!(self, "DEBUG: FastInterp::resume_:       id   idx={:?}", &self.env.raw_id_index);
       _traceln!(self, "DEBUG: FastInterp::resume_:       fun  nom={:?}",
           &self.env.fun_name);
@@ -3607,8 +4016,8 @@ impl FastInterp {
           &self.env.obj_cls_name);
       _traceln!(self, "DEBUG: FastInterp::resume_:       ocls tab={:?}",
           &self.env.obj_cls_full);
-      _traceln!(self, "DEBUG: FastInterp::resume_:       term tab={:?}", &self.env.table_full[SNUM_TERM_SORT as usize]);
-      _traceln!(self, "DEBUG: FastInterp::resume_:       val  tab={:?}", &self.env.table_full[SNUM_VAL_SORT as usize]);
+      _traceln!(self, "DEBUG: FastInterp::resume_:       term tab={:?}", &self.env.table_full[SNumSort::Term as usize]);
+      _traceln!(self, "DEBUG: FastInterp::resume_:       val  tab={:?}", &self.env.table_full[SNumSort::Val as usize]);
       for &x in self.env.unifier.root.iter() {
         _traceln!(self, "DEBUG: FastInterp::resume_:       unifier[{:?}]={:?}", x, self.env.unifier._findall(&self.clkinval, clk, x)?);
       }
@@ -3722,7 +4131,7 @@ impl FastInterp {
         }
         (Port_::Enter, &mut MemKnt_::InterpIfStm(_cur_stm_code, ref mut state)) => {
           match state.cur {
-            IfStmCodeInterpCursor_::Cond(cond_term, ..) => {
+            IfStmCodeInterpCursor_::Cond{cond, ..} => {
               let save_tctx = self.reg.tctx;
               self.reg.tctx = TermContext_::Match;
               _traceln!(self, "DEBUG: FastInterp::resume_:   Enter  InterpIfStm: Cond: save tctx={:?} push tctx={:?}", save_tctx, self.reg.tctx);
@@ -3732,26 +4141,26 @@ impl FastInterp {
               self.knt_ = MemKnt{
                 clk,
                 prev: knt.into(),
-                cur:  MemKnt_::InterpTerm(cond_term, TermCodeInterpState_::fresh()),
+                cur:  MemKnt_::InterpTerm(cond, TermCodeInterpState_::fresh()),
               }.into_ref();
               /*self.port = Port_::Enter;*/
             }
-            IfStmCodeInterpCursor_::Body(body_stmp, ..) => {
+            IfStmCodeInterpCursor_::Body{body, ..} => {
               self.knt_ = MemKnt{
                 clk,
                 prev: knt.into(),
-                cur:  MemKnt_::InterpStmp(body_stmp, StmCodeCellInterpState_::fresh(body_stmp)),
+                cur:  MemKnt_::InterpStmp(body, StmCodeCellInterpState_::fresh(body)),
               }.into_ref();
               /*self.port = Port_::Enter;*/
             }
-            IfStmCodeInterpCursor_::FinalBody(final_body_stmp) => {
+            IfStmCodeInterpCursor_::FinalBody{final_body} => {
               /*if state.save_tctx.is_some() {
                 return Err(bot());
               }*/
               self.knt_ = MemKnt{
                 clk,
                 prev: knt.into(),
-                cur:  MemKnt_::InterpStmp(final_body_stmp, StmCodeCellInterpState_::fresh(final_body_stmp)),
+                cur:  MemKnt_::InterpStmp(final_body, StmCodeCellInterpState_::fresh(final_body)),
               }.into_ref();
               /*self.port = Port_::Enter;*/
             }
@@ -3763,7 +4172,7 @@ impl FastInterp {
         }
         (Port_::Return, &mut MemKnt_::InterpIfStm(_cur_stm_code, ref mut state)) => {
           match &mut state.cur {
-            &mut IfStmCodeInterpCursor_::Cond(cond, body, case_idx, ref cases, final_body) => {
+            &mut IfStmCodeInterpCursor_::Cond{cond, body, case_idx, ref cases, final_body} => {
               let save_tctx = state.save_tctx.pop();
               _traceln!(self, "DEBUG: FastInterp::resume_:   Return InterpIfStm: Cond: save tctx={:?} pop tctx={:?}", save_tctx, self.reg.tctx);
               if save_tctx.is_none() {
@@ -3774,7 +4183,7 @@ impl FastInterp {
               if mat {
                 _traceln!(self, "DEBUG: FastInterp::resume_:   Return InterpIfStm: Cond:   match");
                 let cases = cases.clone();
-                state.cur = IfStmCodeInterpCursor_::Body(body, case_idx, cases, final_body);
+                state.cur = IfStmCodeInterpCursor_::Body{body, case_idx, cases, final_body};
                 self.knt_ = knt.into();
                 self.port = Port_::Enter;
               } else {
@@ -3785,25 +4194,25 @@ impl FastInterp {
                   if final_body.is_nil() {
                     state.cur = IfStmCodeInterpCursor_::Fin;
                   } else {
-                    state.cur = IfStmCodeInterpCursor_::FinalBody(final_body);
+                    state.cur = IfStmCodeInterpCursor_::FinalBody{final_body};
                   }
                 } else {
                   let cond = cases[case_idx].0;
                   let body = cases[case_idx].1;
                   let case_idx = case_idx + 1;
                   let cases = cases.clone();
-                  state.cur = IfStmCodeInterpCursor_::Cond(cond, body, case_idx, cases, final_body);
+                  state.cur = IfStmCodeInterpCursor_::Cond{cond, body, case_idx, cases, final_body};
                 }
                 self.knt_ = knt.into();
                 self.port = Port_::Enter;
               }
             }
-            &mut IfStmCodeInterpCursor_::Body(body, case_idx, ref cases, final_body) => {
+            &mut IfStmCodeInterpCursor_::Body{body, case_idx, ref cases, final_body} => {
               state.cur = IfStmCodeInterpCursor_::Fin;
               self.knt_ = knt.into();
               self.port = Port_::Enter;
             }
-            &mut IfStmCodeInterpCursor_::FinalBody(final_body) => {
+            &mut IfStmCodeInterpCursor_::FinalBody{final_body} => {
               state.cur = IfStmCodeInterpCursor_::Fin;
               self.knt_ = knt.into();
               self.port = Port_::Enter;
@@ -3970,7 +4379,7 @@ impl FastInterp {
               // FIXME: build actual list obj val from this constructor.
               let obj = LitVal_::List{buf: Vec::new()};
               _traceln!(self, "DEBUG: FastInterp::resume_:   Enter  ListCon: fresh obj val = {:?}", x);
-              self.env.table_full[SNUM_VAL_SORT as usize].insert(x.into(), Box::new(obj));
+              self.env.table_full[SNumSort::Val as usize].insert(x.into(), Box::new(obj));
               self.put_res(x)?;
               self.knt_ = knt.prev;
               self.port = Port_::Return;
@@ -4074,7 +4483,7 @@ impl FastInterp {
         }
         (Port_::Enter, &mut MemKnt_::InterpQualIdentTerm(_cur_term, ref mut state)) => {
           match state.cur {
-            QualIdentTermCodeInterpCursor_::Term(term, _ident) => {
+            QualIdentTermCodeInterpCursor_::Term{term, ..} => {
               self.knt_ = MemKnt{
                 clk,
                 prev: knt.into(),
@@ -4082,7 +4491,7 @@ impl FastInterp {
               }.into_ref();
               /*self.port = Port_::Enter;*/
             }
-            QualIdentTermCodeInterpCursor_::Ident(ident) => {
+            QualIdentTermCodeInterpCursor_::Ident{ident} => {
               return Err(unimpl());
             }
             QualIdentTermCodeInterpCursor_::Fin => {
@@ -4092,13 +4501,13 @@ impl FastInterp {
         }
         (Port_::Return, &mut MemKnt_::InterpQualIdentTerm(_cur_term, ref mut state)) => {
           match state.cur {
-            QualIdentTermCodeInterpCursor_::Term(term, ident) => {
+            QualIdentTermCodeInterpCursor_::Term{term, ident} => {
               state.term = Some((term, self.get_res()?));
-              state.cur = QualIdentTermCodeInterpCursor_::Ident(ident);
+              state.cur = QualIdentTermCodeInterpCursor_::Ident{ident};
               self.knt_ = knt.into();
               self.port = Port_::Enter;
             }
-            QualIdentTermCodeInterpCursor_::Ident(ident) => {
+            QualIdentTermCodeInterpCursor_::Ident{ident} => {
               state.ident = Some((ident, self.get_res()?));
               state.cur = QualIdentTermCodeInterpCursor_::Fin;
               self.knt_ = knt.into();
@@ -4134,7 +4543,7 @@ impl FastInterp {
         }
         (Port_::Enter, &mut MemKnt_::InterpEqualTerm(_cur_term, ref mut state)) => {
           match state.cur {
-            EqualTermCodeInterpCursor_::LTerm(lterm, _) => {
+            EqualTermCodeInterpCursor_::LTerm{lterm, ..} => {
               _traceln!(self, "DEBUG: InterpEqualTerm: Enter:  LTerm: {:?}", lterm);
               self.knt_ = MemKnt{
                 clk,
@@ -4143,7 +4552,7 @@ impl FastInterp {
               }.into_ref();
               /*self.port = Port_::Enter;*/
             }
-            EqualTermCodeInterpCursor_::RTerm(rterm) => {
+            EqualTermCodeInterpCursor_::RTerm{rterm} => {
               _traceln!(self, "DEBUG: InterpEqualTerm: Enter:  RTerm: {:?}", rterm);
               self.knt_ = MemKnt{
                 clk,
@@ -4177,13 +4586,13 @@ impl FastInterp {
         }
         (Port_::Return, &mut MemKnt_::InterpEqualTerm(_cur_term, ref mut state)) => {
           match state.cur {
-            EqualTermCodeInterpCursor_::LTerm(lterm, rterm) => {
+            EqualTermCodeInterpCursor_::LTerm{lterm, rterm} => {
               state.lterm = Some((lterm, self.get_res()?));
-              state.cur = EqualTermCodeInterpCursor_::RTerm(rterm);
+              state.cur = EqualTermCodeInterpCursor_::RTerm{rterm};
               self.knt_ = knt.into();
               self.port = Port_::Enter;
             }
-            EqualTermCodeInterpCursor_::RTerm(rterm) => {
+            EqualTermCodeInterpCursor_::RTerm{rterm} => {
               state.rterm = Some((rterm, self.get_res()?));
               state.cur = EqualTermCodeInterpCursor_::Fin;
               self.knt_ = knt.into();
@@ -4196,7 +4605,7 @@ impl FastInterp {
         }
         (Port_::Enter, &mut MemKnt_::InterpNEqualTerm(_cur_term, ref mut state)) => {
           match state.cur {
-            NEqualTermCodeInterpCursor_::LTerm(lterm, _) => {
+            NEqualTermCodeInterpCursor_::LTerm{lterm, ..} => {
               _traceln!(self, "DEBUG: InterpNEqualTerm: Enter:  LTerm: {:?}", lterm);
               self.knt_ = MemKnt{
                 clk,
@@ -4205,7 +4614,7 @@ impl FastInterp {
               }.into_ref();
               /*self.port = Port_::Enter;*/
             }
-            NEqualTermCodeInterpCursor_::RTerm(rterm) => {
+            NEqualTermCodeInterpCursor_::RTerm{rterm} => {
               _traceln!(self, "DEBUG: InterpNEqualTerm: Enter:  RTerm: {:?}", rterm);
               self.knt_ = MemKnt{
                 clk,
@@ -4231,13 +4640,13 @@ impl FastInterp {
         }
         (Port_::Return, &mut MemKnt_::InterpNEqualTerm(_cur_term, ref mut state)) => {
           match state.cur {
-            NEqualTermCodeInterpCursor_::LTerm(lterm, rterm) => {
+            NEqualTermCodeInterpCursor_::LTerm{lterm, rterm} => {
               state.lterm = Some((lterm, self.get_res()?));
-              state.cur = NEqualTermCodeInterpCursor_::RTerm(rterm);
+              state.cur = NEqualTermCodeInterpCursor_::RTerm{rterm};
               self.knt_ = knt.into();
               self.port = Port_::Enter;
             }
-            NEqualTermCodeInterpCursor_::RTerm(rterm) => {
+            NEqualTermCodeInterpCursor_::RTerm{rterm} => {
               state.rterm = Some((rterm, self.get_res()?));
               state.cur = NEqualTermCodeInterpCursor_::Fin;
               self.knt_ = knt.into();
@@ -4250,7 +4659,7 @@ impl FastInterp {
         }
         (Port_::Enter, &mut MemKnt_::InterpQEqualTerm(_cur_term, ref mut state)) => {
           match state.cur {
-            QEqualTermCodeInterpCursor_::LTerm(lterm, _) => {
+            QEqualTermCodeInterpCursor_::LTerm{lterm, ..} => {
               _traceln!(self, "DEBUG: InterpQEqualTerm: Enter:  LTerm: {:?}", lterm);
               self.knt_ = MemKnt{
                 clk,
@@ -4259,7 +4668,7 @@ impl FastInterp {
               }.into_ref();
               /*self.port = Port_::Enter;*/
             }
-            QEqualTermCodeInterpCursor_::RTerm(rterm) => {
+            QEqualTermCodeInterpCursor_::RTerm{rterm} => {
               _traceln!(self, "DEBUG: InterpQEqualTerm: Enter:  RTerm: {:?}", rterm);
               self.knt_ = MemKnt{
                 clk,
@@ -4275,8 +4684,8 @@ impl FastInterp {
               let x = self._fresh().into_term();
               // FIXME: this is the old value semantics.
               let obj = LitVal_::Bool(lterm_ == rterm_);
-              //self.env.table_full[SNUM_TERM_SORT as usize].insert(x.into(), Box::new(_));
-              self.env.table_full[SNUM_VAL_SORT as usize].insert(x.into(), Box::new(obj));
+              //self.env.table_full[SNumSort::Term as usize].insert(x.into(), Box::new(_));
+              self.env.table_full[SNumSort::Val as usize].insert(x.into(), Box::new(obj));
               self.put_res(x)?;
               self.knt_ = knt.prev;
               self.port = Port_::Return;
@@ -4285,13 +4694,13 @@ impl FastInterp {
         }
         (Port_::Return, &mut MemKnt_::InterpQEqualTerm(_cur_term, ref mut state)) => {
           match state.cur {
-            QEqualTermCodeInterpCursor_::LTerm(lterm, rterm) => {
+            QEqualTermCodeInterpCursor_::LTerm{lterm, rterm} => {
               state.lterm = Some((lterm, self.get_res()?));
-              state.cur = QEqualTermCodeInterpCursor_::RTerm(rterm);
+              state.cur = QEqualTermCodeInterpCursor_::RTerm{rterm};
               self.knt_ = knt.into();
               self.port = Port_::Enter;
             }
-            QEqualTermCodeInterpCursor_::RTerm(rterm) => {
+            QEqualTermCodeInterpCursor_::RTerm{rterm} => {
               state.rterm = Some((rterm, self.get_res()?));
               state.cur = QEqualTermCodeInterpCursor_::Fin;
               self.knt_ = knt.into();
@@ -4317,7 +4726,7 @@ impl FastInterp {
             //self.log.push(LogEntryRef_::Undo(UndoLogEntry_::ApplyTerm(x).into()));
             let fun_head = state.tup[0].1.into_fun();
             _traceln!(self, "DEBUG: InterpApplyTerm: Enter:  fun head={:?}", fun_head);
-            if let Some(fun_head_term) = self.env.table_full[SNUM_TERM_SORT as usize].get(&fun_head.into()) {
+            if let Some(fun_head_term) = self.env.table_full[SNumSort::Term as usize].get(&fun_head.into()) {
               _traceln!(self, "DEBUG: InterpApplyTerm: Enter:  fun head is term = {:?}", fun_head_term);
               if let Some(id_term) = fun_head_term.as_any().downcast_ref::<IdentTerm_>() {
                 //if let Some(&id) = self.env.raw_id_index.get(&id_term.raw_id) {
@@ -4373,21 +4782,21 @@ impl FastInterp {
         }
         (Port_::Enter, &mut MemKnt_::InterpApplyBindLTerm(_cur_term, ref mut state)) => {
           match state.cur {
-            ApplyBindLTermCodeInterpCursor_::Bind(bind_cur, _tup_cur) => {
+            ApplyBindLTermCodeInterpCursor_::Bind{bind, tup} => {
               self.knt_ = MemKnt{
                 clk,
                 prev: knt.into(),
-                cur:  MemKnt_::InterpTerm(bind_cur, TermCodeInterpState_::fresh()),
+                cur:  MemKnt_::InterpTerm(bind, TermCodeInterpState_::fresh()),
               }.into_ref();
               /*self.port = Port_::Enter;*/
             }
-            ApplyBindLTermCodeInterpCursor_::Tup(tup_cur) => {
-              if tup_cur.is_nil() {
+            ApplyBindLTermCodeInterpCursor_::Tup{tup} => {
+              if tup.is_nil() {
                 state.cur = ApplyBindLTermCodeInterpCursor_::Fin;
                 self.knt_ = knt.into();
                 /*self.port = Port_::Enter;*/
               } else {
-                let tup_cel_ = self.lookup_term_code_cell(tup_cur)?;
+                let tup_cel_ = self.lookup_term_code_cell(tup)?;
                 _traceln!(self, "DEBUG: tup_cel_ = {:?}", tup_cel_);
                 self.knt_ = MemKnt{
                   clk,
@@ -4418,19 +4827,19 @@ impl FastInterp {
         }
         (Port_::Return, &mut MemKnt_::InterpApplyBindLTerm(_cur_term, ref mut state)) => {
           match state.cur {
-            ApplyBindLTermCodeInterpCursor_::Bind(bind_cur, tup_cur) => {
-              state.bind = Some((bind_cur, self.get_res()?));
-              state.cur = ApplyBindLTermCodeInterpCursor_::Tup(tup_cur);
+            ApplyBindLTermCodeInterpCursor_::Bind{bind, tup} => {
+              state.bind = Some((bind, self.get_res()?));
+              state.cur = ApplyBindLTermCodeInterpCursor_::Tup{tup};
               self.knt_ = knt.into();
               self.port = Port_::Enter;
             }
-            ApplyBindLTermCodeInterpCursor_::Tup(tup_cur) => {
-              if tup_cur.is_nil() {
+            ApplyBindLTermCodeInterpCursor_::Tup{tup} => {
+              if tup.is_nil() {
                 state.cur = ApplyBindLTermCodeInterpCursor_::Fin;
               } else {
-                let tup_cel_ = self.lookup_term_code_cell(tup_cur)?;
+                let tup_cel_ = self.lookup_term_code_cell(tup)?;
                 state.tup.push((tup_cel_.dptr.into_term_code(), self.get_res()?));
-                state.cur = ApplyBindLTermCodeInterpCursor_::Tup(tup_cel_.next.get().into_term_code());
+                state.cur = ApplyBindLTermCodeInterpCursor_::Tup{tup: tup_cel_.next.get().into_term_code()};
               }
               self.knt_ = knt.into();
               self.port = Port_::Enter;
@@ -4442,13 +4851,13 @@ impl FastInterp {
         }
         (Port_::Enter, &mut MemKnt_::InterpApplyBindRTerm(_cur_term, ref mut state)) => {
           match state.cur {
-            ApplyBindRTermCodeInterpCursor_::Tup(tup_cur, bind_cur) => {
-              if tup_cur.is_nil() {
-                state.cur = ApplyBindRTermCodeInterpCursor_::Bind(bind_cur);
+            ApplyBindRTermCodeInterpCursor_::Tup{tup, bind} => {
+              if tup.is_nil() {
+                state.cur = ApplyBindRTermCodeInterpCursor_::Bind{bind};
                 self.knt_ = knt.into();
                 /*self.port = Port_::Enter;*/
               } else {
-                let tup_cel_ = self.lookup_term_code_cell(tup_cur)?;
+                let tup_cel_ = self.lookup_term_code_cell(tup)?;
                 _traceln!(self, "DEBUG: tup_cel_ = {:?}", tup_cel_);
                 self.knt_ = MemKnt{
                   clk,
@@ -4458,11 +4867,11 @@ impl FastInterp {
                 /*self.port = Port_::Enter;*/
               }
             }
-            ApplyBindRTermCodeInterpCursor_::Bind(bind_cur) => {
+            ApplyBindRTermCodeInterpCursor_::Bind{bind} => {
               self.knt_ = MemKnt{
                 clk,
                 prev: knt.into(),
-                cur:  MemKnt_::InterpTerm(bind_cur, TermCodeInterpState_::fresh()),
+                cur:  MemKnt_::InterpTerm(bind, TermCodeInterpState_::fresh()),
               }.into_ref();
               /*self.port = Port_::Enter;*/
             }
@@ -4487,19 +4896,19 @@ impl FastInterp {
         }
         (Port_::Return, &mut MemKnt_::InterpApplyBindRTerm(_cur_term, ref mut state)) => {
           match state.cur {
-            ApplyBindRTermCodeInterpCursor_::Tup(tup_cur, bind_cur) => {
-              if tup_cur.is_nil() {
-                state.cur = ApplyBindRTermCodeInterpCursor_::Bind(bind_cur);
+            ApplyBindRTermCodeInterpCursor_::Tup{tup, bind} => {
+              if tup.is_nil() {
+                state.cur = ApplyBindRTermCodeInterpCursor_::Bind{bind};
               } else {
-                let cur_cel_ = self.lookup_term_code_cell(tup_cur)?;
-                state.tup.push((cur_cel_.dptr.into_term_code(), self.get_res()?));
-                state.cur = ApplyBindRTermCodeInterpCursor_::Tup(cur_cel_.next.get().into_term_code(), bind_cur);
+                let tup_cel_ = self.lookup_term_code_cell(tup)?;
+                state.tup.push((tup_cel_.dptr.into_term_code(), self.get_res()?));
+                state.cur = ApplyBindRTermCodeInterpCursor_::Tup{tup: tup_cel_.next.get().into_term_code(), bind};
               }
               self.knt_ = knt.into();
               self.port = Port_::Enter;
             }
-            ApplyBindRTermCodeInterpCursor_::Bind(bind_cur) => {
-              state.bind = Some((bind_cur, self.get_res()?));
+            ApplyBindRTermCodeInterpCursor_::Bind{bind} => {
+              state.bind = Some((bind, self.get_res()?));
               state.cur = ApplyBindRTermCodeInterpCursor_::Fin;
               self.knt_ = knt.into();
               self.port = Port_::Enter;
@@ -4511,19 +4920,19 @@ impl FastInterp {
         }
         (Port_::Enter, &mut MemKnt_::InterpBindLTerm(_cur_term, ref mut state)) => {
           match state.cur {
-            BindLTermCodeInterpCursor_::LBind(bind_cur, _tup_cur) => {
+            BindLTermCodeInterpCursor_::LBind{lbind, rterm} => {
               self.knt_ = MemKnt{
                 clk,
                 prev: knt.into(),
-                cur:  MemKnt_::InterpTerm(bind_cur, TermCodeInterpState_::fresh()),
+                cur:  MemKnt_::InterpTerm(lbind, TermCodeInterpState_::fresh()),
               }.into_ref();
               /*self.port = Port_::Enter;*/
             }
-            BindLTermCodeInterpCursor_::RTerm(tup_cur) => {
+            BindLTermCodeInterpCursor_::RTerm{rterm} => {
               self.knt_ = MemKnt{
                 clk,
                 prev: knt.into(),
-                cur:  MemKnt_::InterpTerm(tup_cur, TermCodeInterpState_::fresh()),
+                cur:  MemKnt_::InterpTerm(rterm, TermCodeInterpState_::fresh()),
               }.into_ref();
               /*self.port = Port_::Enter;*/
             }
@@ -4544,14 +4953,14 @@ impl FastInterp {
         }
         (Port_::Return, &mut MemKnt_::InterpBindLTerm(_cur_term, ref mut state)) => {
           match state.cur {
-            BindLTermCodeInterpCursor_::LBind(bind_cur, _tup_cur) => {
-              state.lbind = Some((bind_cur, self.get_res()?));
-              state.cur = BindLTermCodeInterpCursor_::RTerm(_tup_cur);
+            BindLTermCodeInterpCursor_::LBind{lbind, rterm} => {
+              state.lbind = Some((lbind, self.get_res()?));
+              state.cur = BindLTermCodeInterpCursor_::RTerm{rterm};
               self.knt_ = knt.into();
               self.port = Port_::Enter;
             }
-            BindLTermCodeInterpCursor_::RTerm(tup_cur) => {
-              state.rterm = Some((tup_cur, self.get_res()?));
+            BindLTermCodeInterpCursor_::RTerm{rterm} => {
+              state.rterm = Some((rterm, self.get_res()?));
               state.cur = BindLTermCodeInterpCursor_::Fin;
               self.knt_ = knt.into();
               self.port = Port_::Enter;
@@ -4563,19 +4972,19 @@ impl FastInterp {
         }
         (Port_::Enter, &mut MemKnt_::InterpBindRTerm(_cur_term, ref mut state)) => {
           match state.cur {
-            BindRTermCodeInterpCursor_::LTerm(tup_cur, _bind_cur) => {
+            BindRTermCodeInterpCursor_::LTerm{lterm, rbind} => {
               self.knt_ = MemKnt{
                 clk,
                 prev: knt.into(),
-                cur:  MemKnt_::InterpTerm(tup_cur, TermCodeInterpState_::fresh()),
+                cur:  MemKnt_::InterpTerm(lterm, TermCodeInterpState_::fresh()),
               }.into_ref();
               /*self.port = Port_::Enter;*/
             }
-            BindRTermCodeInterpCursor_::RBind(bind_cur) => {
+            BindRTermCodeInterpCursor_::RBind{rbind} => {
               self.knt_ = MemKnt{
                 clk,
                 prev: knt.into(),
-                cur:  MemKnt_::InterpTerm(bind_cur, TermCodeInterpState_::fresh()),
+                cur:  MemKnt_::InterpTerm(rbind, TermCodeInterpState_::fresh()),
               }.into_ref();
               /*self.port = Port_::Enter;*/
             }
@@ -4596,14 +5005,14 @@ impl FastInterp {
         }
         (Port_::Return, &mut MemKnt_::InterpBindRTerm(_cur_term, ref mut state)) => {
           match state.cur {
-            BindRTermCodeInterpCursor_::LTerm(tup_cur, _bind_cur) => {
-              state.lterm = Some((tup_cur, self.get_res()?));
-              state.cur = BindRTermCodeInterpCursor_::RBind(_bind_cur);
+            BindRTermCodeInterpCursor_::LTerm{lterm, rbind} => {
+              state.lterm = Some((lterm, self.get_res()?));
+              state.cur = BindRTermCodeInterpCursor_::RBind{rbind};
               self.knt_ = knt.into();
               self.port = Port_::Enter;
             }
-            BindRTermCodeInterpCursor_::RBind(bind_cur) => {
-              state.rbind = Some((bind_cur, self.get_res()?));
+            BindRTermCodeInterpCursor_::RBind{rbind} => {
+              state.rbind = Some((rbind, self.get_res()?));
               state.cur = BindRTermCodeInterpCursor_::Fin;
               self.knt_ = knt.into();
               self.port = Port_::Enter;
@@ -4615,21 +5024,21 @@ impl FastInterp {
         }
         (Port_::Enter, &mut MemKnt_::InterpEffectTerm(_cur_term, ref mut state)) => {
           match state.cur {
-            EffectTermCodeInterpCursor_::LTerm(lterm_cur, _) => {
+            EffectTermCodeInterpCursor_::LTerm{lterm, ..} => {
               self.knt_ = MemKnt{
                 clk,
                 prev: knt.into(),
-                cur:  MemKnt_::InterpTerm(lterm_cur, TermCodeInterpState_::fresh()),
+                cur:  MemKnt_::InterpTerm(lterm, TermCodeInterpState_::fresh()),
               }.into_ref();
               /*self.port = Port_::Enter;*/
             }
-            EffectTermCodeInterpCursor_::RTup(tup_cur) => {
-              if tup_cur.is_nil() {
+            EffectTermCodeInterpCursor_::RTup{rtup} => {
+              if rtup.is_nil() {
                 state.cur = EffectTermCodeInterpCursor_::Fin;
                 self.knt_ = knt.into();
                 /*self.port = Port_::Enter;*/
               } else {
-                let tup_cel_ = self.lookup_term_code_cell(tup_cur)?;
+                let tup_cel_ = self.lookup_term_code_cell(rtup)?;
                 self.knt_ = MemKnt{
                   clk,
                   prev: knt.into(),
@@ -4646,20 +5055,20 @@ impl FastInterp {
         }
         (Port_::Return, &mut MemKnt_::InterpEffectTerm(_cur_term, ref mut state)) => {
           match state.cur {
-            EffectTermCodeInterpCursor_::LTerm(lterm_cur, tup_cur) => {
-              state.lterm = Some((lterm_cur, self.get_res()?));
-              state.cur = EffectTermCodeInterpCursor_::RTup(tup_cur);
+            EffectTermCodeInterpCursor_::LTerm{lterm, rtup} => {
+              state.lterm = Some((lterm, self.get_res()?));
+              state.cur = EffectTermCodeInterpCursor_::RTup{rtup};
               self.knt_ = knt.into();
               self.port = Port_::Enter;
             }
-            EffectTermCodeInterpCursor_::RTup(tup_cur) => {
-              if tup_cur.is_nil() {
+            EffectTermCodeInterpCursor_::RTup{rtup} => {
+              if rtup.is_nil() {
                 //state.cur = EffectTermCodeInterpCursor_::Fin;
                 return Err(bot());
               } else {
-                let cur_cel_ = self.lookup_term_code_cell(tup_cur)?;
+                let cur_cel_ = self.lookup_term_code_cell(rtup)?;
                 state.rtup.push((cur_cel_.dptr.into_term_code(), self.get_res()?));
-                state.cur = EffectTermCodeInterpCursor_::RTup(cur_cel_.next.get().into_term_code());
+                state.cur = EffectTermCodeInterpCursor_::RTup{rtup: cur_cel_.next.get().into_term_code()};
               }
               self.knt_ = knt.into();
               self.port = Port_::Enter;
@@ -4679,6 +5088,7 @@ impl FastInterp {
       if xlb != x_post {
         _traceln!(self, "DEBUG: FastInterp::resume_:       fresh=({:?} .. {:?}]", xlb, x_post);
       }
+      self.write_snapshot();
     }
   }
 }

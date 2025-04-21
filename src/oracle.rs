@@ -1,6 +1,8 @@
 use crate::_extlib::{_EXTLIB};
+use crate::algo::{BTreeMap};
 use crate::algo::str::{SafeStr};
 use crate::clock::{Timestamp};
+use crate::journal::{JournalEntryExt, JournalEntrySort_, JournalEntryNum, JournalExt};
 
 use pyo3::prelude::*;
 use pyo3::{IntoPyObjectExt};
@@ -15,10 +17,18 @@ use std::str::{FromStr};
 //#[serde(untagged)]
 pub enum ApproxOracleModel {
   #[default]
+  #[serde(rename = "deepseek-v3-chat-20250324")]
+  DeepSeek_V3_Chat_20250324,
   #[serde(rename = "deepseek-v3-chat-20241226")]
   DeepSeek_V3_Chat_20241226,
+  #[serde(rename = "deepseek-v3-chat-20250324-hyperbolic")]
+  DeepSeek_V3_Chat_20250324_Hyperbolic,
+  #[serde(rename = "deepseek-v3-chat-20241226-together")]
+  DeepSeek_V3_Chat_20241226_Together,
   #[serde(rename = "deepseek-r1-20250120")]
   DeepSeek_R1_20250120,
+  #[serde(rename = "xai-grok-3-mini-beta-20250418")]
+  XAI_Grok_3_Mini_Beta_20250418,
 }
 
 impl<'d> Deserialize<'d> for ApproxOracleModel {
@@ -63,17 +73,50 @@ impl FromStr for ApproxOracleModel {
 
   fn from_str(s: &str) -> Result<ApproxOracleModel, ()> {
     Ok(match s {
-      "deepseek-v3-chat-20241226" => ApproxOracleModel::DeepSeek_V3_Chat_20241226,
-      "deepseek-r1-20250120" => ApproxOracleModel::DeepSeek_R1_20250120,
+      "deepseek-v3-chat-20250324" |
+      "\"deepseek-v3-chat-20250324\"" => {
+        ApproxOracleModel::DeepSeek_V3_Chat_20250324
+      }
+      "deepseek-v3-chat-20241226" |
+      "\"deepseek-v3-chat-20241226\"" => {
+        ApproxOracleModel::DeepSeek_V3_Chat_20241226
+      }
+      "deepseek-r1-20250120" |
+      "\"deepseek-r1-20250120\"" => {
+        ApproxOracleModel::DeepSeek_R1_20250120
+      }
+      "xai-grok-3-mini-beta-20250418" |
+      "\"xai-grok-3-mini-beta-20250418\"" => {
+        ApproxOracleModel::XAI_Grok_3_Mini_Beta_20250418
+      }
       _ => return Err(())
     })
   }
 }
 
-#[derive(Clone, Serialize, Deserialize, IntoPyObject, Debug)]
+#[derive(Clone, Serialize, Deserialize, Default, Debug)]
 pub struct ApproxOracleRequest {
   pub key: i64,
   pub query: SafeStr,
+  pub model: ApproxOracleModel,
+}
+
+impl ApproxOracleRequest {
+  pub fn _into_py(self) -> ApproxOracleRequestIntoPy {
+    ApproxOracleRequestIntoPy{
+      key: self.key,
+      query: self.query,
+      // FIXME: this double-quotes the enum-as-str.
+      model: serde_json::to_string(&self.model).unwrap().into(),
+    }
+  }
+}
+
+#[derive(Clone, Serialize, Deserialize, IntoPyObject, Debug)]
+pub struct ApproxOracleRequestIntoPy {
+  pub key: i64,
+  pub query: SafeStr,
+  pub model: SafeStr,
 }
 
 #[derive(Clone, Serialize, Deserialize, FromPyObject, Debug)]
@@ -90,19 +133,32 @@ pub struct ApproxOracleExtraItem {
 
 #[derive(Clone, Serialize, Deserialize, FromPyObject, Debug)]
 pub struct ApproxOracleItem<K=i64> {
+  //pub timestamp: Option<Timestamp>,
   pub key: K,
   pub query: SafeStr,
-  pub thinking: Option<SafeStr>,
-  pub value: SafeStr,
-  pub timestamp: Timestamp,
   pub model: ApproxOracleModel,
+  pub temp: Option<f64>,
+  pub think: Option<SafeStr>,
+  pub value: SafeStr,
   pub extra: Option<ApproxOracleExtraItem>,
+}
+
+impl JournalEntryExt for ApproxOracleItem {
+  fn _sort(&self) -> JournalEntrySort_ {
+    JournalEntrySort_::ApproxOracle
+  }
 }
 
 #[derive(Clone, Serialize, Deserialize, FromPyObject, Debug)]
 pub struct ApproxOracleTestItem {
   pub timestamp: Timestamp,
   pub model: ApproxOracleModel,
+}
+
+impl JournalEntryExt for ApproxOracleTestItem {
+  fn _sort(&self) -> JournalEntrySort_ {
+    JournalEntrySort_::ApproxOracleTest
+  }
 }
 
 pub struct ApproxOracleInterface {
@@ -150,14 +206,14 @@ impl ApproxOracleInterface {
   pub fn put(&self, item: ApproxOracleRequest) -> () {
     Python::with_gil(|py| -> PyResult<_> {
       self.this
-          .call_method1(py, "put", (item.into_pyobject(py)?,))
+          .call_method1(py, "put", (item._into_py().into_pyobject(py)?,))
     }).unwrap();
   }
 
-  pub fn get(&self) -> Option<ApproxOracleItem> {
+  pub fn poll(&self) -> Option<ApproxOracleItem> {
     Python::with_gil(|py| -> PyResult<_> {
       let item = self.this
-          .call_method0(py, "get")?
+          .call_method0(py, "poll")?
           .into_bound_py_any(py)?;
       match item.extract() {
         Err(e) => panic!("bug: {:?}", e),
@@ -166,15 +222,57 @@ impl ApproxOracleInterface {
     }).unwrap()
   }
 
-  pub fn get_test(&self) -> Option<ApproxOracleTestItem> {
+  pub fn poll_test(&self) -> Option<ApproxOracleTestItem> {
     Python::with_gil(|py| -> PyResult<_> {
       let item = self.this
-          .call_method0(py, "get_test")?
+          .call_method0(py, "poll_test")?
           .into_bound_py_any(py)?;
       match item.extract() {
         Err(e) => panic!("bug: {:?}", e),
         Ok(item) => Ok(item)
       }
     }).unwrap()
+  }
+}
+
+pub struct ApproxOracleIndex {
+  iface: ApproxOracleInterface,
+  // FIXME: probably want a better data structure.
+  kqmap: BTreeMap<(i64, SafeStr), (JournalEntryNum, ApproxOracleItem)>,
+}
+
+impl ApproxOracleIndex {
+  pub fn init() -> ApproxOracleIndex {
+    let iface = ApproxOracleInterface::init();
+    let kqmap = BTreeMap::new();
+    ApproxOracleIndex{
+      iface,
+      kqmap,
+    }
+  }
+
+  pub fn put(&self, item: ApproxOracleRequest) -> () {
+    self.iface.put(item)
+  }
+
+  pub fn poll(&self) -> Option<ApproxOracleItem> {
+    self.iface.poll()
+  }
+
+  pub fn commit<J: JournalExt>(&mut self, journal: &mut J, item: &ApproxOracleItem) -> JournalEntryNum {
+    let jnum = journal.append(item);
+    self.kqmap.insert((item.key, item.query.clone()), (jnum, item.clone()));
+    jnum
+  }
+
+  pub fn get(&self, key: i64, query: &SafeStr) -> Option<ApproxOracleItem> {
+    // TODO: temporary default key=0.
+    // FIXME: tuple of borrowed str?
+    match self.kqmap.get(&(key, query.clone())) {
+      None => None,
+      Some(&(_jnum, ref item)) => {
+        Some(item.clone())
+      }
+    }
   }
 }

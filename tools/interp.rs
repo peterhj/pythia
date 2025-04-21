@@ -24,7 +24,7 @@ fn _interp(src: &str) -> TestResult {
     }
     Ok(_) => {}
   }
-  match interp.load_(src) {
+  match interp.cold_start(src) {
     Err(check) => {
       let t1 = Timestamp::fresh();
       return TestResult::Check(t1-t0, Timedelta::default(), check);

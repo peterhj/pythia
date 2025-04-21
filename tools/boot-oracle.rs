@@ -9,11 +9,11 @@ fn main() {
   println!("DEBUG: concurrency = {}", aoi.concurrency());
   println!("DEBUG: len = {}", aoi.len());
   //let req = ApproxOracleRequest{key: 0, query: "hi".into()};
-  let item = aoi.get_test();
+  let item = aoi.poll_test();
   println!("DEBUG: item = {:?}", item);
   // TODO
-  let req = ApproxOracleRequest{key: 0, query: "Hi!".into()};
+  let req = ApproxOracleRequest{key: 0, query: "Hi!".into(), .. Default::default()};
   aoi.put(req);
-  let item = aoi.get();
+  let item = aoi.poll();
   println!("DEBUG: item = {:?}", item);
 }

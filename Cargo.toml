@@ -2,6 +2,7 @@
 name = "pythia"
 version = "0.1.0-devel"
 edition = "2021"
+rust-version = "1.78.0"
 authors = ["Peter Jin <peterhaijin@gmail.com>"]
 license = "Apache-2.0"
 
@@ -23,6 +24,7 @@ panic = "abort"
 codegen-units = 1
 incremental = false
 lto = false
+#lto = "thin"
 
 [features]
 #default = []
@@ -37,6 +39,7 @@ rayon = []
 #pyo3-build-config = { version = "^0.23", optional = true }
 
 [dependencies]
+bitflags = { version = "^2.8" }
 byteorder = { version = "^1.5" }
 #crossbeam-utils = { version = "^0.8" }
 fxhash2 = { version = "^2" }
@@ -50,9 +53,11 @@ rclite = { version = "^0.2" }
 regex = { version = "^1.10" }
 serde = { version = "^1.0", features = ["derive"] }
 serde_json = { version = "^1.0" }
+serde_json_fmt = { version = "^0.2" }
 signal_hook = { version = "^0.3" }
 smol_str = { version = "^0.2", default-features = false, features = ["serde"] }
 term_colors = { version = "^2" }
+textwrap = { version = "^0.16", default-features = false }
 time = { version = "^0.1" }
 
 [lib]
@@ -68,6 +73,14 @@ name = "boot-interp-test"
 path = "tools/boot-interp-test.rs"
 
 [[bin]]
+name = "boot-interp-test-1"
+path = "tools/boot-interp-test-1.rs"
+
+[[bin]]
+name = "boot-interp-test-last"
+path = "tools/boot-interp-test-last.rs"
+
+[[bin]]
 name = "boot-journal"
 path = "tools/boot-journal.rs"
 
@@ -76,9 +89,15 @@ name = "boot-oracle"
 path = "tools/boot-oracle.rs"
 required-features = ["pyo3"]
 
+[[bin]]
+name = "boot-oracle-journal"
+path = "tools/boot-oracle-journal.rs"
+required-features = ["pyo3"]
+
 [patch.crates-io]
 aho-corasick = { path = "dep/aho-corasick" }
 autocfg = { path = "dep/autocfg" }
+bitflags = { path = "../bitflags" }
 branches = { path = "dep/branches" }
 byteorder = { path = "dep/byteorder" }
 cfg-if = { path = "dep/cfg-if" }
@@ -107,11 +126,13 @@ regex-syntax = { path = "dep/regex/regex-syntax" }
 ryu = { path = "dep/ryu" }
 serde = { path = "dep/serde/serde" }
 serde_json = { path = "dep/serde_json" }
+serde_json_fmt = { path = "../serde_json_fmt" }
 signal_hook = { path = "dep/signal_hook" }
 smol_str = { path = "dep/smol_str" }
 syn = { path = "dep/syn" }
 target-lexicon = { path = "dep/target-lexicon" }
 term_colors = { path = "dep/term_colors" }
+textwrap = { path = "../textwrap" }
 time = { path = "dep/time-0.1" }
 unicode-ident = { path = "dep/unicode-ident" }
 unindent = { path = "dep/indoc/unindent" }

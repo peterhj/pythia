@@ -11,11 +11,14 @@ use std::path::{PathBuf};
 pub static _STORE: Lazy<DevelJournal_> = Lazy::new(|| DevelJournal_::cold_start());
 
 #[derive(Clone, Copy, Serialize, Deserialize, Debug)]
+#[non_exhaustive]
 pub enum JournalEntrySort_ {
   #[serde(rename = "root")]
   _Root,
   #[serde(rename = "approx-oracle")]
   ApproxOracle,
+  #[serde(rename = "approx-oracle-test")]
+  ApproxOracleTest,
   #[serde(rename = "boot-test")]
   BootTest,
 }
@@ -50,6 +53,12 @@ pub struct JournalEntry_<I> {
   pub item: I,
 }
 
+#[derive(Clone, Copy, Debug)]
+#[repr(transparent)]
+pub struct JournalEntryNum {
+  _idx: usize,
+}
+
 pub struct DevelJournal_ {
   widx_mem: Vec<u32>,
   //wlog_mem: Vec<()>,
@@ -62,7 +71,7 @@ impl DevelJournal_ {
     let t0 = Timestamp::fresh();
     let root_path = PathBuf::from(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/data/_store"
+        "/data/_journal"
     ));
     let mut widx_path = root_path.clone();
     widx_path.push("_widx.bin");
@@ -201,8 +210,14 @@ impl DevelJournal_ {
     }
     this
   }
+}
 
-  pub fn append<I: JournalEntryExt + Serialize>(&mut self, item: &I) -> () {
+pub trait JournalExt {
+  fn append<I: JournalEntryExt + Serialize>(&mut self, item: &I) -> JournalEntryNum where Self: Sized;
+}
+
+impl JournalExt for DevelJournal_ {
+  fn append<I: JournalEntryExt + Serialize>(&mut self, item: &I) -> JournalEntryNum {
     let t = Timestamp::fresh();
     let sort = item._sort();
     let entry = JournalEntry_{
@@ -211,7 +226,8 @@ impl DevelJournal_ {
       item,
     };
     let s = serde_json::to_string(&entry).unwrap();
-    let wpos = match self.widx_mem.len() {
+    let widx = self.widx_mem.len();
+    let wpos = match widx {
       0 => 0,
       i => self.widx_mem[i-1],
     };
@@ -219,5 +235,6 @@ impl DevelJournal_ {
     self.widx_mem.push(woff);
     self.widx_file.write_u32::<LE>(woff).unwrap();
     writeln!(&mut self.wlog_file, "{}", &s).unwrap();
+    JournalEntryNum{_idx: widx}
   }
 }

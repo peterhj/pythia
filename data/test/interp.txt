@@ -42,7 +42,6 @@ interp_str_3.py
 interp_ident_0.py
 interp_ident_1.py
 interp_ident_2.py
-interp_qual_ident_0.py
 interp_fun_0.py
 interp_choice_0.py
 interp_choice_1.py

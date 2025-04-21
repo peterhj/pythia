@@ -15,17 +15,63 @@ pub fn test_data_root() -> PathBuf {
 #[derive(Debug)]
 pub struct TestDataConfig {
   pub root: PathBuf,
+  pub keys: Vec<String>,
 }
 
 impl Default for TestDataConfig {
   fn default() -> TestDataConfig {
-    TestDataConfig{
-      root: test_data_root(),
-    }
+    TestDataConfig::interp_tests()
   }
 }
 
 impl TestDataConfig {
+  pub fn interp_tests() -> TestDataConfig {
+    let mut keys = Vec::new();
+    for line in INTERP_TESTS.lines() {
+      keys.push(line.into());
+    }
+    TestDataConfig{
+      root: test_data_root(),
+      keys,
+    }
+  }
+
+  pub fn test_1() -> TestDataConfig {
+    TestDataConfig::interp_test_1()
+  }
+
+  pub fn interp_test_1() -> TestDataConfig {
+    let mut keys = Vec::new();
+    for line in INTERP_TESTS.lines() {
+      keys.push(line.into());
+      break;
+    }
+    TestDataConfig{
+      root: test_data_root(),
+      keys,
+    }
+  }
+
+  pub fn test_last() -> TestDataConfig {
+    TestDataConfig::interp_test_last()
+  }
+
+  pub fn interp_test_last() -> TestDataConfig {
+    let mut keys = Vec::new();
+    for line in INTERP_TESTS.lines().rev() {
+      keys.push(line.into());
+      break;
+    }
+    TestDataConfig{
+      root: test_data_root(),
+      keys,
+    }
+  }
+
+  pub fn keys(&self) -> &[String] {
+    &self.keys
+  }
+
   pub fn get_source(&self, key: &str) -> String {
     let mut f = self.get_source_file(key);
     let mut s = String::new();
@@ -38,6 +84,29 @@ impl TestDataConfig {
     p.push(key);
     File::open(&p).unwrap()
   }
+
+  pub fn init_snapshot_file(&self, key: &str) -> Box<File> {
+    let mut p = self.root.clone();
+    p.push("_snapshot");
+    p.push(key);
+    p.set_extension("jsonl");
+    Box::new(OpenOptions::new()
+      .write(true).create(true).truncate(true)
+      .open(&p).unwrap())
+  }
+
+  /*pub fn set_snapshot_file(&self, key: &str, val: &str) {
+    let mut f = self.init_snapshot_file(key);
+    f.write_all(val.as_bytes()).unwrap();
+  }
+
+  pub fn maybe_get_snapshot_file(&self, key: &str) -> Option<File> {
+    let mut p = self.root.clone();
+    p.push("_snapshot");
+    p.push(key);
+    p.set_extension("jsonl");
+    File::open(&p).ok()
+  }*/
 
   pub fn maybe_get_vector_file(&self, key: &str) -> Option<File> {
     let mut p = self.root.clone();
