@@ -26,6 +26,19 @@ impl Extlib {
     }
   }
 
+  pub fn _approx_oracle_worker_cls(&self) -> PyObject {
+    Python::with_gil(|py| -> PyResult<Py<_>> {
+      self.approx_oracle.getattr(py, "ApproxOracleWorker")
+    }).unwrap()
+  }
+
+  pub fn _approx_oracle_worker(&self, concurrency: u32) -> PyObject {
+    Python::with_gil(|py| -> PyResult<_> {
+      let cls = self.approx_oracle.getattr(py, "ApproxOracleWorker")?;
+      cls.call1(py, (concurrency,))
+    }).unwrap()
+  }
+
   pub fn _approx_oracle_interface_cls(&self) -> PyObject {
     Python::with_gil(|py| -> PyResult<Py<_>> {
       self.approx_oracle.getattr(py, "ApproxOracleInterface")
@@ -36,6 +49,13 @@ impl Extlib {
     Python::with_gil(|py| -> PyResult<_> {
       let cls = self.approx_oracle.getattr(py, "ApproxOracleInterface")?;
       cls.call0(py)
+    }).unwrap()
+  }
+
+  pub fn _approx_oracle_interface_with_worker(&self, worker_obj: PyObject) -> PyObject {
+    Python::with_gil(|py| -> PyResult<_> {
+      let cls = self.approx_oracle.getattr(py, "ApproxOracleInterface")?;
+      cls.call1(py, (worker_obj,))
     }).unwrap()
   }
 }

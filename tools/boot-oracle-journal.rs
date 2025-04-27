@@ -6,6 +6,7 @@ use pythia::oracle::*;
 fn main() {
   let mut journal = DevelJournal_::cold_start();
   journal.append(&BootTest);
+  let oraclew = ApproxOracleWorker::init(64);
   let oraclei = ApproxOracleInterface::init();
   println!("DEBUG: default model = {:?}", oraclei.default_model());
   println!("DEBUG: default timeout = {}", oraclei.default_timeout());

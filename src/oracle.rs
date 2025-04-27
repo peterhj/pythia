@@ -127,8 +127,22 @@ pub struct ApproxOracleResExtra {
 }
 
 #[derive(Clone, Serialize, Deserialize, FromPyObject, Debug)]
+pub struct ApproxOracleSampleItem {
+  pub temperature: Option<f64>,
+  pub top_p: Option<f64>,
+}
+
+#[derive(Clone, Serialize, Deserialize, FromPyObject, Debug)]
+pub struct ApproxOracleExceptItem {
+  pub exc_type: SafeStr,
+  pub exc_str: SafeStr,
+  pub stack_trace: SafeStr,
+}
+
+#[derive(Clone, Serialize, Deserialize, FromPyObject, Debug)]
 pub struct ApproxOracleExtraItem {
   pub res:  Option<ApproxOracleResExtra>,
+  pub exc:  Option<ApproxOracleExceptItem>,
 }
 
 #[derive(Clone, Serialize, Deserialize, FromPyObject, Debug)]
@@ -137,7 +151,7 @@ pub struct ApproxOracleItem<K=i64> {
   pub key: K,
   pub query: SafeStr,
   pub model: ApproxOracleModel,
-  pub temp: Option<f64>,
+  pub sample: Option<ApproxOracleSampleItem>,
   pub think: Option<SafeStr>,
   pub value: SafeStr,
   pub extra: Option<ApproxOracleExtraItem>,
@@ -161,6 +175,26 @@ impl JournalEntryExt for ApproxOracleTestItem {
   }
 }
 
+pub struct ApproxOracleWorker {
+  this: PyObject,
+}
+
+impl Clone for ApproxOracleWorker {
+  fn clone(&self) -> ApproxOracleWorker {
+    let this = Python::with_gil(|py| {
+      self.this.clone_ref(py)
+    });
+    ApproxOracleWorker{this}
+  }
+}
+
+impl ApproxOracleWorker {
+  pub fn init(concurrency: u32) -> ApproxOracleWorker {
+    let this = _EXTLIB._approx_oracle_worker(concurrency);
+    ApproxOracleWorker{this}
+  }
+}
+
 pub struct ApproxOracleInterface {
   this: PyObject,
 }
@@ -168,6 +202,11 @@ pub struct ApproxOracleInterface {
 impl ApproxOracleInterface {
   pub fn init() -> ApproxOracleInterface {
     let this = _EXTLIB._approx_oracle_interface();
+    ApproxOracleInterface{this}
+  }
+
+  pub fn init_with_worker(worker: ApproxOracleWorker) -> ApproxOracleInterface {
+    let this = _EXTLIB._approx_oracle_interface_with_worker(worker.this);
     ApproxOracleInterface{this}
   }
 

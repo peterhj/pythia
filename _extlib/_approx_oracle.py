@@ -1,10 +1,12 @@
-from typing import Any, Optional
+from typing import Any, Optional, Union
 from argparse import Namespace
+import asyncio
 import concurrent.futures
 from dataclasses import dataclass
 from datetime import datetime
 import json
 import os
+import traceback
 import urllib.request
 
 HOME = os.environ["HOME"]
@@ -30,13 +32,19 @@ TOGETHER_API_KEY   = _load_api_token("TOGETHER",   "together.xyz")
 XAI_API_KEY        = _load_api_token("XAI",        "x.ai")
 
 @dataclass
-class _ApproxOracleResponse:
+class _ApproxOracleResponseItem:
     sample: dict = None
     think: str = None
     value: str = None
     data: Any = None
     t0: str = None
     t1: str = None
+
+@dataclass
+class ApproxOracleExceptItem:
+    exc_type: str = None
+    exc_str: str = None
+    stack_trace: str = None
 
 @dataclass
 class ApproxOracleEndpoint:
@@ -71,6 +79,8 @@ class ApproxOracleEndpoint:
             return cls.together_deepseek_r1_20250120()
         elif model == "deepseek-v3-20241226-together":
             return cls.together_deepseek_v3_20241226()
+        elif model == "xai-grok-3-mini-beta-20250418":
+            return cls.xai_grok_3_mini_beta()
         elif model == "qwen-2.5-vl-72b-instruct-together":
             return cls.together_qwen_2_5_vl_72b_instruct()
         elif model == "qwq-32b-hyperbolic":
@@ -191,7 +201,7 @@ class ApproxOracleEndpoint:
         return cls(
             endpoint_api_url = "https://openrouter.ai/api",
             endpoint_api_token = OPENROUTER_API_KEY,
-            endpoint_api_protocol = "openai",
+            endpoint_api_protocol = "openrouter",
             **kwargs,
         )
 
@@ -251,9 +261,10 @@ class ApproxOracleEndpoint:
     def __post_init__(self) -> None:
         if self.model is None:
             self.model = self.endpoint_model
-        if (
-            self.endpoint_api_protocol == "deepseek" or
-            self.endpoint_api_protocol == "openai"
+        if self.endpoint_api_protocol in (
+            "deepseek",
+            "openai",
+            "openrouter",
         ):
             # TODO: proper urllib formatting.
             if self.endpoint_api_protocol == "openai":
@@ -271,23 +282,28 @@ class ApproxOracleEndpoint:
 
     def query(
         self,
-        messages: list[dict[str, str]],
-        # FIXME: unused sampling params.
+        messages: list[dict[str, str]] = None,
         sample: dict[str, Any] = None,
-    ) -> _ApproxOracleResponse:
-        if (
-            self.endpoint_api_protocol == "deepseek" or
-            self.endpoint_api_protocol == "openai"
+        res: _ApproxOracleResponseItem = None,
+    ) -> _ApproxOracleResponseItem:
+        if res is None:
+            res = _ApproxOracleResponseItem()
+        if self.endpoint_api_protocol in (
+            "deepseek",
+            "openai",
+            "openrouter",
         ):
-            req_body = {
-                "messages": messages,
-                "model": self.endpoint_model,
-                "stream": False,
-            }
+            req_body = dict()
+            req_body["model"] = self.endpoint_model
+            if self.endpoint_api_protocol == "openrouter":
+                req_body["models"] = []
+            req_body["messages"] = messages
+            req_body["stream"] = False
             if self.endpoint_api_protocol == "deepseek":
                 req_body["max_new_tokens"] = self.endpoint_max_new_tokens
-            elif self.endpoint_api_protocol == "openai":
+            else:
                 req_body["max_tokens"] = self.endpoint_max_new_tokens
+            # NB: default sampling params.
             if (
                 self.endpoint_api_protocol == "deepseek" and
                 self.endpoint_model == "deepseek-reasoner"
@@ -297,46 +313,59 @@ class ApproxOracleEndpoint:
                 self.endpoint_api_protocol == "deepseek" and
                 self.endpoint_model == "deepseek-chat"
             ):
-                req_body |= {
-                    # TODO: configure sampling params.
-                    "temperature": 0,
-                }
+                if sample is None:
+                    sample = dict()
+                if sample.get("temperature", None) is None:
+                    sample["temperature"] = 0.0
             elif (
                 self.endpoint_api_url.startswith("https://api.hyperbolic.xyz") and
                 self.endpoint_model.startswith("deepseek-ai/")
             ):
-                req_body |= {
-                    # TODO: configure sampling params.
-                    "temperature": 0,
-                }
+                if sample is None:
+                    sample = dict()
+                if sample.get("temperature", None) is None:
+                    sample["temperature"] = 0.0
+            elif self.model == "xai-grok-3-mini-beta-20250418":
+                pass
             else:
-                req_body |= {
-                    # TODO: configure sampling params.
-                    "temperature": 0,
-                    "top_p": 1,
-                    #"logprobs": True,
-                }
+                if sample is None:
+                    sample = dict()
+                if sample.get("temperature", None) is None:
+                    sample["temperature"] = 0.0
+                if sample.get("top_p", None) is None:
+                    sample["top_p"] = 1.0
         else:
             raise NotImplementedError
+        if sample is not None:
+            res.sample = sample
+            req_body |= sample
         if self.endpoint_extra_params is not None:
             req_body |= self.endpoint_extra_params
+        temp = req_body.get("temperature", None)
+        #print(f"DEBUG: ApproxOracleEndpoint.query: req body = {req_body}")
         req_data = json.dumps(req_body).encode("utf-8")
+        #print(f"DEBUG: ApproxOracleEndpoint.query: url      = {self._chat_endpoint_url}")
+        #print(f"DEBUG: ApproxOracleEndpoint.query: headers  = {self._chat_endpoint_headers}")
         #print(f"DEBUG: ApproxOracleEndpoint.query: req data = {req_data}")
-        req = urllib.request.Request(
+        hreq = urllib.request.Request(
             self._chat_endpoint_url,
             headers = self._chat_endpoint_headers.copy(),
             data = req_data,
         )
-        t0 = datetime.utcnow()
-        with urllib.request.urlopen(req) as res:
-            res_data = res.read()
-        t1 = datetime.utcnow()
+        res.t0 = datetime.utcnow().isoformat()
+        #print(f"DEBUG: ApproxOracleEndpoint.query: t0 = {res.t0}")
+        with urllib.request.urlopen(hreq) as hres:
+            res_data = hres.read()
+        res.t1 = datetime.utcnow().isoformat()
+        #print(f"DEBUG: ApproxOracleEndpoint.query: t1 = {res.t1}")
         res_body = json.loads(res_data.decode("utf-8"))
         #print(f"DEBUG: ApproxOracleEndpoint.query: res body = {res_body}")
         think = None
-        if (
-            self.endpoint_api_protocol == "deepseek" or
-            self.endpoint_api_protocol == "openai"
+        value = None
+        if self.endpoint_api_protocol in (
+            "deepseek",
+            "openai",
+            "openrouter",
         ):
             think = res_body["choices"][0]["message"].pop("reasoning_content", None)
             value = res_body["choices"][0]["message"].pop("content", None)
@@ -347,16 +376,17 @@ class ApproxOracleEndpoint:
                     value = value[think_end_pos+10:]
         else:
             raise NotImplementedError
-        return _ApproxOracleResponse(
-            sample={
-                "temperature": req_body.get("temperature", None),
-            },
-            think=think,
-            value=value,
-            data=json.dumps(res_body),
-            t0=t0.isoformat(),
-            t1=t1.isoformat(),
-        )
+        res.think = think
+        res.value = value
+        # NB: re-serializing json response.
+        res.data = json.dumps(res_body)
+        print(f"DEBUG: ApproxOracleEndpoint.query: done")
+        return res
+
+@dataclass
+class ApproxOracleSampleItem:
+    temperature: Optional[float] = None
+    top_p: Optional[float] = None
 
 @dataclass
 class ApproxOracleItem:
@@ -364,20 +394,21 @@ class ApproxOracleItem:
     key: Any = None
     query: str = None
     model: str = None
-    sample: dict = None
+    sample: ApproxOracleSampleItem = None
     think: str = None
     value: str = None
     extra: Any = None
-
-@dataclass
-class ApproxOracleExtraItem:
-    res: Any = None
 
 @dataclass
 class ApproxOracleResExtra:
     data: str = None
     t0: str = None
     t1: str = None
+
+@dataclass
+class ApproxOracleExtraItem:
+    res: ApproxOracleResExtra = None
+    exc: ApproxOracleExceptItem = None
 
 @dataclass
 class ApproxOracleTestItem:
@@ -387,32 +418,76 @@ class ApproxOracleTestItem:
 @dataclass
 class _ApproxOracleWorkItem:
     item: ApproxOracleItem
-    res: _ApproxOracleResponse = None
+    res: _ApproxOracleResponseItem = None
+    exc: ApproxOracleExceptItem = None
+
+    def _finalize(self) -> ApproxOracleItem:
+        item = self.item
+        if self.res is None:
+            #print(f"DEBUG: _ApproxOracleWorkItem._finalize: no res")
+            item.extra = ApproxOracleExtraItem(
+                exc=self.exc,
+            )
+            return item
+        if self.res.sample is not None:
+            item.sample = ApproxOracleSampleItem(**self.res.sample)
+        item.think = self.res.think
+        item.value = self.res.value
+        item.extra = ApproxOracleExtraItem(
+            res=ApproxOracleResExtra(
+                data=self.res.data,
+                t0=self.res.t0,
+                t1=self.res.t1,
+            ),
+            exc=self.exc,
+        )
+        #print(f"DEBUG: _ApproxOracleWorkItem._finalize: item = {item}")
+        return item
 
 def _query(work_item):
-    print(f"DEBUG: _query: work item = {work_item}")
+    #print(f"DEBUG: _query: pre work item  = {work_item}")
     endpoint = ApproxOracleEndpoint.from_model(work_item.item.model)
-    print(f"DEBUG: _query: endpoint.model = {endpoint.model}")
+    #print(f"DEBUG: _query: endpoint.model = {endpoint.model}")
     messages = [
         {
             "role": "user",
             "content": work_item.item.query,
         }
     ]
-    work_item.res = endpoint.query(messages)
-    print(f"DEBUG: _query: done")
+    work_item.res = _ApproxOracleResponseItem()
+    endpoint.query(
+        messages=messages,
+        res=work_item.res,
+    )
+    #print(f"DEBUG: _query: post work item = {work_item}")
+    #print(f"DEBUG: _query: done")
     return work_item
 
 def _try_query(work_item):
-    print(f"DEBUG: _try_query: work item = {work_item}")
+    #print(f"DEBUG: _try_query: work item = {work_item}")
     try:
-        result = _query(work_item)
+        _query(work_item)
     # TODO: exc reporting.
     except Exception as e:
         print(f"DEBUG: _try_query: except = {e}")
-        work_item.res = None
-        result = work_item
-    return result
+        work_item.exc = ApproxOracleExceptItem(
+            exc_type=f"{type(e).__name__}",
+            exc_str=str(e),
+            stack_trace=traceback.format_exc(),
+        )
+    return work_item
+
+@dataclass
+class ApproxOracleWorker:
+    concurrency: int
+    _poolexec: concurrent.futures.ThreadPoolExecutor = None
+
+    def __post_init__(self) -> None:
+        print(f"DEBUG: ApproxOracleWorker.__post_init__")
+        if self._poolexec is None:
+            self._poolexec = concurrent.futures.ThreadPoolExecutor(
+                max_workers=self.concurrency,
+            )
 
 @dataclass
 class ApproxOracleInterface_:
@@ -424,22 +499,23 @@ class ApproxOracleInterface_:
 
 @dataclass
 class ApproxOracleInterface:
+    worker: ApproxOracleWorker = None
     default_model: str = "deepseek-v3-chat-20250324"
-    default_timeout: int = 480
-    concurrency: int = 64
+    default_timeout: int = 1620
+    concurrency: int = 56
+    #concurrency: int = 64
 
     def __post_init__(self) -> None:
         print(f"DEBUG: ApproxOracleInterface.__post_init__")
-        self._poolexec = concurrent.futures.ThreadPoolExecutor(
-            max_workers=self.concurrency,
-        )
+        if self.worker is None:
+            self.worker = ApproxOracleWorker(self.concurrency)
         self._work_set = set()
         self._done_set = set()
 
     def __len__(self) -> int:
         return len(self._work_set)
 
-    def put(self, item: ApproxOracleItem | dict) -> None:
+    def put(self, item: Union[ApproxOracleItem, dict]) -> None:
         if isinstance(item, dict):
             #print("DEBUG: ApproxOracleInterface.put: isa dict")
             item = ApproxOracleItem(**item)
@@ -447,9 +523,8 @@ class ApproxOracleInterface:
             #print("DEBUG: ApproxOracleInterface.put: set default model")
             item.model = self.default_model
         print(f"DEBUG: ApproxOracleInterface.put: item = {item}")
-        #return
         work_item = _ApproxOracleWorkItem(item)
-        w = self._poolexec.submit(_try_query, work_item)
+        w = self.worker._poolexec.submit(_try_query, work_item)
         self._work_set.add(w)
 
     def poll(self, timeout=None) -> ApproxOracleItem:
@@ -472,22 +547,16 @@ class ApproxOracleInterface:
         print(f"DEBUG: ApproxOracleInterface.poll: completed")
         w = self._done_set.pop()
         work_item = w.result()
-        item = work_item.item
-        if work_item.res is None:
-            print(f"DEBUG: ApproxOracleInterface.poll: no res")
-            return item
-        # FIXME
-        item.sample = work_item.res.sample
-        item.think = work_item.res.think
-        item.value = work_item.res.value
-        #item.timestamp = work_item.res.t1
         if False:
-            item.extra = {
-                "res.data": work_item.res.data,
-                "res.t0": work_item.res.t0,
-                "res.t1": work_item.res.t1,
-            }
-        if True:
+            item = work_item.item
+            if work_item.res is None:
+                print(f"DEBUG: ApproxOracleInterface.poll: no res")
+                return item
+            # FIXME
+            item.sample = work_item.res.sample
+            item.think = work_item.res.think
+            item.value = work_item.res.value
+            #item.timestamp = work_item.res.t1
             item.extra = ApproxOracleExtraItem(
                 res = ApproxOracleResExtra(
                     data = work_item.res.data,
@@ -495,8 +564,9 @@ class ApproxOracleInterface:
                     t1 = work_item.res.t1,
                 )
             )
-        print(f"DEBUG: ApproxOracleInterface.poll: item = {item}")
-        return item
+            print(f"DEBUG: ApproxOracleInterface.poll: item = {item}")
+            return item
+        return work_item._finalize()
 
     def poll_test(self, timeout=None) -> ApproxOracleTestItem:
         return ApproxOracleTestItem(
@@ -505,5 +575,78 @@ class ApproxOracleInterface:
         )
 
 @dataclass
-class ApproxOracleAsyncInterface(ApproxOracleInterface):
-    pass
+class ApproxOracleAsyncInterface:
+    worker: ApproxOracleWorker = None
+    default_model: str = "deepseek-v3-chat-20250324"
+    default_timeout: int = 1620
+    concurrency: int = 56
+    #concurrency: int = 64
+
+    def __post_init__(self) -> None:
+        print(f"DEBUG: ApproxOracleAsyncInterface.__post_init__")
+        if self.worker is None:
+            self.worker = ApproxOracleWorker(self.concurrency)
+
+    async def get(self, item: Union[ApproxOracleItem, dict]) -> ApproxOracleItem:
+        if isinstance(item, dict):
+            item = ApproxOracleItem(**item)
+        if item.model is None:
+            item.model = self.default_model
+        work_item = _ApproxOracleWorkItem(item)
+        def _query_work_item():
+            _try_query(work_item)
+            return work_item
+        loop = asyncio.get_running_loop()
+        w = loop.run_in_executor(self.worker._poolexec, _query_work_item)
+        work_item = await w
+        return work_item._finalize()
+
+    #def get_sync(self, item: Union[ApproxOracleItem, dict]):
+
+def test_main():
+    print(f"DEBUG: _approx_oracle: test main")
+    iface = ApproxOracleInterface(
+        #default_model="deepseek-r1-20250120",
+    )
+    item = ApproxOracleItem(
+        key=0,
+        query="""How would I use `asyncio.wrap_future` with both a `concurrent.futures.ThreadPoolExecutor` and an asyncio loop? Please provide a full toy example that involves making a POST request (using `urllib.request`) to "http://api.example.com/".""",
+    )
+    iface.put(item)
+    result = iface.poll()
+    print(result)
+
+def test_main_async():
+    print(f"DEBUG: _approx_oracle: test main (async)")
+    iface = ApproxOracleAsyncInterface(
+        #default_model="deepseek-r1-20250120",
+    )
+    result = asyncio.run(iface.get(ApproxOracleItem(
+        key=0,
+        query="""How would I use `asyncio.wrap_future` with both a `concurrent.futures.ThreadPoolExecutor` and an asyncio loop? Please provide a full toy example that involves making a POST request (using `urllib.request`) to "http://api.example.com/".""",
+    )), debug=True)
+    print(result)
+
+def test_main_async_2():
+    print(f"DEBUG: _approx_oracle: test main (async 2)")
+    iface = ApproxOracleAsyncInterface(
+        #default_model="deepseek-r1-20250120",
+    )
+    w1 = iface.get(ApproxOracleItem(
+        key=0,
+        query="""How would I use `asyncio.wrap_future` with both a `concurrent.futures.ThreadPoolExecutor` and an asyncio loop? Please provide a full toy example that involves making a POST request (using `urllib.request`) to "http://api.example.com/".""",
+    ))
+    w2 = iface.get(ApproxOracleItem(
+        key=0,
+        query="""How would I implement a very basic parser for Test Anything Protocol (TAP)?""",
+    ))
+    async def _gather():
+        return await asyncio.gather(w1, w2)
+    results = asyncio.run(_gather())
+    for r in results:
+        print(r)
+
+if __name__ == "__main__":
+    #test_main()
+    #test_main_async()
+    test_main_async_2()
