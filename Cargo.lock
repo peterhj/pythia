@@ -152,6 +152,7 @@ dependencies = [
  "serde_json_fmt",
  "signal_hook",
  "smol_str",
+ "syn",
  "term_colors",
  "textwrap",
  "time",
@@ -226,7 +227,7 @@ dependencies = [
 
 [[package]]
 name = "serde_json_fmt"
-version = "0.2.0"
+version = "0.2.0-devel"
 dependencies = [
  "serde",
  "serde_json",

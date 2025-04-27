@@ -1,6 +1,9 @@
 [submodule "dep/aho-corasick"]
 	path = dep/aho-corasick
 	url = https://github.com/peterhj/aho-corasick
+[submodule "dep/bitflags"]
+	path = dep/bitflags
+	url = https://github.com/peterhj/bitflags
 [submodule "dep/branches"]
 	path = dep/branches
 	url = https://github.com/peterhj/branches
@@ -43,6 +46,9 @@
 [submodule "dep/serde_json"]
 	path = dep/serde_json
 	url = https://github.com/peterhj/serde_json
+[submodule "dep/serde_json_fmt"]
+	path = dep/serde_json_fmt
+	url = https://github.com/peterhj/serde_json_fmt
 [submodule "dep/signal_hook"]
 	path = dep/signal_hook
 	url = https://github.com/peterhj/signal_hook
@@ -88,3 +94,6 @@
 [submodule "dep/target-lexicon"]
 	path = dep/target-lexicon
 	url = https://github.com/peterhj/target-lexicon
+[submodule "dep/textwrap"]
+	path = dep/textwrap
+	url = https://github.com/peterhj/textwrap
