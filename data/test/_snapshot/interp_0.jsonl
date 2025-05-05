@@ -23,19 +23,17 @@
     },
     "table_full": {
       "Ident": {
-        "SNum(11.0)": "TokenTrie",
-        "SNum(5.0)": "eval",
-        "SNum(3.0)": "failure",
-        "SNum(9.0)": "print",
         "SNum(1.0)": "choice",
-        "SNum(7.0)": "input"
+        "SNum(3.0)": "failure",
+        "SNum(5.0)": "eval",
+        "SNum(7.0)": "input",
+        "SNum(9.0)": "print",
+        "SNum(11.0)": "TokenTrie"
       }
     },
     "e_table_full": {
     },
     "frame_super": {
-    },
-    "frame_full": {
     },
     "frame_codex": {
     },
@@ -78,17 +76,17 @@
       },
       "Code": {
         "SNum(13.0)": {"__type__": "ModCode_", "span": "SpanNum(14.0)", "stmp": "StmCodeCellNum(19.0)"},
-        "SNum(16.0)": {"TermCode_": "Ident", "span": "SpanNum(17.0)", "id": "IdentNum(18.0)"},
-        "SNum(15.0)": {"StmCode_": "Just", "span": "SpanNum(14.0)", "term": "TermCodeNum(16.0)"}
+        "SNum(15.0)": {"StmCode_": "Just", "span": "SpanNum(14.0)", "term": "TermCodeNum(16.0)"},
+        "SNum(16.0)": {"TermCode_": "Ident", "span": "SpanNum(17.0)", "id": "IdentNum(18.0)"}
       },
       "Ident": {
-        "SNum(11.0)": "TokenTrie",
-        "SNum(5.0)": "eval",
-        "SNum(18.0)": "triangle",
-        "SNum(3.0)": "failure",
-        "SNum(9.0)": "print",
         "SNum(1.0)": "choice",
-        "SNum(7.0)": "input"
+        "SNum(3.0)": "failure",
+        "SNum(5.0)": "eval",
+        "SNum(7.0)": "input",
+        "SNum(9.0)": "print",
+        "SNum(11.0)": "TokenTrie",
+        "SNum(18.0)": "triangle"
       },
       "Cell": {
         "SNum(19.0)": {"__type__": "Cell_", "dptr": "SNum(15.0)", "next": "CellNum(nil)", "prev": "CellNum(nil)"}
@@ -97,8 +95,6 @@
     "e_table_full": {
     },
     "frame_super": {
-    },
-    "frame_full": {
     },
     "frame_codex": {
     },
@@ -142,17 +138,17 @@
       },
       "Code": {
         "SNum(13.0)": {"__type__": "ModCode_", "span": "SpanNum(14.0)", "stmp": "StmCodeCellNum(19.0)"},
-        "SNum(16.0)": {"TermCode_": "Ident", "span": "SpanNum(17.0)", "id": "IdentNum(18.0)"},
-        "SNum(15.0)": {"StmCode_": "Just", "span": "SpanNum(14.0)", "term": "TermCodeNum(16.0)"}
+        "SNum(15.0)": {"StmCode_": "Just", "span": "SpanNum(14.0)", "term": "TermCodeNum(16.0)"},
+        "SNum(16.0)": {"TermCode_": "Ident", "span": "SpanNum(17.0)", "id": "IdentNum(18.0)"}
       },
       "Ident": {
-        "SNum(11.0)": "TokenTrie",
-        "SNum(5.0)": "eval",
-        "SNum(18.0)": "triangle",
-        "SNum(3.0)": "failure",
-        "SNum(9.0)": "print",
         "SNum(1.0)": "choice",
-        "SNum(7.0)": "input"
+        "SNum(3.0)": "failure",
+        "SNum(5.0)": "eval",
+        "SNum(7.0)": "input",
+        "SNum(9.0)": "print",
+        "SNum(11.0)": "TokenTrie",
+        "SNum(18.0)": "triangle"
       },
       "Cell": {
         "SNum(19.0)": {"__type__": "Cell_", "dptr": "SNum(15.0)", "next": "CellNum(nil)", "prev": "CellNum(nil)"}
@@ -161,8 +157,6 @@
     "e_table_full": {
     },
     "frame_super": {
-    },
-    "frame_full": {
     },
     "frame_codex": {
     },
@@ -207,17 +201,17 @@
       },
       "Code": {
         "SNum(13.0)": {"__type__": "ModCode_", "span": "SpanNum(14.0)", "stmp": "StmCodeCellNum(19.0)"},
-        "SNum(16.0)": {"TermCode_": "Ident", "span": "SpanNum(17.0)", "id": "IdentNum(18.0)"},
-        "SNum(15.0)": {"StmCode_": "Just", "span": "SpanNum(14.0)", "term": "TermCodeNum(16.0)"}
+        "SNum(15.0)": {"StmCode_": "Just", "span": "SpanNum(14.0)", "term": "TermCodeNum(16.0)"},
+        "SNum(16.0)": {"TermCode_": "Ident", "span": "SpanNum(17.0)", "id": "IdentNum(18.0)"}
       },
       "Ident": {
-        "SNum(11.0)": "TokenTrie",
-        "SNum(5.0)": "eval",
-        "SNum(18.0)": "triangle",
-        "SNum(3.0)": "failure",
-        "SNum(9.0)": "print",
         "SNum(1.0)": "choice",
-        "SNum(7.0)": "input"
+        "SNum(3.0)": "failure",
+        "SNum(5.0)": "eval",
+        "SNum(7.0)": "input",
+        "SNum(9.0)": "print",
+        "SNum(11.0)": "TokenTrie",
+        "SNum(18.0)": "triangle"
       },
       "Cell": {
         "SNum(19.0)": {"__type__": "Cell_", "dptr": "SNum(15.0)", "next": "CellNum(nil)", "prev": "CellNum(nil)"}
@@ -226,8 +220,6 @@
     "e_table_full": {
     },
     "frame_super": {
-    },
-    "frame_full": {
     },
     "frame_codex": {
     },
@@ -272,17 +264,17 @@
       },
       "Code": {
         "SNum(13.0)": {"__type__": "ModCode_", "span": "SpanNum(14.0)", "stmp": "StmCodeCellNum(19.0)"},
-        "SNum(16.0)": {"TermCode_": "Ident", "span": "SpanNum(17.0)", "id": "IdentNum(18.0)"},
-        "SNum(15.0)": {"StmCode_": "Just", "span": "SpanNum(14.0)", "term": "TermCodeNum(16.0)"}
+        "SNum(15.0)": {"StmCode_": "Just", "span": "SpanNum(14.0)", "term": "TermCodeNum(16.0)"},
+        "SNum(16.0)": {"TermCode_": "Ident", "span": "SpanNum(17.0)", "id": "IdentNum(18.0)"}
       },
       "Ident": {
-        "SNum(11.0)": "TokenTrie",
-        "SNum(5.0)": "eval",
-        "SNum(18.0)": "triangle",
-        "SNum(3.0)": "failure",
-        "SNum(9.0)": "print",
         "SNum(1.0)": "choice",
-        "SNum(7.0)": "input"
+        "SNum(3.0)": "failure",
+        "SNum(5.0)": "eval",
+        "SNum(7.0)": "input",
+        "SNum(9.0)": "print",
+        "SNum(11.0)": "TokenTrie",
+        "SNum(18.0)": "triangle"
       },
       "Cell": {
         "SNum(19.0)": {"__type__": "Cell_", "dptr": "SNum(15.0)", "next": "CellNum(nil)", "prev": "CellNum(nil)"}
@@ -291,8 +283,6 @@
     "e_table_full": {
     },
     "frame_super": {
-    },
-    "frame_full": {
     },
     "frame_codex": {
     },
@@ -336,17 +326,17 @@
       },
       "Code": {
         "SNum(13.0)": {"__type__": "ModCode_", "span": "SpanNum(14.0)", "stmp": "StmCodeCellNum(19.0)"},
-        "SNum(16.0)": {"TermCode_": "Ident", "span": "SpanNum(17.0)", "id": "IdentNum(18.0)"},
-        "SNum(15.0)": {"StmCode_": "Just", "span": "SpanNum(14.0)", "term": "TermCodeNum(16.0)"}
+        "SNum(15.0)": {"StmCode_": "Just", "span": "SpanNum(14.0)", "term": "TermCodeNum(16.0)"},
+        "SNum(16.0)": {"TermCode_": "Ident", "span": "SpanNum(17.0)", "id": "IdentNum(18.0)"}
       },
       "Ident": {
-        "SNum(11.0)": "TokenTrie",
-        "SNum(5.0)": "eval",
-        "SNum(18.0)": "triangle",
-        "SNum(3.0)": "failure",
-        "SNum(9.0)": "print",
         "SNum(1.0)": "choice",
-        "SNum(7.0)": "input"
+        "SNum(3.0)": "failure",
+        "SNum(5.0)": "eval",
+        "SNum(7.0)": "input",
+        "SNum(9.0)": "print",
+        "SNum(11.0)": "TokenTrie",
+        "SNum(18.0)": "triangle"
       },
       "Cell": {
         "SNum(19.0)": {"__type__": "Cell_", "dptr": "SNum(15.0)", "next": "CellNum(nil)", "prev": "CellNum(nil)"}
@@ -358,8 +348,6 @@
     "e_table_full": {
     },
     "frame_super": {
-    },
-    "frame_full": {
     },
     "frame_codex": {
     },
@@ -403,17 +391,17 @@
       },
       "Code": {
         "SNum(13.0)": {"__type__": "ModCode_", "span": "SpanNum(14.0)", "stmp": "StmCodeCellNum(19.0)"},
-        "SNum(16.0)": {"TermCode_": "Ident", "span": "SpanNum(17.0)", "id": "IdentNum(18.0)"},
-        "SNum(15.0)": {"StmCode_": "Just", "span": "SpanNum(14.0)", "term": "TermCodeNum(16.0)"}
+        "SNum(15.0)": {"StmCode_": "Just", "span": "SpanNum(14.0)", "term": "TermCodeNum(16.0)"},
+        "SNum(16.0)": {"TermCode_": "Ident", "span": "SpanNum(17.0)", "id": "IdentNum(18.0)"}
       },
       "Ident": {
-        "SNum(11.0)": "TokenTrie",
-        "SNum(5.0)": "eval",
-        "SNum(18.0)": "triangle",
-        "SNum(3.0)": "failure",
-        "SNum(9.0)": "print",
         "SNum(1.0)": "choice",
-        "SNum(7.0)": "input"
+        "SNum(3.0)": "failure",
+        "SNum(5.0)": "eval",
+        "SNum(7.0)": "input",
+        "SNum(9.0)": "print",
+        "SNum(11.0)": "TokenTrie",
+        "SNum(18.0)": "triangle"
       },
       "Cell": {
         "SNum(19.0)": {"__type__": "Cell_", "dptr": "SNum(15.0)", "next": "CellNum(nil)", "prev": "CellNum(nil)"}
@@ -425,8 +413,6 @@
     "e_table_full": {
     },
     "frame_super": {
-    },
-    "frame_full": {
     },
     "frame_codex": {
     },
@@ -469,17 +455,17 @@
       },
       "Code": {
         "SNum(13.0)": {"__type__": "ModCode_", "span": "SpanNum(14.0)", "stmp": "StmCodeCellNum(19.0)"},
-        "SNum(16.0)": {"TermCode_": "Ident", "span": "SpanNum(17.0)", "id": "IdentNum(18.0)"},
-        "SNum(15.0)": {"StmCode_": "Just", "span": "SpanNum(14.0)", "term": "TermCodeNum(16.0)"}
+        "SNum(15.0)": {"StmCode_": "Just", "span": "SpanNum(14.0)", "term": "TermCodeNum(16.0)"},
+        "SNum(16.0)": {"TermCode_": "Ident", "span": "SpanNum(17.0)", "id": "IdentNum(18.0)"}
       },
       "Ident": {
-        "SNum(11.0)": "TokenTrie",
-        "SNum(5.0)": "eval",
-        "SNum(18.0)": "triangle",
-        "SNum(3.0)": "failure",
-        "SNum(9.0)": "print",
         "SNum(1.0)": "choice",
-        "SNum(7.0)": "input"
+        "SNum(3.0)": "failure",
+        "SNum(5.0)": "eval",
+        "SNum(7.0)": "input",
+        "SNum(9.0)": "print",
+        "SNum(11.0)": "TokenTrie",
+        "SNum(18.0)": "triangle"
       },
       "Cell": {
         "SNum(19.0)": {"__type__": "Cell_", "dptr": "SNum(15.0)", "next": "CellNum(nil)", "prev": "CellNum(nil)"}
@@ -491,8 +477,6 @@
     "e_table_full": {
     },
     "frame_super": {
-    },
-    "frame_full": {
     },
     "frame_codex": {
     },

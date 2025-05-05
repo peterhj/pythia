@@ -1,3 +1,6 @@
+// TODO: temporarily disabled lint for debugging.
+#![allow(unused_variables)]
+
 use crate::algo::{
   BTreeMap, BTreeSet, FxHashMap, FxHashSet,
   OptionExt,
@@ -50,7 +53,7 @@ pub type RawMAddr = Box<[u64]>;
 pub const SNUM_TAG_BITS: RawSNum = 8;
 pub const SNUM_TAG_MASK: RawSNum = 0xff;
 
-pub const SNUM_UNSORT:      RawSNum = 0;
+/*pub const SNUM_UNSORT:      RawSNum = 0;
 pub const SNUM_SPAN_SORT:   RawSNum = 1;
 pub const SNUM_CODE_SORT:   RawSNum = 2;
 pub const SNUM_IDENT_SORT:  RawSNum = 3;
@@ -58,26 +61,28 @@ pub const SNUM_CELL_SORT:   RawSNum = 7;
 pub const SNUM_LITSTR_SORT: RawSNum = 8;
 pub const SNUM_TERM_SORT:   RawSNum = 9;
 pub const SNUM_VAL_SORT:    RawSNum = 10;
-pub const _SNUM_MAX_SORT:   RawSNum = 10;
+pub const _SNUM_MAX_SORT:   RawSNum = 10;*/
 
 // NB: must sync repr type w/ RawSNum.
 #[derive(Clone, Copy, Hash, Debug)]
 #[repr(u32)]
 pub enum SNumSort {
   Unsort = 0,
-  Span  = 1,
-  Code  = 2,
-  Ident = 3,
+  Gndstr = 1,
+  Span  = 2,
+  Code  = 3,
+  Ident = 4,
   Cell  = 7,
   Litstr = 8,
   Term  = 9,
   Val   = 10,
+  Frame = 11,
 }
 
 impl SNumSort {
   pub fn _max() -> RawSNum {
     // FIXME: must sync w/ enum variants (above).
-    10
+    11
   }
 }
 
@@ -1680,7 +1685,7 @@ impl Result_ {
 // [Interp-API]
 pub trait Tabled: Any + Debug {
   fn as_any(&self) -> &dyn Any;
-  fn _snapshot(&self) -> Option<String>;
+  fn _tap_snapshot(&self) -> Option<String>;
 }
 
 // [Interp-API]
@@ -1692,7 +1697,7 @@ macro_rules! impl_tabled {
     impl Tabled for $T {
       fn as_any(&self) -> &dyn Any { self }
 
-      fn _snapshot(&self) -> Option<String> {
+      fn _tap_snapshot(&self) -> Option<String> {
         let json_format = JsonFormat::new()
             .ascii(true)
             .comma(", ").unwrap()
@@ -1719,6 +1724,11 @@ macro_rules! impl_hash_tabled {
   };
 }
 
+impl_tabled!(RawSpan_);
+impl_tabled!(ModCode_);
+impl_tabled!(StmCode_);
+impl_tabled!(TermCode_);
+
 impl_tabled!(Cell_);
 
 impl_tabled!(AtomTerm_);
@@ -1732,10 +1742,7 @@ impl_tabled!(LitVal_);
 
 impl_tabled!(SafeStr);
 
-impl_tabled!(RawSpan_);
-impl_tabled!(ModCode_);
-impl_tabled!(StmCode_);
-impl_tabled!(TermCode_);
+impl_tabled!(Frame_);
 
 // [Interp-API]
 //
@@ -2214,6 +2221,23 @@ pub struct Namespace {
 }
 
 // [Interp-API]
+#[derive(Debug)]
+pub struct TableEntry_ {
+  lastclk:  LClk,
+  inner:    Box<dyn Tabled>,
+}
+
+impl TableEntry_ {
+  pub fn as_any(&self) -> &dyn Any {
+    self.inner.as_any()
+  }
+
+  pub fn _tap_snapshot(&self) -> Option<String> {
+    self.inner._tap_snapshot()
+  }
+}
+
+// [Interp-API]
 #[derive(Default)]
 pub struct FastEnv_ {
   // NB: below, `SNum` in "key"-like position should be interpreted
@@ -2229,7 +2253,7 @@ pub struct FastEnv_ {
 
   // TODO: tabled term storage should likely store tuples of _ENum_
   // instead of _SNum_.
-  table_full:   Vec<FxHashMap<SNum, Box<dyn Tabled>>>,
+  table_full:   Vec<BTreeMap<SNum, TableEntry_>>,
   // TODO: seminaive tables.
   //table_prev:   Vec<FxHashMap<SNum, Box<dyn Tabled>>>,
   //table_new:    Vec<FxHashMap<SNum, Box<dyn Tabled>>>,
@@ -2238,14 +2262,13 @@ pub struct FastEnv_ {
   //e_table_full: Vec<FxHashMap<SNum, Box<dyn Tabled>>>,
 
   frame_super:  FxHashMap<FrameNum, FrameNum>,
-  frame_full:   FxHashMap<FrameNum, Frame_>,
   // NB: i.e. "code[-to-frame] index".
   frame_codex:  FxHashMap<StmCodeNum, FrameNum>,
 
   raw_span_index: FxHashMap<RawSpan_, SpanNum>,
   raw_id_index: FxHashMap<RawIdent_, IdentNum>,
   // TODO: deprecate id_bind for id_global_bind.
-  id_bind:      FxHashMap<IdentNum, SNum>,
+  //id_bind:      FxHashMap<IdentNum, SNum>,
   id_global_bind: FxHashMap<IdentNum, SNum>,
   id_builtin_bind: FxHashMap<IdentNum, SNum>,
 
@@ -2274,6 +2297,28 @@ impl FastEnv_ {
       self.table_full.push(Default::default());
     }
   }
+
+  /*// [Interp-API]: This is part of the interpreter private API.
+  pub fn _get_term<K: Into<SNum>>(&self, key: K) -> Result<Option<&dyn Tabled>, InterpCheck> {
+    let x = key.into();
+    match self.table_full[SNumSort::Term as usize].get(&x) {
+      Some(e) => {
+        Ok(Some(&*e.inner))
+      }
+      None => Ok(None)
+    }
+  }
+
+  // [Interp-API]: This is part of the interpreter private API.
+  pub fn _get_val<K: Into<SNum>>(&self, key: K) -> Result<Option<&dyn Tabled>, InterpCheck> {
+    let x = key.into();
+    match self.table_full[SNumSort::Val as usize].get(&x) {
+      Some(e) => {
+        Ok(Some(&*e.inner))
+      }
+      None => Ok(None)
+    }
+  }*/
 }
 
 // [Interp-API]
@@ -2340,8 +2385,8 @@ pub enum UndoLogEntryInner_ {
   LoadRawIdent(IdentNum),
   LoadRawLit(LitNum),
   LoadRawLitStr(LitStrNum),
-  BindIdent(IdentNum, SNum),
-  BindGlobalIdent(IdentNum, SNum, SNum),
+  //BindIdent(IdentNum, SNum),
+  BindGlobalIdent(IdentNum, /*SNum,*/ SNum),
   BindLitStr(LitStrNum, Option<SNum>),
   BindLitVal(LitVal_, Option<SNum>),
   RebindIdent(IdentNum, SNum, SNum),
@@ -2524,19 +2569,21 @@ pub struct FastInterp {
 
   env:      FastEnv_,
 
-  log:      FastLog_,
-  trace:    FastTrace_,
+  // Backtrack state.
 
   clkinval: LClkInvalidSet,
+
+  log:      FastLog_,
+  trace:    FastTrace_,
 
   // TODO: a pv can come from multiple sources:
   // - backtrack only (w/ heuristics, branch/bound, etc.)
   // - "oracles"
   pv_cache: SlowPVCache_,
 
+  // Debug I/O state.
+
   snapshot: RefCell<Option<Box<dyn Write>>>,
-  //writer:   RefCell<Box<dyn Write>>,
-  //verbose:  i8,
   tap:      TAPOutput,
   parser_v: i8,
 }
@@ -2611,7 +2658,11 @@ impl FastInterp {
     }
     let code = ModCode_{span, stmp: stmp.into_stm_code()};
     _traceln!(self, "DEBUG: FastInterp::_load_raw_mod: x={:?} code={:?}", x, code);
-    self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
+    let e = TableEntry_{
+      lastclk: clk,
+      inner: Box::new(code),
+    };
+    self.env.table_full[SNumSort::Code as usize].insert(x.into(), e);
     Ok(x)
   }
 
@@ -2626,14 +2677,22 @@ impl FastInterp {
         let term = self._load_raw_term(raw_term)?;
         let code = StmCode_::Just{span, term};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_stm: x={:?} code={:?}", x, code);
-        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
+        let e = TableEntry_{
+          lastclk: clk,
+          inner: Box::new(code),
+        };
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), e);
         return Ok(x);
       }
       &RawStm_::Pass(ref raw_span) => {
         let span = self._load_raw_span(raw_span)?;
         let code = StmCode_::Pass{span};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_stm: x={:?} code={:?}", x, code);
-        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
+        let e = TableEntry_{
+          lastclk: clk,
+          inner: Box::new(code),
+        };
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), e);
         return Ok(x);
       }
       &RawStm_::Global(ref raw_span, ref raw_id) => {
@@ -2641,7 +2700,11 @@ impl FastInterp {
         let id = self._load_raw_ident(raw_id)?;
         let code = StmCode_::Global{span, id};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_stm: x={:?} code={:?}", x, code);
-        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
+        let e = TableEntry_{
+          lastclk: clk,
+          inner: Box::new(code),
+        };
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), e);
         return Ok(x);
       }
       &RawStm_::Nonlocal(ref raw_span, static_scope, ref raw_id) => {
@@ -2649,7 +2712,11 @@ impl FastInterp {
         let id = self._load_raw_ident(raw_id)?;
         let code = StmCode_::Nonlocal{span, static_scope, id};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_stm: x={:?} code={:?}", x, code);
-        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
+        let e = TableEntry_{
+          lastclk: clk,
+          inner: Box::new(code),
+        };
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), e);
         return Ok(x);
       }
       &RawStm_::If(ref raw_span, ref raw_cases, ref raw_final_case) => {
@@ -2690,7 +2757,11 @@ impl FastInterp {
         let final_case = final_case.try_into_nil()?;
         let code = StmCode_::If{span, cases, final_case};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_stm: x={:?} code={:?}", x, code);
-        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
+        let e = TableEntry_{
+          lastclk: clk,
+          inner: Box::new(code),
+        };
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), e);
         return Ok(x);
       }
       &RawStm_::Defproc(ref raw_span, prefix, .., ref raw_body) => {
@@ -2703,7 +2774,12 @@ impl FastInterp {
           self.env.frame_super.insert(frame, sup_frame);
         }
         let frame_ = Frame_{level, ids: Default::default()};
-        self.env.frame_full.insert(frame, frame_.into());
+        /*self.env.frame_full.insert(frame, frame_.into());*/
+        let e = TableEntry_{
+          lastclk: clk,
+          inner: Box::new(frame_),
+        };
+        self.env.table_full[SNumSort::Frame as usize].insert(frame.into(), e);
         let span = self._load_raw_span(raw_span)?;
         let mut body: CellNum = nil();
         let mut cur_body: CellNum = nil();
@@ -2720,7 +2796,11 @@ impl FastInterp {
         let body_stmp = body.into_stm_code();
         let code = StmCode_::Defproc{span, body_stmp};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_stm: x={:?} frame={:?} code={:?}", x, frame, code);
-        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
+        let e = TableEntry_{
+          lastclk: clk,
+          inner: Box::new(code),
+        };
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), e);
         self.env.frame_codex.insert(x.into(), frame);
         match prefix {
           None => {}
@@ -2747,7 +2827,11 @@ impl FastInterp {
         let body_stmp = body.into_stm_code();
         let code = StmCode_::Defmatch{span, body_stmp};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_stm: x={:?} code={:?}", x, code);
-        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
+        let e = TableEntry_{
+          lastclk: clk,
+          inner: Box::new(code),
+        };
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), e);
         match prefix {
           None => {}
           Some(RawDefPrefix_::Rule) => {
@@ -2761,7 +2845,11 @@ impl FastInterp {
         let span = self._load_raw_span(raw_span)?;
         let code = StmCode_::Quote{span};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_stm: x={:?} code={:?}", x, code);
-        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
+        let e = TableEntry_{
+          lastclk: clk,
+          inner: Box::new(code),
+        };
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), e);
         return Ok(x);
       }
       _ => {}
@@ -2781,7 +2869,11 @@ impl FastInterp {
         let id = self._load_raw_ident(raw_id)?;
         let code = TermCode_::Ident{span, id};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_term: x={:?} code={:?}", x, code);
-        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
+        let e = TableEntry_{
+          lastclk: clk,
+          inner: Box::new(code),
+        };
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), e);
         return Ok(x);
       }
       &RawTerm_::QualIdent(ref raw_span, ref raw_term, ref raw_id) => {
@@ -2790,7 +2882,11 @@ impl FastInterp {
         let id = self._load_raw_ident(raw_id)?;
         let code = TermCode_::QualIdent{span, term, id};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_term: x={:?} code={:?}", x, code);
-        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
+        let e = TableEntry_{
+          lastclk: clk,
+          inner: Box::new(code),
+        };
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), e);
         return Ok(x);
       }
       &RawTerm_::AtomLit(ref raw_span, ref raw_lit) => {
@@ -2798,7 +2894,11 @@ impl FastInterp {
         let lit_str = self._load_raw_lit_str(raw_lit)?;
         let code = TermCode_::AtomLit{span, lit_str};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_term: x={:?} code={:?}", x, code);
-        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
+        let e = TableEntry_{
+          lastclk: clk,
+          inner: Box::new(code),
+        };
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), e);
         return Ok(x);
       }
       &RawTerm_::IntLit(ref raw_span, ref raw_lit) => {
@@ -2806,7 +2906,11 @@ impl FastInterp {
         let lit_str = self._load_raw_lit_str(raw_lit)?;
         let code = TermCode_::IntLit{span, lit_str};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_term: x={:?} code={:?}", x, code);
-        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
+        let e = TableEntry_{
+          lastclk: clk,
+          inner: Box::new(code),
+        };
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), e);
         return Ok(x);
       }
       &RawTerm_::BoolLit(ref raw_span, ref raw_lit) => {
@@ -2814,7 +2918,11 @@ impl FastInterp {
         let lit_str = self._load_raw_lit_str(raw_lit)?;
         let code = TermCode_::BoolLit{span, lit_str};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_term: x={:?} code={:?}", x, code);
-        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
+        let e = TableEntry_{
+          lastclk: clk,
+          inner: Box::new(code),
+        };
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), e);
         return Ok(x);
       }
       &RawTerm_::NoneLit(ref raw_span, ref raw_lit) => {
@@ -2822,7 +2930,11 @@ impl FastInterp {
         let lit_str = self._load_raw_lit_str(raw_lit)?;
         let code = TermCode_::NoneLit{span, lit_str};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_term: x={:?} code={:?}", x, code);
-        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
+        let e = TableEntry_{
+          lastclk: clk,
+          inner: Box::new(code),
+        };
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), e);
         return Ok(x);
       }
       &RawTerm_::ListLit(ref raw_span, ref raw_tup) => {
@@ -2843,7 +2955,11 @@ impl FastInterp {
         let tup = tup.into_term_code();
         let code = TermCode_::ListCon{span, tup};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_term: x={:?} code={:?}", x, code);
-        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
+        let e = TableEntry_{
+          lastclk: clk,
+          inner: Box::new(code),
+        };
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), e);
         return Ok(x);
       }
       &RawTerm_::Bunch(ref raw_span, ref raw_tup) => {
@@ -2862,7 +2978,11 @@ impl FastInterp {
         let tup = tup.into_term_code();
         let code = TermCode_::Bunch{span, tup};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_term: x={:?} code={:?}", x, code);
-        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
+        let e = TableEntry_{
+          lastclk: clk,
+          inner: Box::new(code),
+        };
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), e);
         return Ok(x);
       }
       &RawTerm_::Equal(ref raw_span, ref raw_lterm, ref raw_rterm) => {
@@ -2871,7 +2991,11 @@ impl FastInterp {
         let rterm = self._load_raw_term(raw_rterm)?;
         let code = TermCode_::Equal{span, lterm, rterm};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_term: x={:?} code={:?}", x, code);
-        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
+        let e = TableEntry_{
+          lastclk: clk,
+          inner: Box::new(code),
+        };
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), e);
         return Ok(x);
       }
       &RawTerm_::NEqual(ref raw_span, ref raw_lterm, ref raw_rterm) => {
@@ -2880,7 +3004,11 @@ impl FastInterp {
         let rterm = self._load_raw_term(raw_rterm)?;
         let code = TermCode_::NEqual{span, lterm, rterm};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_term: x={:?} code={:?}", x, code);
-        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
+        let e = TableEntry_{
+          lastclk: clk,
+          inner: Box::new(code),
+        };
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), e);
         return Ok(x);
       }
       &RawTerm_::QEqual(ref raw_span, ref raw_lterm, ref raw_rterm) => {
@@ -2889,7 +3017,11 @@ impl FastInterp {
         let rterm = self._load_raw_term(raw_rterm)?;
         let code = TermCode_::QEqual{span, lterm, rterm};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_term: x={:?} code={:?}", x, code);
-        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
+        let e = TableEntry_{
+          lastclk: clk,
+          inner: Box::new(code),
+        };
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), e);
         return Ok(x);
       }
       &RawTerm_::BindL(ref raw_span, ref raw_lterm, ref raw_rterm) => {
@@ -2898,7 +3030,11 @@ impl FastInterp {
         let rterm = self._load_raw_term(raw_rterm)?;
         let code = TermCode_::BindL{span, lterm, rterm};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_term: x={:?} code={:?}", x, code);
-        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
+        let e = TableEntry_{
+          lastclk: clk,
+          inner: Box::new(code),
+        };
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), e);
         return Ok(x);
       }
       &RawTerm_::Apply(ref raw_span, ref raw_tup) => {
@@ -2917,7 +3053,11 @@ impl FastInterp {
         let tup = tup.into_term_code();
         let code = TermCode_::Apply{span, tup};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_term: x={:?} code={:?}", x, code);
-        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
+        let e = TableEntry_{
+          lastclk: clk,
+          inner: Box::new(code),
+        };
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), e);
         return Ok(x);
       }
       &RawTerm_::ApplyBindL(ref raw_span, ref raw_lterm, ref raw_tup) => {
@@ -2937,7 +3077,11 @@ impl FastInterp {
         let tup = tup.into_term_code();
         let code = TermCode_::ApplyBindL{span, lterm, tup};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_term: x={:?} code={:?}", x, code);
-        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
+        let e = TableEntry_{
+          lastclk: clk,
+          inner: Box::new(code),
+        };
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), e);
         return Ok(x);
       }
       &RawTerm_::ApplyBindR(ref raw_span, ref raw_tup, ref raw_rterm) => {
@@ -2957,7 +3101,11 @@ impl FastInterp {
         let rterm = self._load_raw_term(raw_rterm)?;
         let code = TermCode_::ApplyBindR{span, tup, rterm};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_term: x={:?} code={:?}", x, code);
-        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
+        let e = TableEntry_{
+          lastclk: clk,
+          inner: Box::new(code),
+        };
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), e);
         return Ok(x);
       }
       &RawTerm_::Effect(ref raw_span, ref raw_lterm, ref raw_rtup) => {
@@ -2977,7 +3125,11 @@ impl FastInterp {
         let rtup = rtup.into_term_code();
         let code = TermCode_::Effect{span, lterm, rtup};
         _traceln!(self, "DEBUG: FastInterp::_load_raw_term: x={:?} code={:?}", x, code);
-        self.env.table_full[SNumSort::Code as usize].insert(x.into(), Box::new(code));
+        let e = TableEntry_{
+          lastclk: clk,
+          inner: Box::new(code),
+        };
+        self.env.table_full[SNumSort::Code as usize].insert(x.into(), e);
         return Ok(x);
       }
       _ => {}
@@ -2998,7 +3150,11 @@ impl FastInterp {
     let x = self._fresh().into_ident();
     self.log._append(clk, LogEntryRef_::Undo(UndoLogEntry_::LoadRawIdent(x).into()));
     _traceln!(self, "DEBUG: FastInterp::_load_raw_ident: x={:?} raw ident={:?}", x, raw_id);
-    self.env.table_full[SNumSort::Ident as usize].insert(x.into(), Box::new(raw_id.clone()));
+    let e = TableEntry_{
+      lastclk: clk,
+      inner: Box::new(raw_id.clone()),
+    };
+    self.env.table_full[SNumSort::Ident as usize].insert(x.into(), e);
     self.env.raw_id_index.insert(raw_id.clone(), x.into());
     Ok(x)
   }
@@ -3015,7 +3171,11 @@ impl FastInterp {
     let x = self._fresh().into_lit_str();
     self.log._append(clk, LogEntryRef_::Undo(UndoLogEntry_::LoadRawLitStr(x).into()));
     _traceln!(self, "DEBUG: FastInterp::_load_raw_lit_str: x={:?} raw lit str={:?}", x, raw_lit_str);
-    self.env.table_full[SNUM_LITSTR_SORT as usize].insert(x.into(), Box::new(raw_lit_str.clone()));
+    let e = TableEntry_{
+      lastclk: clk,
+      inner: Box::new(raw_lit_str.clone()),
+    };
+    self.env.table_full[SNumSort::Litstr as usize].insert(x.into(), e);
     self.env.raw_lit_index.insert(raw_lit_str.clone(), x.into());
     Ok(x)
   }
@@ -3032,7 +3192,11 @@ impl FastInterp {
     let x = self._fresh().into_span();
     self.log._append(clk, LogEntryRef_::Undo(UndoLogEntry_::LoadRawSpan(x).into()));
     _traceln!(self, "DEBUG: FastInterp::_load_raw_span: x={:?} raw span={:?}", x, raw_span);
-    self.env.table_full[SNUM_SPAN_SORT as usize].insert(x.into(), Box::new(raw_span.clone()));
+    let e = TableEntry_{
+      lastclk: clk,
+      inner: Box::new(raw_span.clone()),
+    };
+    self.env.table_full[SNumSort::Span as usize].insert(x.into(), e);
     self.env.raw_span_index.insert(raw_span.clone(), x.into());
     Ok(x)
   }
@@ -3146,7 +3310,11 @@ impl FastInterp {
       next: nil(),
       prev: nil(),
     };
-    self.env.table_full[SNUM_CELL_SORT as usize].insert(x.into(), Box::new(cel));
+    let e = TableEntry_{
+      lastclk: clk,
+      inner: Box::new(cel),
+    };
+    self.env.table_full[SNumSort::Cell as usize].insert(x.into(), e);
     x
   }
 
@@ -3157,14 +3325,14 @@ impl FastInterp {
     if lcel.is_nil() {
       return Ok(());
     }
-    match self.env.table_full[SNUM_CELL_SORT as usize].get(&lcel.into())
+    match self.env.table_full[SNumSort::Cell as usize].get(&lcel.into())
       .and_then(|y| y.as_any().downcast_ref::<Cell_>())
     {
       None => {
         return Err("bug".into());
       }
       Some(lcel_) => {
-        match self.env.table_full[SNUM_CELL_SORT as usize].get(&rcel.into())
+        match self.env.table_full[SNumSort::Cell as usize].get(&rcel.into())
           .and_then(|y| y.as_any().downcast_ref::<Cell_>())
         {
           None => {
@@ -3227,7 +3395,7 @@ impl FastInterp {
   // [Interp-API]: This is part of the interpreter private API.
   #[track_caller]
   pub fn lookup_stm_code_cell(&self, x: StmCodeCellNum) -> Result<Cell_, InterpCheck> {
-    match self.env.table_full[SNUM_CELL_SORT as usize].get(&x.into()) {
+    match self.env.table_full[SNumSort::Cell as usize].get(&x.into()) {
       None => {
         Err(format!("failed to lookup cell: x = {x:?}").into())
       }
@@ -3271,7 +3439,7 @@ impl FastInterp {
   // [Interp-API]: This is part of the interpreter private API.
   #[track_caller]
   pub fn lookup_term_code_cell(&self, x: TermCodeCellNum) -> Result<Cell_, InterpCheck> {
-    match self.env.table_full[SNUM_CELL_SORT as usize].get(&x.into()) {
+    match self.env.table_full[SNumSort::Cell as usize].get(&x.into()) {
       None => {
         Err(format!("failed to lookup cell: x = {x:?}").into())
       }
@@ -3315,7 +3483,7 @@ impl FastInterp {
   // [Interp-API]: This is part of the interpreter private API.
   #[track_caller]
   pub fn lookup_raw_lit_str(&self, lit_str: LitStrNum) -> Result<&RawLit_, InterpCheck> {
-    match self.env.table_full[SNUM_LITSTR_SORT as usize].get(&lit_str.into()) {
+    match self.env.table_full[SNumSort::Litstr as usize].get(&lit_str.into()) {
       None => {
         Err(format!("failed to lookup raw literal: lit str = {lit_str:?}").into())
       }
@@ -3372,18 +3540,50 @@ impl FastInterp {
   }
 
   // [Interp-API]: This is part of the interpreter private API.
+  pub fn get_term<K: Into<SNum>>(&self, key: K) -> Result<Option<&dyn Tabled>, InterpCheck> {
+    let x = key.into();
+    match self.env.table_full[SNumSort::Term as usize].get(&x) {
+      Some(e) => {
+        Ok(Some(&*e.inner))
+      }
+      None => Ok(None)
+    }
+  }
+
+  // FIXME: `V: Tabled` is too loose.
+  // [Interp-API]: This is part of the interpreter private API.
   pub fn put_term<K: Into<SNum>, V: Tabled>(&mut self, clk: LClk, key: K, term: V) -> Result<(), InterpCheck> {
     let x = key.into();
     _traceln!(self, "DEBUG: FastInterp::put_term: clk={:?} x={:?} term={:?}", clk, x, term);
-    self.env.table_full[SNumSort::Term as usize].insert(x, Box::new(term));
+    let e = TableEntry_{
+      lastclk: clk,
+      inner: Box::new(term),
+    };
+    self.env.table_full[SNumSort::Term as usize].insert(x, e);
     self.log._append(clk, LogEntryRef_::Undo(UndoLogEntry_::PutTerm(x).into()));
     Ok(())
   }
 
   // [Interp-API]: This is part of the interpreter private API.
+  pub fn get_val<K: Into<SNum>>(&self, key: K) -> Result<Option<&dyn Tabled>, InterpCheck> {
+    let x = key.into();
+    match self.env.table_full[SNumSort::Val as usize].get(&x) {
+      Some(e) => {
+        Ok(Some(&*e.inner))
+      }
+      None => Ok(None)
+    }
+  }
+
+  // FIXME: `V: Tabled` is too loose.
+  // [Interp-API]: This is part of the interpreter private API.
   pub fn put_val<K: Into<SNum>, V: Tabled>(&mut self, clk: LClk, key: K, val: V) -> Result<(), InterpCheck> {
     let x = key.into();
-    self.env.table_full[SNumSort::Val as usize].insert(x, Box::new(val));
+    let e = TableEntry_{
+      lastclk: clk,
+      inner: Box::new(val),
+    };
+    self.env.table_full[SNumSort::Val as usize].insert(x, e);
     self.log._append(clk, LogEntryRef_::Undo(UndoLogEntry_::PutVal(x).into()));
     Ok(())
   }
@@ -3473,20 +3673,20 @@ impl FastInterp {
           self.env.unifier.tree.remove(&state.oroot);
         }
       }
-      &UndoLogEntry_::BindIdent(id, prev_x) => {
+      /*&UndoLogEntry_::BindIdent(id, prev_x) => {
         /*let raw_id = self.lookup_raw_ident(id)?.clone();*/
         if prev_x.is_nil() {
           self.env.id_bind.remove(&id);
         } else {
           self.env.id_bind.insert(id, prev_x.into());
         }
-      }
-      &UndoLogEntry_::BindGlobalIdent(id, prev_x, prev_global_x) => {
-        if prev_x.is_nil() {
+      }*/
+      &UndoLogEntry_::BindGlobalIdent(id, /*prev_x,*/ prev_global_x) => {
+        /*if prev_x.is_nil() {
           self.env.id_bind.remove(&id);
         } else {
           self.env.id_bind.insert(id, prev_x.into());
-        }
+        }*/
         if prev_global_x.is_nil() {
           self.env.id_global_bind.remove(&id);
         } else {
@@ -3519,8 +3719,8 @@ impl FastInterp {
   }
 
   // FIXME: separate flat interp is annoying to maintain...
-  // [Interp-API-Pub]
-  pub fn flatten_(&self) -> FlatInterp {
+  // [Deprecated/Interp-API-Pub]
+  /*pub fn flatten_(&self) -> FlatInterp {
     let clk = self.clkctr._get_clock();
     let mut interp = FlatInterp{
       clk,
@@ -3587,7 +3787,7 @@ impl FastInterp {
     }
     // FIXME: flatten is missing lots of state.
     interp
-  }
+  }*/
 
   // [Interp-API]
   pub fn write_snapshot(&self) -> () {
@@ -3678,7 +3878,7 @@ impl FastInterp {
           }
           write!(snapshot, "        {}: {}",
               json_format.to_string(key).unwrap(),
-              item._snapshot().unwrap()
+              item._tap_snapshot().unwrap()
           ).unwrap();
         }
         write!(snapshot, "\n      }}").unwrap();
@@ -3695,14 +3895,14 @@ impl FastInterp {
         ).unwrap();
       }
       writeln!(snapshot, "    }},").unwrap();
-      writeln!(snapshot, "    \"frame_full\": {{").unwrap();
+      /*writeln!(snapshot, "    \"frame_full\": {{").unwrap();
       for (key, item) in self.env.frame_full.iter() {
         writeln!(snapshot, "      {}: {},",
             json_format.to_string(key).unwrap(),
             json_format.to_string(item).unwrap()
         ).unwrap();
       }
-      writeln!(snapshot, "    }},").unwrap();
+      writeln!(snapshot, "    }},").unwrap();*/
       writeln!(snapshot, "    \"frame_codex\": {{").unwrap();
       for (key, item) in self.env.frame_codex.iter() {
         writeln!(snapshot, "      {}: {},",
@@ -3889,7 +4089,7 @@ impl FastInterp {
                   _debugln!(self, "DEBUG: FastInterp::interp_: yield:   trace.buf[{}]: undo[{}]: clk={:?} entry={:?}", p, logp, self.log.buf[logp].clk, e);
                   self.undo(self.log.buf[logp].clk, e.clone())?;
                 }
-                _ => return Err(bot())
+                //_ => return Err(bot())
               }
               let _ = self.log.buf.pop().unwrap();
             }
@@ -4231,7 +4431,7 @@ impl FastInterp {
           match cur_term_code_ {
             TermCode_::Ident{span, id} => {
               let raw_id = self.lookup_raw_ident(id)?.clone();
-              match self.env.id_bind.get(&id) {
+              match self.env.id_global_bind.get(&id) {
                 Some(&x) => {
                   self.put_res(x)?;
                   self.knt_ = knt.prev;
@@ -4241,16 +4441,16 @@ impl FastInterp {
                   let x = self._fresh().into_term();
                   let term_ = IdentTerm_{id, raw_id: raw_id.clone()};
                   self.put_term(clk, x, term_)?;
-                  let prev_x = self.env.id_bind.insert(id, x.into()).try_into_nil()
+                  let prev_x = self.env.id_global_bind.insert(id, x.into()).try_into_nil()
                       .map_err(|_| format!("nil-bound ident: id = {:?} raw id = {:?}", id, raw_id).into_check())?;
                   // FIXME: global scope.
-                  if false {
+                  /*if false {
                     let prev_global_x = self.env.id_global_bind.insert(id, x.into()).try_into_nil()
                         .map_err(|_| format!("nil-bound global ident: id = {:?} raw id = {:?}", id, raw_id).into_check())?;
                     self.log._append(clk, LogEntryRef_::Undo(UndoLogEntry_::BindGlobalIdent(id, prev_x, prev_global_x).into()));
                   } else {
-                    self.log._append(clk, LogEntryRef_::Undo(UndoLogEntry_::BindIdent(id, prev_x).into()));
-                  }
+                  }*/
+                  self.log._append(clk, LogEntryRef_::Undo(UndoLogEntry_::BindGlobalIdent(id, prev_x).into()));
                   self.put_res(x)?;
                   self.knt_ = knt.prev;
                   self.port = Port_::Return;
@@ -4379,7 +4579,8 @@ impl FastInterp {
               // FIXME: build actual list obj val from this constructor.
               let obj = LitVal_::List{buf: Vec::new()};
               _traceln!(self, "DEBUG: FastInterp::resume_:   Enter  ListCon: fresh obj val = {:?}", x);
-              self.env.table_full[SNumSort::Val as usize].insert(x.into(), Box::new(obj));
+              /*self.env.table_full[SNumSort::Val as usize].insert(x.into(), Box::new(obj));*/
+              self.put_val(clk, x, obj)?;
               self.put_res(x)?;
               self.knt_ = knt.prev;
               self.port = Port_::Return;
@@ -4684,8 +4885,9 @@ impl FastInterp {
               let x = self._fresh().into_term();
               // FIXME: this is the old value semantics.
               let obj = LitVal_::Bool(lterm_ == rterm_);
-              //self.env.table_full[SNumSort::Term as usize].insert(x.into(), Box::new(_));
-              self.env.table_full[SNumSort::Val as usize].insert(x.into(), Box::new(obj));
+              /*//self.env.table_full[SNumSort::Term as usize].insert(x.into(), Box::new(_));
+              self.env.table_full[SNumSort::Val as usize].insert(x.into(), Box::new(obj));*/
+              self.put_val(clk, x, obj)?;
               self.put_res(x)?;
               self.knt_ = knt.prev;
               self.port = Port_::Return;
@@ -4726,7 +4928,7 @@ impl FastInterp {
             //self.log.push(LogEntryRef_::Undo(UndoLogEntry_::ApplyTerm(x).into()));
             let fun_head = state.tup[0].1.into_fun();
             _traceln!(self, "DEBUG: InterpApplyTerm: Enter:  fun head={:?}", fun_head);
-            if let Some(fun_head_term) = self.env.table_full[SNumSort::Term as usize].get(&fun_head.into()) {
+            if let Some(fun_head_term) = self.get_term(fun_head)? {
               _traceln!(self, "DEBUG: InterpApplyTerm: Enter:  fun head is term = {:?}", fun_head_term);
               if let Some(id_term) = fun_head_term.as_any().downcast_ref::<IdentTerm_>() {
                 //if let Some(&id) = self.env.raw_id_index.get(&id_term.raw_id) {

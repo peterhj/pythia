@@ -1,3 +1,6 @@
+// TODO: temporarily disabled lint for debugging.
+#![allow(unused_variables)]
+
 use crate::algo::{SmolStr};
 use crate::algo::cell::{RefCell};
 use crate::algo::str::{SafeStr, StrParserConfig, StrParser};
@@ -2136,7 +2139,9 @@ impl<S: AsRef<str>> Parser<S> {
             }
           }
         }
-        let span = start.hull(self.pos());
+        #[allow(unreachable_code)]
+        { unreachable!(); }
+        /*let span = start.hull(self.pos());
         if tup.len() == 2 {
           match *tup.pop().unwrap() {
             Term::Bunch(_, tup_) => {
@@ -2148,7 +2153,7 @@ impl<S: AsRef<str>> Parser<S> {
             }
           }
         }
-        return Ok(Term::Apply(span, tup));
+        return Ok(Term::Apply(span, tup));*/
       }
       &Token::LColonParen => {
         let mut this_ctx = this_ctx;
@@ -2168,7 +2173,8 @@ impl<S: AsRef<str>> Parser<S> {
       }
       _ => unimplemented!()
     }
-    unimplemented!();
+    #[allow(unreachable_code)]
+    { unreachable!(); }
   }
 }
 
@@ -2434,9 +2440,9 @@ impl<S: AsRef<str>> Printer<S> {
         }
         print!(")");
       }
-      _ => {
+      /*_ => {
         print!("_");
-      }
+      }*/
     }
   }
 }

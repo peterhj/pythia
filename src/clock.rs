@@ -47,7 +47,7 @@ impl Serialize for Timestamp {
 }
 
 impl<'d> Deserialize<'d> for Timestamp {
-  fn deserialize<D: Deserializer<'d>>(deserializer: D) -> Result<Timestamp, D::Error> {
+  fn deserialize<D: Deserializer<'d>>(_deserializer: D) -> Result<Timestamp, D::Error> {
     // TODO
     unimplemented!()
   }

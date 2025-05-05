@@ -89,11 +89,11 @@ impl DevelJournal_ {
       }
       Ok(v) => v
     };*/
-    let widx_size = match std::fs::metadata(&widx_path) {
+    let _widx_size = match std::fs::metadata(&widx_path) {
       Err(_) => 0,
       Ok(f) => f.len() as usize
     };
-    let wlog_size = match std::fs::metadata(&wlog_path) {
+    let _wlog_size = match std::fs::metadata(&wlog_path) {
       Err(_) => 0,
       Ok(f) => f.len() as usize
     };
@@ -136,7 +136,7 @@ impl DevelJournal_ {
             } else {
               widx_mem[widx_mem.len()-1]
             };
-            let data = match wlog_lines.next() {
+            let _data = match wlog_lines.next() {
               None |
               Some(Err(_)) => {
                 truncate = true;

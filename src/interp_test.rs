@@ -1,3 +1,6 @@
+// TODO: temporarily disabled lint for debugging.
+#![allow(unused_variables)]
+
 use crate::clock::{Timedelta, Timestamp};
 use crate::interp::*;
 use crate::tap::*;
@@ -71,8 +74,8 @@ impl InterpTestsProver {
       Ok(yield_) => yield_
     };
     let t2 = Timestamp::fresh();
-    let flatinterp = interp.flatten_();
-    self.conf.set_vector_file(&item.key, &flatinterp.vectorize());
+    /*let flatinterp = interp.flatten_();
+    self.conf.set_vector_file(&item.key, &flatinterp.vectorize());*/
     writeln!(writer, "{} {} - {:?}", "ok".green(), rank, &item.key)?;
     if yield_ == Yield_::Quiescent {
     } else {
