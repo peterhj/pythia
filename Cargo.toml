@@ -127,7 +127,7 @@ regex-syntax = { path = "dep/regex/regex-syntax" }
 ryu = { path = "dep/ryu" }
 serde = { path = "dep/serde/serde" }
 serde_json = { path = "dep/serde_json" }
-serde_json_fmt = { path = "../serde_json_fmt" }
+serde_json_fmt = { path = "dep/serde_json_fmt" }
 signal_hook = { path = "dep/signal_hook" }
 smol_str = { path = "dep/smol_str" }
 syn = { path = "dep/syn" }
