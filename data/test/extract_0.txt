@@ -1,0 +1,138 @@
+# Parsing Markdown Code Blocks in Rust
+
+Here's a Rust implementation that parses markdown-style code blocks using only libstd, returning a vector of tuples containing the optional language and code content:
+
+```rust
+use std::str::Chars;
+
+pub fn parse_code_blocks(input: &str) -> Vec<(Option<String>, String)> {
+    let mut result = Vec::new();
+    let mut chars = input.chars().peekable();
+    
+    while let Some(c) = chars.next() {
+        if c == '`' {
+            // Check if this is the start of a code block (3+ backticks)
+            let backtick_count = count_consecutive('`', &mut chars) + 1;
+            
+            if backtick_count >= 3 {
+                // This is a code block - parse it
+                if let Some(block) = parse_code_block(&mut chars, backtick_count) {
+                    result.push(block);
+                }
+            }
+        }
+    }
+    
+    result
+}
+
+fn count_consecuneive(c: char, chars: &mut Peekable<Chars>) -> usize {
+    let mut count = 0;
+    while chars.peek() == Some(&c) {
+        chars.next();
+        count += 1;
+    }
+    count
+}
+
+fn parse_code_block(chars: &mut Peekable<Chars>, opening_ticks: usize) -> Option<(Option<String>, String)> {
+    // Skip whitespace after opening ticks
+    while chars.peek().map_or(false, |c| c.is_whitespace()) {
+        chars.next();
+    }
+    
+    // Parse language (if any)
+    let mut language = String::new();
+    while chars.peek().map_or(false, |c| !c.is_whitespace() && *c != '`') {
+        if let Some(c) = chars.next() {
+            language.push(c);
+        }
+    }
+    
+    // Skip whitespace after language
+    while chars.peek().map_or(false, |c| c.is_whitespace()) {
+        chars.next();
+    }
+    
+    // Parse until we find closing ticks
+    let mut content = String::new();
+    let mut consecutive_ticks = 0;
+    
+    while let Some(c) = chars.next() {
+        if c == '`' {
+            consecutive_ticks += 1;
+            if consecutive_ticks == opening_ticks {
+                // Found closing ticks - return the block
+                let lang = if language.is_empty() {
+                    None
+                } else {
+                    Some(language)
+                };
+                return Some((lang, content));
+            }
+        } else {
+            // Add any pending backticks to content
+            if consecutive_ticks > 0 {
+                content.push_str(&"`".repeat(consecutive_ticks));
+                consecutive_ticks = 0;
+            }
+            content.push(c);
+        }
+    }
+    
+    // If we get here, we didn't find closing ticks - invalid block
+    None
+}
+```
+
+## How It Works
+
+1. **Main Function (`parse_code_blocks`)**:
+   - Scans the input string for backticks (`)
+   - When it finds 3 or more consecutive backticks, it attempts to parse a code block
+
+2. **Code Block Parsing**:
+   - After opening backticks, it optionally reads a language identifier
+   - Then reads content until it finds matching closing backticks
+   - Handles cases where backticks appear within the content
+
+3. **Output**:
+   - Returns a vector of tuples where:
+     - First element: `Some(language)` if a language was specified, otherwise `None`
+     - Second element: The code content between the backticks
+
+## Example Usage
+
+```rust
+fn main() {
+    let markdown = r#"
+Here's some text.
+
+```rust
+fn main() {
+    println!("Hello, world!");
+}
+```
+
+And another block with no language:
+
+```
+Just plain text
+```plain
+"#;
+
+    let blocks = parse_code_blocks(markdown);
+    for (lang, code) in blocks {
+        println!("Language: {:?}", lang);
+        println!("Code:\n{}", code);
+    }
+}
+```
+
+## Limitations
+
+1. Doesn't handle indented code blocks (only fenced code blocks with backticks)
+2. Assumes the same number of backticks is used to close as to open
+3. Doesn't handle nested code blocks (which aren't standard in Markdown anyway)
+
+This implementation should work for most standard Markdown code blocks while using only Rust's standard library.

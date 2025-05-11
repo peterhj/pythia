@@ -1,5 +1,6 @@
 extern crate bitflags;
 extern crate byteorder;
+extern crate getrandom;
 extern crate libc;
 extern crate once_cell;
 extern crate paste;
@@ -19,6 +20,7 @@ extern crate time;
 
 #[cfg(feature = "pyo3")]
 pub mod _extlib;
+pub mod aikido;
 pub mod algo;
 pub mod build;
 pub mod clock;
@@ -34,3 +36,4 @@ pub mod src;
 pub mod sys;
 pub mod tap;
 pub mod test_data;
+pub mod util;

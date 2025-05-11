@@ -31,6 +31,9 @@ OPENROUTER_API_KEY = _load_api_token("OPENROUTER", "openrouter.ai")
 TOGETHER_API_KEY   = _load_api_token("TOGETHER",   "together.xyz")
 XAI_API_KEY        = _load_api_token("XAI",        "x.ai")
 
+def _match_str(query: str, pat: str) -> bool:
+    return query == pat or query == f"\"{pat}\""
+
 @dataclass
 class _ApproxOracleResponseItem:
     sample: dict = None
@@ -54,39 +57,17 @@ class ApproxOracleEndpoint:
     endpoint_api_url: str
     endpoint_api_token: str
     endpoint_api_protocol: str
-    endpoint_api_rps_limit: Optional[int] = None
     endpoint_extra_params: Optional[dict] = None
+    endpoint_throttle_rps: Optional[int] = None
 
     @classmethod
     def from_model(cls, model: str) -> Any:
-        if model == "deepseek-r1-20250120":
+        if _match_str(model, "deepseek-r1-20250120"):
             return cls.deepseek_r1_20250120()
-        elif model == "\"deepseek-r1-20250120\"":
-            return cls.deepseek_r1_20250120()
-        elif model == "deepseek-v3-chat-20250324":
+        elif _match_str(model, "deepseek-v3-chat-20250324"):
             return cls.deepseek_v3_chat_20250324()
-            #return cls.hyperbolic_deepseek_v3_20241226()
-            #return cls.together_deepseek_v3_20241226()
-        elif model == "\"deepseek-v3-chat-20250324\"":
-            return cls.deepseek_v3_chat_20250324()
-        elif model == "deepseek-r1-20250120-hyperbolic":
-            return cls.hyperbolic_deepseek_r1_20250120()
-        elif model == "deepseek-v3-20250324-hyperbolic":
-            return cls.hyperbolic_deepseek_v3_20250324()
-        elif model == "deepseek-v3-20241226-hyperbolic":
-            return cls.hyperbolic_deepseek_v3_20241226()
-        elif model == "deepseek-r1-20250120-together":
-            return cls.together_deepseek_r1_20250120()
-        elif model == "deepseek-v3-20241226-together":
-            return cls.together_deepseek_v3_20241226()
-        elif model == "xai-grok-3-mini-beta-20250418":
+        elif _match_str(model, "xai-grok-3-mini-beta-20250418"):
             return cls.xai_grok_3_mini_beta()
-        elif model == "qwen-2.5-vl-72b-instruct-together":
-            return cls.together_qwen_2_5_vl_72b_instruct()
-        elif model == "qwq-32b-hyperbolic":
-            return cls.hyperbolic_qwq_32b()
-        elif model == "qwen-2.5-coder-32b-instruct-hyperbolic":
-            return cls.hyperbolic_qwen_2_5_coder_32b_instruct()
         else:
             raise NotImplementedError
 
@@ -199,16 +180,40 @@ class ApproxOracleEndpoint:
     @classmethod
     def openrouter(cls, **kwargs) -> Any:
         return cls(
-            endpoint_api_url = "https://openrouter.ai/api",
+            endpoint_api_url = "https://openrouter.ai",
             endpoint_api_token = OPENROUTER_API_KEY,
             endpoint_api_protocol = "openrouter",
             **kwargs,
         )
 
     @classmethod
+    def openrouter_deepseek_r1_20250120(cls) -> Any:
+        return cls.openrouter(
+            model = "deepseek-r1-20250120-openrouter",
+            endpoint_model = "deepseek/deepseek-r1",
+            endpoint_max_new_tokens = 8192,
+        )
+
+    @classmethod
+    def openrouter_deepseek_v3_20250324(cls) -> Any:
+        return cls.openrouter(
+            model = "deepseek-v3-20250324-openrouter",
+            endpoint_model = "deepseek/deepseek-chat-v3-0324",
+            endpoint_max_new_tokens = 8192,
+        )
+
+    @classmethod
+    def openrouter_grok_3_mini_beta(cls) -> Any:
+        return cls.openrouter(
+            model = "xai-grok-3-mini-beta-20250418-openrouter",
+            endpoint_model = "x-ai/grok-3-mini-beta",
+            endpoint_max_new_tokens = 131072,
+        )
+
+    @classmethod
     def together(cls, **kwargs) -> Any:
         return cls(
-            endpoint_api_url = "https://api.together.xyz/v1",
+            endpoint_api_url = "https://api.together.xyz",
             endpoint_api_token = TOGETHER_API_KEY,
             endpoint_api_protocol = "openai",
             **kwargs,
@@ -256,6 +261,7 @@ class ApproxOracleEndpoint:
             endpoint_extra_params = {
                 "reasoning_effort": "high",
             },
+            endpoint_throttle_rps = 5,
         )
 
     def __post_init__(self) -> None:
@@ -267,10 +273,14 @@ class ApproxOracleEndpoint:
             "openrouter",
         ):
             # TODO: proper urllib formatting.
-            if self.endpoint_api_protocol == "openai":
-                self._chat_endpoint_url = "{}/v1/chat/completions".format(self.endpoint_api_url)
-            else:
+            if self.endpoint_api_protocol == "deepseek":
                 self._chat_endpoint_url = "{}/chat/completions".format(self.endpoint_api_url)
+            elif self.endpoint_api_protocol == "openai":
+                self._chat_endpoint_url = "{}/v1/chat/completions".format(self.endpoint_api_url)
+            elif self.endpoint_api_protocol == "openrouter":
+                self._chat_endpoint_url = "{}/api/v1/chat/completions".format(self.endpoint_api_url)
+            else:
+                raise NotImplementedError
             self._chat_endpoint_headers = {
                 "User-Agent": "curl/8.7.1",
                 "Authorization": "Bearer {}".format(self.endpoint_api_token),
@@ -285,6 +295,7 @@ class ApproxOracleEndpoint:
         messages: list[dict[str, str]] = None,
         sample: dict[str, Any] = None,
         res: _ApproxOracleResponseItem = None,
+        key: Any = None,
     ) -> _ApproxOracleResponseItem:
         if res is None:
             res = _ApproxOracleResponseItem()
@@ -358,6 +369,7 @@ class ApproxOracleEndpoint:
             res_data = hres.read()
         res.t1 = datetime.utcnow().isoformat()
         #print(f"DEBUG: ApproxOracleEndpoint.query: t1 = {res.t1}")
+        #print(f"DEBUG: ApproxOracleEndpoint.query: recv data = {json.dumps(res_data.decode('utf-8'))}", flush=True)
         res_body = json.loads(res_data.decode("utf-8"))
         #print(f"DEBUG: ApproxOracleEndpoint.query: res body = {res_body}")
         think = None
@@ -380,7 +392,10 @@ class ApproxOracleEndpoint:
         res.value = value
         # NB: re-serializing json response.
         res.data = json.dumps(res_body)
-        print(f"DEBUG: ApproxOracleEndpoint.query: done")
+        if key is not None:
+            print(f"DEBUG: ApproxOracleEndpoint.query: done: key = {key}")
+        else:
+            print(f"DEBUG: ApproxOracleEndpoint.query: done")
         return res
 
 @dataclass
@@ -444,7 +459,7 @@ class _ApproxOracleWorkItem:
         #print(f"DEBUG: _ApproxOracleWorkItem._finalize: item = {item}")
         return item
 
-def _query(work_item):
+def _query(work_item, key: Any = None):
     #print(f"DEBUG: _query: pre work item  = {work_item}")
     endpoint = ApproxOracleEndpoint.from_model(work_item.item.model)
     #print(f"DEBUG: _query: endpoint.model = {endpoint.model}")
@@ -458,23 +473,25 @@ def _query(work_item):
     endpoint.query(
         messages=messages,
         res=work_item.res,
+        key=key,
     )
     #print(f"DEBUG: _query: post work item = {work_item}")
     #print(f"DEBUG: _query: done")
     return work_item
 
-def _try_query(work_item):
+def _try_query(work_item, key: Any = None):
     #print(f"DEBUG: _try_query: work item = {work_item}")
     try:
-        _query(work_item)
+        _query(work_item, key=key)
     # TODO: exc reporting.
     except Exception as e:
-        print(f"DEBUG: _try_query: except = {e}")
+        #print(f"DEBUG: _try_query: except = {e}")
         work_item.exc = ApproxOracleExceptItem(
             exc_type=f"{type(e).__name__}",
             exc_str=str(e),
             stack_trace=traceback.format_exc(),
         )
+        print(f"DEBUG: _try_query: except = {work_item.exc}")
     return work_item
 
 @dataclass
@@ -519,12 +536,12 @@ class ApproxOracleInterface:
         if isinstance(item, dict):
             #print("DEBUG: ApproxOracleInterface.put: isa dict")
             item = ApproxOracleItem(**item)
-        if item.model is None:
+        if item.model is None or _match_str(item.model, "default"):
             #print("DEBUG: ApproxOracleInterface.put: set default model")
             item.model = self.default_model
         print(f"DEBUG: ApproxOracleInterface.put: item = {item}")
         work_item = _ApproxOracleWorkItem(item)
-        w = self.worker._poolexec.submit(_try_query, work_item)
+        w = self.worker._poolexec.submit(_try_query, work_item, key=item.key)
         self._work_set.add(w)
 
     def poll(self, timeout=None) -> ApproxOracleItem:
@@ -590,11 +607,11 @@ class ApproxOracleAsyncInterface:
     async def get(self, item: Union[ApproxOracleItem, dict]) -> ApproxOracleItem:
         if isinstance(item, dict):
             item = ApproxOracleItem(**item)
-        if item.model is None:
+        if item.model is None or _match_str(item.model, "default"):
             item.model = self.default_model
         work_item = _ApproxOracleWorkItem(item)
         def _query_work_item():
-            _try_query(work_item)
+            _try_query(work_item, key=item.key)
             return work_item
         loop = asyncio.get_running_loop()
         w = loop.run_in_executor(self.worker._poolexec, _query_work_item)
@@ -623,9 +640,13 @@ def test_main_async():
     )
     result = asyncio.run(iface.get(ApproxOracleItem(
         key=0,
-        query="""How would I use `asyncio.wrap_future` with both a `concurrent.futures.ThreadPoolExecutor` and an asyncio loop? Please provide a full toy example that involves making a POST request (using `urllib.request`) to "http://api.example.com/".""",
-    )), debug=True)
+        query="""How would I use `asyncio.gather` with both a `concurrent.futures.ThreadPoolExecutor` and an asyncio loop? Please provide a full toy example that involves making a POST request (using `urllib.request`) to "http://api.example.com/".""",
+    )))
     print(result)
+    print(f"DEBUG: _approx_oracle: think:")
+    print(result.think)
+    print(f"DEBUG: _approx_oracle: value:")
+    print(result.value)
 
 def test_main_async_2():
     print(f"DEBUG: _approx_oracle: test main (async 2)")
@@ -634,7 +655,7 @@ def test_main_async_2():
     )
     w1 = iface.get(ApproxOracleItem(
         key=0,
-        query="""How would I use `asyncio.wrap_future` with both a `concurrent.futures.ThreadPoolExecutor` and an asyncio loop? Please provide a full toy example that involves making a POST request (using `urllib.request`) to "http://api.example.com/".""",
+        query="""How would I use `asyncio.gather` with both a `concurrent.futures.ThreadPoolExecutor` and an asyncio loop? Please provide a full toy example that involves making a POST request (using `urllib.request`) to "http://api.example.com/".""",
     ))
     w2 = iface.get(ApproxOracleItem(
         key=0,

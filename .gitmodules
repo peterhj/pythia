@@ -76,6 +76,9 @@
 [submodule "dep/cfg-if"]
 	path = dep/cfg-if
 	url = https://github.com/peterhj/cfg-if
+[submodule "dep/getrandom"]
+	path = dep/getrandom
+	url = https://github.com/peterhj/getrandom
 [submodule "dep/heck"]
 	path = dep/heck
 	url = https://github.com/peterhj/heck

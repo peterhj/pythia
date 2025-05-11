@@ -5,7 +5,9 @@ pub use std::collections::{BTreeMap, BTreeSet};
 pub use std::rc::{Rc};
 pub use std::sync::{Arc};
 
+pub mod blake2s;
 pub mod cell;
+pub mod extract;
 pub mod rc;
 pub mod str;
 pub mod token;

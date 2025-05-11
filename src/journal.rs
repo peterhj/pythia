@@ -3,6 +3,7 @@ use crate::clock::{Timestamp};
 use byteorder::{LittleEndian as LE, ReadBytesExt, WriteBytesExt};
 use once_cell::sync::{Lazy};
 use serde::{Serialize, Deserialize};
+use serde_json_fmt::{JsonFormat};
 
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write, Seek, SeekFrom};
@@ -48,6 +49,7 @@ impl JournalEntryExt for BootTest {
 #[derive(Serialize, Debug)]
 //#[derive(Serialize, Deserialize, Debug)]
 pub struct JournalEntry_<I> {
+  pub eid:  i64,
   pub t:    Timestamp,
   pub sort: JournalEntrySort_,
   pub item: I,
@@ -219,14 +221,20 @@ pub trait JournalExt {
 impl JournalExt for DevelJournal_ {
   fn append<I: JournalEntryExt + Serialize>(&mut self, item: &I) -> JournalEntryNum {
     let t = Timestamp::fresh();
+    let widx = self.widx_mem.len();
+    let eid: i64 = widx.try_into().unwrap();
     let sort = item._sort();
     let entry = JournalEntry_{
+      eid,
       t,
       sort,
       item,
     };
-    let s = serde_json::to_string(&entry).unwrap();
-    let widx = self.widx_mem.len();
+    let json_fmt = JsonFormat::new()
+        .ascii(true)
+        .colon(": ").unwrap()
+        .comma(", ").unwrap();
+    let s = json_fmt.to_string(&entry).unwrap();
     let wpos = match widx {
       0 => 0,
       i => self.widx_mem[i-1],
