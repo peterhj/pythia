@@ -81,7 +81,9 @@ impl Display for SnapshotHash {
 
 impl Serialize for SnapshotHash {
   fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+    // TODO: hash fun spec?
     serializer.serialize_str(&self.to_string())
+    //serializer.serialize_str(&format!("blake2s:{}", self.to_string()))
   }
 }
 
@@ -132,7 +134,9 @@ impl Debug for ContentHash {
 
 impl Serialize for ContentHash {
   fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+    // TODO: hash fun spec?
     serializer.serialize_str(&self.to_string())
+    //serializer.serialize_str(&format!("blake2s:{}", self.to_string()))
   }
 }
 
@@ -196,8 +200,10 @@ pub struct SnapshotMetadata {
 pub struct Snapshot {
   hash: SnapshotHash,
   rehash: bool,
+  //lasthash: Timestamp,
   metadata: SnapshotMetadata,
-  workcopy: WorkingCopy,
+  //testdata: SnapshotTestData,
+  hashdata: SnapshotData,
 }
 
 impl Snapshot {
@@ -205,7 +211,7 @@ impl Snapshot {
     if !self.rehash {
       return
     }
-    if !self.workcopy.rehash {
+    if !self.hashdata.rehash {
       self.rehash = false;
       return;
     }
@@ -213,11 +219,12 @@ impl Snapshot {
   }
 
   pub fn force_rehash(&mut self) {
-    self.workcopy.rehash();
+    // TODO: other data...
+    self.hashdata.rehash();
     let mut merkle_buf = Vec::new();
     merkle_buf.extend(&*self.metadata.frame.inner);
     merkle_buf.extend(&*self.metadata.prev[0].inner);
-    merkle_buf.extend(&*self.workcopy.hash.inner);
+    merkle_buf.extend(&*self.hashdata.hash.inner);
     let mut h = Blake2s::new_hash();
     h.hash_bytes(&merkle_buf);
     self.hash = SnapshotHash::from(h.finalize());
@@ -265,10 +272,21 @@ impl Data {
 
 // TODO
 #[derive(Clone)]
-pub struct WorkingCopy {
+pub struct SnapshotTestData {
   // TODO
   hash: ContentHash,
   rehash: bool,
+  //lasthash: Timestamp,
+  data: Data,
+}
+
+// TODO
+#[derive(Clone)]
+pub struct SnapshotData {
+  // TODO
+  hash: ContentHash,
+  rehash: bool,
+  //lasthash: Timestamp,
   data: Data,
   //test_data: _,
   //review_data: _,
@@ -277,9 +295,9 @@ pub struct WorkingCopy {
   //goal_data: _,
 }
 
-impl WorkingCopy {
-  pub fn empty() -> WorkingCopy {
-    WorkingCopy{
+impl SnapshotData {
+  pub fn empty() -> SnapshotData {
+    SnapshotData{
       hash: ContentHash::empty(),
       rehash: false,
       data: Data::Empty,
@@ -304,32 +322,24 @@ impl WorkingCopy {
   }
 }
 
-/*pub struct WorkingCopy {
-  content: Content,
-}
+pub type Repo = DBase;
 
-impl WorkingCopy {
-  pub fn empty() -> WorkingCopy {
-    WorkingCopy{content: Content::empty()}
-  }
-}*/
-
-pub struct Repo {
+pub struct DBase {
   snapshots: BTreeMap<SnapshotHash, Snapshot>,
   frames: BTreeMap<FrameId, FramePointer>,
 }
 
-impl Repo {
-  pub fn root() -> Repo {
-    Repo{
+impl DBase {
+  pub fn root() -> DBase {
+    DBase{
       snapshots: BTreeMap::new(),
       frames: BTreeMap::new(),
     }
   }
 
   pub fn debug_dump(&self) {
-    println!("DEBUG: Repo::debug_dump: snapshot count = {}", self.snapshots.len());
-    println!("DEBUG: Repo::debug_dump: frame count    = {}", self.frames.len());
+    println!("DEBUG: DBase::debug_dump: snapshot count = {}", self.snapshots.len());
+    println!("DEBUG: DBase::debug_dump: frame count    = {}", self.frames.len());
   }
 
   pub fn fresh_frame(&mut self) -> FrameId {
@@ -374,8 +384,8 @@ impl Repo {
           frameptr.init = snapshot.hash.clone();
         }
         frameptr.last = snapshot.hash.clone();
-        println!("DEBUG: Repo::commit_snapshot: metadata = {:?}", &snapshot.metadata);
-        println!("DEBUG: Repo::commit_snapshot: frameptr = {:?}", &frameptr);
+        println!("DEBUG: DBase::commit_snapshot: metadata = {:?}", &snapshot.metadata);
+        println!("DEBUG: DBase::commit_snapshot: frameptr = {:?}", &frameptr);
       }
     }
     match self.snapshots.insert(snapshot.hash.clone(), snapshot) {
@@ -388,7 +398,7 @@ impl Repo {
 pub struct Frame {
   snapshot: SnapshotHash,
   modified: bool,
-  workcopy: WorkingCopy,
+  hashdata: SnapshotData,
 }
 
 impl Frame {
@@ -396,12 +406,12 @@ impl Frame {
     Frame{
       snapshot: SnapshotHash::root(),
       modified: false,
-      workcopy: WorkingCopy::empty(),
+      hashdata: SnapshotData::empty(),
     }
   }
 
-  pub fn debug_print_status(&self, repo: &Repo) {
-    match repo.get_snapshot(self.snapshot.clone()) {
+  pub fn debug_print_status(&self, dbase: &DBase) {
+    match dbase.get_snapshot(self.snapshot.clone()) {
       None => {
         println!("DEBUG: Frame::debug_print_status: frame = {} snapshot = {} modified? = {:?}",
             FrameId::root(),
@@ -419,9 +429,9 @@ impl Frame {
     }
   }
 
-  pub fn fresh(&self, repo: &mut Repo) -> Frame {
+  pub fn fresh(&self, dbase: &mut DBase) -> Frame {
     let timestamp = Timestamp::fresh();
-    let frame_id = repo.fresh_frame();
+    let frame_id = dbase.fresh_frame();
     let metadata = SnapshotMetadata {
       frame: frame_id,
       prev: vec![self.snapshot.clone()],
@@ -429,12 +439,12 @@ impl Frame {
       mark: vec![SnapshotMarker::FreshFrame],
     };
     println!("DEBUG: Frame::fresh: metadata = {:?}", metadata);
-    let mut workcopy = self.workcopy.clone();
-    workcopy.rehash();
+    let mut hashdata = self.hashdata.clone();
+    hashdata.rehash();
     let mut merkle_buf = Vec::new();
     merkle_buf.extend(&*metadata.frame.inner);
     merkle_buf.extend(&*metadata.prev[0].inner);
-    merkle_buf.extend(&*workcopy.hash.inner);
+    merkle_buf.extend(&*hashdata.hash.inner);
     let mut h = Blake2s::new_hash();
     h.hash_bytes(&merkle_buf);
     let hash = SnapshotHash::from(h.finalize());
@@ -442,35 +452,36 @@ impl Frame {
       hash,
       rehash: false,
       metadata,
-      workcopy: workcopy.clone(),
+      //testdata: _,
+      hashdata: hashdata.clone(),
     };
     let snapshot_hash = snapshot.hash.clone();
-    repo.commit_snapshot(snapshot);
+    dbase.commit_snapshot(snapshot);
     Frame{
       snapshot: snapshot_hash,
       modified: false,
-      workcopy,
+      hashdata,
     }
   }
 
-  pub fn commit(&mut self, repo: &mut Repo) {
+  pub fn commit(&mut self, dbase: &mut DBase) {
     if !self.modified {
       return;
     }
     let old_snapshot = self.snapshot.clone();
-    let old_hash = self.workcopy.hash.clone();
-    self.workcopy.rehash();
-    let new_hash = self.workcopy.hash.clone();
+    let old_hash = self.hashdata.hash.clone();
+    self.hashdata.rehash();
+    let new_hash = self.hashdata.hash.clone();
     if old_hash == new_hash {
       self.modified = false;
       return;
     }
     if self.snapshot.is_root() {
-      let workcopy = replace(&mut self.workcopy, WorkingCopy::empty());
-      *self = self.fresh(repo);
-      let _ = replace(&mut self.workcopy, workcopy);
+      let hashdata = replace(&mut self.hashdata, SnapshotData::empty());
+      *self = self.fresh(dbase);
+      let _ = replace(&mut self.hashdata, hashdata);
     }
-    let mut snapshot = match repo.get_snapshot(old_snapshot.clone()) {
+    let mut snapshot = match dbase.get_snapshot(old_snapshot.clone()) {
       None => panic!("bug"),
       Some(snapshot) => snapshot
     };
@@ -478,20 +489,20 @@ impl Frame {
     snapshot.metadata.prev.push(old_snapshot);
     snapshot.metadata.mark.clear();
     snapshot.metadata.timestamp = Timestamp::fresh();
-    snapshot.workcopy = self.workcopy.clone();
+    snapshot.hashdata = self.hashdata.clone();
     snapshot.force_rehash();
     let snapshot_hash = snapshot.hash.clone();
-    repo.commit_snapshot(snapshot);
+    dbase.commit_snapshot(snapshot);
     self.snapshot = snapshot_hash;
     self.modified = false;
   }
 
-  pub fn view(&self) -> &WorkingCopy {
-    &self.workcopy
+  pub fn view(&self) -> &SnapshotData {
+    &self.hashdata
   }
 
-  pub fn work(&mut self) -> &mut WorkingCopy {
+  pub fn modify(&mut self) -> &mut SnapshotData {
     self.modified = true;
-    &mut self.workcopy
+    &mut self.hashdata
   }
 }

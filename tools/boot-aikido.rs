@@ -11,7 +11,7 @@ fn main() {
   frame.debug_print_status(&repo);
   repo.debug_dump();
   {
-    let mut workcopy = frame.work();
+    let mut workcopy = frame.modify();
     let mut s = workcopy.mut_data().mut_string();
     *s = "print(\"Hello world!\")\n".to_string();
   }

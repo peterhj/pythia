@@ -31,7 +31,8 @@ lto = false
 default = ["pyo3"]
 #pyo3 = []
 #pyo3 = ["dep:pyo3-build-config", "dep:pyo3"]
-pyo3 = ["dep:pyo3", "dep:pyo3-ffi"]
+#pyo3 = ["dep:pyo3", "dep:pyo3-ffi"]
+pyo3 = ["dep:pyo3", "dep:pyo3-ffi", "_pythia_algo/pyo3"]
 rayon = []
 #rayon = ["dep:rayon"]
 
@@ -39,10 +40,11 @@ rayon = []
 #pyo3-build-config = { version = "^0.23", optional = true }
 
 [dependencies]
+_pythia_algo = { path = "_algo" }
 bitflags = { version = "^2.8" }
 byteorder = { version = "^1.5" }
 #crossbeam-utils = { version = "^0.8" }
-fxhash2 = { version = "^2" }
+diffy = { version = "^0.4" }
 getrandom = { version = "^0.2" }
 libc = { version = "^0.2" }
 once_cell = { version = "^1" }
@@ -50,13 +52,11 @@ paste = { version = "^1.0" }
 pyo3 = { version = "^0.23", features = ["auto-initialize", "serde"], optional = true }
 pyo3-ffi = { version = "^0.23", optional = true }
 #rayon = { version = "^1.10" }
-rclite = { version = "^0.2" }
 regex = { version = "^1.10" }
 serde = { version = "^1.0", features = ["derive"] }
 serde_json = { version = "^1.0" }
 serde_json_fmt = { version = "0.2.0-devel" }
 signal_hook = { version = "^0.3" }
-smol_str = { version = "^0.2", default-features = false, features = ["serde"] }
 syn = { version = "^2.0", features = ["full", "extra-traits"] }
 term_colors = { version = "^2" }
 textwrap = { version = "^0.16", default-features = false }
@@ -69,6 +69,10 @@ crate-type = ["lib"]
 [[bin]]
 name = "pythia"
 path = "tools/interp.rs"
+
+[[bin]]
+name = "boot-build"
+path = "tools/boot-build.rs"
 
 [[bin]]
 name = "boot-interp-test"
@@ -113,6 +117,7 @@ byteorder = { path = "dep/byteorder" }
 cfg-if = { path = "dep/cfg-if" }
 #crossbeam-deque = { path = "dep/crossbeam/crossbeam-deque" }
 #crossbeam-utils = { path = "dep/crossbeam/crossbeam-utils" }
+diffy = { path = "../diffy" }
 #either = { path = "dep/either" }
 fxhash2 = { path = "dep/fxhash2" }
 getrandom = { path = "dep/getrandom" }
@@ -142,7 +147,8 @@ signal_hook = { path = "dep/signal_hook" }
 smol_str = { path = "dep/smol_str" }
 syn = { path = "dep/syn" }
 target-lexicon = { path = "dep/target-lexicon" }
-term_colors = { path = "dep/term_colors" }
+term_colors = { path = "../term_colors" }
+#term_colors = { path = "dep/term_colors" }
 textwrap = { path = "dep/textwrap" }
 time = { path = "dep/time-0.1" }
 unicode-ident = { path = "dep/unicode-ident" }

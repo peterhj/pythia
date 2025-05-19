@@ -17,6 +17,8 @@ use std::str::{FromStr};
 //#[serde(untagged)]
 pub enum ApproxOracleModel {
   #[default]
+  #[serde(rename = "default")]
+  Default,
   #[serde(rename = "deepseek-v3-chat-20250324")]
   DeepSeek_V3_Chat_20250324,
   #[serde(rename = "deepseek-v3-chat-20241226")]
@@ -130,6 +132,7 @@ pub struct ApproxOracleResExtra {
 pub struct ApproxOracleSampleItem {
   pub temperature: Option<f64>,
   pub top_p: Option<f64>,
+  pub top_k: Option<i64>,
 }
 
 #[derive(Clone, Serialize, Deserialize, FromPyObject, Debug)]
@@ -148,9 +151,12 @@ pub struct ApproxOracleExtraItem {
 #[derive(Clone, Serialize, Deserialize, FromPyObject, Debug)]
 pub struct ApproxOracleItem<K=i64> {
   //pub timestamp: Option<Timestamp>,
+  // TODO: optional key incompat w/ kqmap (below).
   pub key: K,
+  //pub key: Option<K>,
   pub query: SafeStr,
   pub model: ApproxOracleModel,
+  pub ctr: i64,
   pub sample: Option<ApproxOracleSampleItem>,
   pub think: Option<SafeStr>,
   pub value: SafeStr,

@@ -3,6 +3,17 @@
 version = 3
 
 [[package]]
+name = "_pythia_algo"
+version = "0.1.0-devel"
+dependencies = [
+ "fxhash2",
+ "pyo3",
+ "rclite",
+ "serde",
+ "smol_str",
+]
+
+[[package]]
 name = "aho-corasick"
 version = "1.1.3"
 dependencies = [
@@ -28,6 +39,13 @@ version = "1.5.0"
 [[package]]
 name = "cfg-if"
 version = "1.0.0"
+
+[[package]]
+name = "diffy"
+version = "0.4.2"
+dependencies = [
+ "term_colors",
+]
 
 [[package]]
 name = "fxhash2"
@@ -145,22 +163,21 @@ dependencies = [
 name = "pythia"
 version = "0.1.0-devel"
 dependencies = [
+ "_pythia_algo",
  "bitflags",
  "byteorder",
- "fxhash2",
+ "diffy",
  "getrandom",
  "libc",
  "once_cell",
  "paste",
  "pyo3",
  "pyo3-ffi",
- "rclite",
  "regex",
  "serde",
  "serde_json",
  "serde_json_fmt",
  "signal_hook",
- "smol_str",
  "syn",
  "term_colors",
  "textwrap",

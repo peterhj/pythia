@@ -3,9 +3,11 @@ from argparse import Namespace
 import asyncio
 import concurrent.futures
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import os
+import threading
+import time
 import traceback
 import urllib.request
 
@@ -86,6 +88,7 @@ class ApproxOracleEndpoint:
             model = "deepseek-r1-20250120",
             endpoint_model = "deepseek-reasoner",
             endpoint_max_new_tokens = 8192,
+            endpoint_throttle_rps = 64,
         )
 
     @classmethod
@@ -94,6 +97,7 @@ class ApproxOracleEndpoint:
             model = "deepseek-v3-chat-20250324",
             endpoint_model = "deepseek-chat",
             endpoint_max_new_tokens = 8192,
+            endpoint_throttle_rps = 64,
         )
 
     @classmethod
@@ -261,7 +265,7 @@ class ApproxOracleEndpoint:
             endpoint_extra_params = {
                 "reasoning_effort": "high",
             },
-            endpoint_throttle_rps = 5,
+            endpoint_throttle_rps = 10,
         )
 
     def __post_init__(self) -> None:
@@ -402,6 +406,7 @@ class ApproxOracleEndpoint:
 class ApproxOracleSampleItem:
     temperature: Optional[float] = None
     top_p: Optional[float] = None
+    top_k: Optional[int] = None
 
 @dataclass
 class ApproxOracleItem:
@@ -409,6 +414,7 @@ class ApproxOracleItem:
     key: Any = None
     query: str = None
     model: str = None
+    ctr: int = None
     sample: ApproxOracleSampleItem = None
     think: str = None
     value: str = None
@@ -519,8 +525,7 @@ class ApproxOracleInterface:
     worker: ApproxOracleWorker = None
     default_model: str = "deepseek-v3-chat-20250324"
     default_timeout: int = 1620
-    concurrency: int = 56
-    #concurrency: int = 64
+    concurrency: int = 112
 
     def __post_init__(self) -> None:
         print(f"DEBUG: ApproxOracleInterface.__post_init__")
@@ -596,21 +601,43 @@ class ApproxOracleAsyncInterface:
     worker: ApproxOracleWorker = None
     default_model: str = "deepseek-v3-chat-20250324"
     default_timeout: int = 1620
-    concurrency: int = 56
-    #concurrency: int = 64
+    concurrency: int = 112
+
+    _get_lock: Any = None
+    _next_get_t0: Any = None
 
     def __post_init__(self) -> None:
         print(f"DEBUG: ApproxOracleAsyncInterface.__post_init__")
         if self.worker is None:
             self.worker = ApproxOracleWorker(self.concurrency)
+        self._get_lock = threading.Lock()
 
     async def get(self, item: Union[ApproxOracleItem, dict]) -> ApproxOracleItem:
         if isinstance(item, dict):
             item = ApproxOracleItem(**item)
         if item.model is None or _match_str(item.model, "default"):
             item.model = self.default_model
+        endpoint = ApproxOracleEndpoint.from_model(item.model)
         work_item = _ApproxOracleWorkItem(item)
         def _query_work_item():
+            t = datetime.utcnow()
+            t0 = None
+            if endpoint.endpoint_throttle_rps is not None:
+                throttle_delay = 1.0 / endpoint.endpoint_throttle_rps
+            else:
+                throttle_delay = None
+            if throttle_delay is not None:
+                delta_t = timedelta(seconds=throttle_delay)
+                with self._get_lock:
+                    t0 = self._next_get_t0
+                    if t0 is not None:
+                        self._next_get_t0 = max(t0, t) + delta_t
+                    else:
+                        self._next_get_t0 = t + delta_t
+                while t0 is not None and t0 > t:
+                    time.sleep((t0 - t).total_seconds())
+                    t = datetime.utcnow()
+            print(f"DEBUG: ApproxOracleAsyncInterface.get: key = {item.key} t = {t.isoformat()} t0 = {t0.isoformat() if t0 is not None else None}")
             _try_query(work_item, key=item.key)
             return work_item
         loop = asyncio.get_running_loop()

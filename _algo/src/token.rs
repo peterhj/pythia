@@ -1,5 +1,5 @@
 //use crate::algo::{BTreeMap};
-use crate::algo::str::{len_utf8};
+use crate::str::{len_utf8};
 
 use serde::{Deserialize};
 

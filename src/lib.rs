@@ -1,3 +1,4 @@
+extern crate _pythia_algo;
 extern crate bitflags;
 extern crate byteorder;
 extern crate getrandom;
@@ -8,13 +9,11 @@ extern crate paste;
 extern crate pyo3;
 #[cfg(feature = "pyo3")]
 extern crate pyo3_ffi;
-extern crate rclite;
 extern crate regex;
 extern crate serde;
 extern crate serde_json;
 extern crate serde_json_fmt;
 extern crate signal_hook;
-extern crate smol_str;
 extern crate textwrap;
 extern crate time;
 

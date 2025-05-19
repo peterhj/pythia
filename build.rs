@@ -10,9 +10,15 @@ fn _main() {
   println!("cargo:rerun-if-changed=build.rs");
   println!("cargo:rerun-if-changed=.git/logs/HEAD");
 
+  let triple = std::env::var("TARGET").unwrap();
   let cwd = std::env::current_dir().unwrap();
-  let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
   let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+  let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
+
+  {
+    let mut file = File::create(out_dir.join("target.txt")).unwrap();
+    write!(&mut file, "{}", triple).unwrap();
+  }
 
   {
     let mut file = File::create(out_dir.join("cwd.txt")).unwrap();
