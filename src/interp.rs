@@ -6,8 +6,9 @@ use crate::algo::{
   OptionExt,
   SmolStr,
 };
+use crate::algo::arc::{Arc};
 use crate::algo::cell::{RefCell};
-use crate::algo::rc::{Arc, Rc};
+use crate::algo::rc::{Rc};
 use crate::algo::str::{SafeStr, safe_ascii};
 use crate::panick::{Loc, loc};
 use crate::parse::{

@@ -1,3 +1,11 @@
+extern crate fxhash2;
+#[cfg(feature = "pyo3")]
+extern crate pyo3;
+extern crate rclite;
+extern crate serde;
+extern crate smol_str;
+extern crate triomphe;
+
 pub use fxhash2::{FxHashMap, FxHashSet};
 pub use smol_str::{SmolStr};
 
@@ -5,6 +13,7 @@ pub use std::collections::{BTreeMap, BTreeSet};
 pub use std::rc::{Rc};
 pub use std::sync::{Arc};
 
+pub mod arc;
 pub mod blake2s;
 pub mod cell;
 pub mod extract;

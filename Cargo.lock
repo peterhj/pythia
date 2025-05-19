@@ -11,6 +11,7 @@ dependencies = [
  "rclite",
  "serde",
  "smol_str",
+ "triomphe",
 ]
 
 [[package]]
@@ -310,6 +311,13 @@ name = "time"
 version = "0.1.45"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "triomphe"
+version = "0.1.14"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

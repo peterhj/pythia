@@ -151,5 +151,6 @@ term_colors = { path = "../term_colors" }
 #term_colors = { path = "dep/term_colors" }
 textwrap = { path = "dep/textwrap" }
 time = { path = "dep/time-0.1" }
+triomphe = { path = "../triomphe" }
 unicode-ident = { path = "dep/unicode-ident" }
 unindent = { path = "dep/indoc/unindent" }
