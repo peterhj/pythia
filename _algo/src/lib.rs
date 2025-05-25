@@ -9,7 +9,7 @@ extern crate triomphe;
 pub use fxhash2::{FxHashMap, FxHashSet};
 pub use smol_str::{SmolStr};
 
-pub use std::collections::{BTreeMap, BTreeSet};
+pub use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 pub use std::rc::{Rc};
 pub use std::sync::{Arc};
 

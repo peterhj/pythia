@@ -1,7 +1,9 @@
-extern crate _pythia_algo;
+extern crate _algo;
 extern crate bitflags;
 extern crate byteorder;
+extern crate chardetng;
 extern crate getrandom;
+extern crate gunzip;
 extern crate libc;
 extern crate once_cell;
 extern crate paste;

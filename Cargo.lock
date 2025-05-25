@@ -3,7 +3,7 @@
 version = 3
 
 [[package]]
-name = "_pythia_algo"
+name = "_algo"
 version = "0.1.0-devel"
 dependencies = [
  "fxhash2",
@@ -12,6 +12,16 @@ dependencies = [
  "serde",
  "smol_str",
  "triomphe",
+]
+
+[[package]]
+name = "_extmod"
+version = "0.1.0-devel"
+dependencies = [
+ "pyo3",
+ "pyo3-build-config",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -42,10 +52,33 @@ name = "cfg-if"
 version = "1.0.0"
 
 [[package]]
+name = "chardetng"
+version = "0.1.17"
+dependencies = [
+ "cfg-if",
+ "encoding_rs",
+ "memchr",
+]
+
+[[package]]
+name = "crc32fast"
+version = "1.4.2"
+dependencies = [
+ "cfg-if",
+]
+
+[[package]]
 name = "diffy"
 version = "0.4.2"
 dependencies = [
  "term_colors",
+]
+
+[[package]]
+name = "encoding_rs"
+version = "0.8.35"
+dependencies = [
+ "cfg-if",
 ]
 
 [[package]]
@@ -58,6 +91,13 @@ version = "0.2.10"
 dependencies = [
  "cfg-if",
  "libc",
+]
+
+[[package]]
+name = "gunzip"
+version = "0.1.0"
+dependencies = [
+ "crc32fast",
 ]
 
 [[package]]
@@ -77,6 +117,14 @@ name = "libc"
 version = "0.2.155"
 
 [[package]]
+name = "lock_api"
+version = "0.4.12"
+dependencies = [
+ "autocfg",
+ "scopeguard",
+]
+
+[[package]]
 name = "memchr"
 version = "2.7.4"
 
@@ -90,6 +138,30 @@ dependencies = [
 [[package]]
 name = "once_cell"
 version = "1.19.0"
+
+[[package]]
+name = "os_socketaddr"
+version = "0.2.5"
+dependencies = [
+ "libc",
+]
+
+[[package]]
+name = "parking_lot"
+version = "0.12.3"
+dependencies = [
+ "lock_api",
+ "parking_lot_core",
+]
+
+[[package]]
+name = "parking_lot_core"
+version = "0.9.10"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "smallvec",
+]
 
 [[package]]
 name = "paste"
@@ -164,11 +236,14 @@ dependencies = [
 name = "pythia"
 version = "0.1.0-devel"
 dependencies = [
- "_pythia_algo",
+ "_algo",
+ "_extmod",
  "bitflags",
  "byteorder",
+ "chardetng",
  "diffy",
  "getrandom",
+ "gunzip",
  "libc",
  "once_cell",
  "paste",
@@ -183,6 +258,7 @@ dependencies = [
  "term_colors",
  "textwrap",
  "time",
+ "uv",
 ]
 
 [[package]]
@@ -225,6 +301,10 @@ version = "0.8.5"
 [[package]]
 name = "ryu"
 version = "1.0.18"
+
+[[package]]
+name = "scopeguard"
+version = "1.2.0"
 
 [[package]]
 name = "serde"
@@ -274,6 +354,10 @@ version = "1.4.1"
 dependencies = [
  "libc",
 ]
+
+[[package]]
+name = "smallvec"
+version = "1.11.2"
 
 [[package]]
 name = "smol_str"
@@ -327,3 +411,13 @@ version = "1.0.14"
 [[package]]
 name = "unindent"
 version = "0.2.3"
+
+[[package]]
+name = "uv"
+version = "0.1.0-devel"
+dependencies = [
+ "libc",
+ "once_cell",
+ "os_socketaddr",
+ "parking_lot",
+]

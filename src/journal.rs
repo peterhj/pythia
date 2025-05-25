@@ -1,4 +1,6 @@
+use crate::algo::blake2s::{Blake2s};
 use crate::clock::{Timestamp};
+use crate::util::hex::{HexFormat};
 
 use byteorder::{LittleEndian as LE, ReadBytesExt, WriteBytesExt};
 use once_cell::sync::{Lazy};
@@ -8,6 +10,8 @@ use serde_json_fmt::{JsonFormat};
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write, Seek, SeekFrom};
 use std::path::{PathBuf};
+
+pub const HASH_SIZE: usize = 32;
 
 pub static _STORE: Lazy<DevelJournal_> = Lazy::new(|| DevelJournal_::cold_start());
 
@@ -53,6 +57,7 @@ pub struct JournalEntry_<I> {
   pub t:    Timestamp,
   pub sort: JournalEntrySort_,
   pub item: I,
+  pub hash: String,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -61,15 +66,15 @@ pub struct JournalEntryNum {
   _idx: usize,
 }
 
-pub struct DevelJournal_ {
+pub struct JournalBackend {
   widx_mem: Vec<u32>,
   //wlog_mem: Vec<()>,
   widx_file: File,
   wlog_file: File,
 }
 
-impl DevelJournal_ {
-  pub fn cold_start() -> DevelJournal_ {
+impl JournalBackend {
+  pub fn cold_start() -> JournalBackend {
     let t0 = Timestamp::fresh();
     let root_path = PathBuf::from(concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -161,8 +166,8 @@ impl DevelJournal_ {
       }
       break;
     }
-    println!("DEBUG: DevelJournal_::_cold_start: widx len = {}", widx_mem.len());
-    println!("DEBUG: DevelJournal_::_cold_start: truncate = {:?}", truncate);
+    println!("DEBUG: JournalBackend::cold_start: widx len = {}", widx_mem.len());
+    println!("DEBUG: JournalBackend::cold_start: truncate = {:?}", truncate);
     if truncate {
       let t0_s = t0.to_string().replace(":", "_");
       let mut wlog_dst_path = root_path.clone();
@@ -202,12 +207,38 @@ impl DevelJournal_ {
     let wlog_file = OpenOptions::new()
         .append(true).create(true)
         .open(&wlog_path).unwrap();
-    let mut this = DevelJournal_{
+    JournalBackend{
       widx_mem,
       widx_file,
       wlog_file,
+    }
+    //this
+  }
+
+  pub fn append<S: AsRef<str>>(&mut self, s: S) -> JournalEntryNum {
+    let s = s.as_ref();
+    let widx = self.widx_mem.len();
+    let wpos = match widx {
+      0 => 0,
+      i => self.widx_mem[i-1],
     };
-    if this.widx_mem.len() <= 0 {
+    let woff = wpos + (s.len() as u32) + 1;
+    self.widx_mem.push(woff);
+    self.widx_file.write_u32::<LE>(woff).unwrap();
+    writeln!(&mut self.wlog_file, "{}", s).unwrap();
+    JournalEntryNum{_idx: widx}
+  }
+}
+
+pub struct DevelJournal_ {
+  backend: JournalBackend,
+}
+
+impl DevelJournal_ {
+  pub fn cold_start() -> DevelJournal_ {
+    let backend = JournalBackend::cold_start();
+    let mut this = DevelJournal_{backend};
+    if this.backend.widx_mem.len() <= 0 {
       this.append(&_Root);
     }
     this
@@ -221,28 +252,40 @@ pub trait JournalExt {
 impl JournalExt for DevelJournal_ {
   fn append<I: JournalEntryExt + Serialize>(&mut self, item: &I) -> JournalEntryNum {
     let t = Timestamp::fresh();
-    let widx = self.widx_mem.len();
+    let widx = self.backend.widx_mem.len();
     let eid: i64 = widx.try_into().unwrap();
     let sort = item._sort();
+    let mut hval = Vec::with_capacity(HASH_SIZE);
+    hval.resize(HASH_SIZE, 0);
+    let hash = HexFormat::default().to_string(&hval);
     let entry = JournalEntry_{
       eid,
       t,
       sort,
       item,
+      hash,
     };
     let json_fmt = JsonFormat::new()
         .ascii(true)
         .colon(": ").unwrap()
         .comma(", ").unwrap();
-    let s = json_fmt.to_string(&entry).unwrap();
-    let wpos = match widx {
-      0 => 0,
-      i => self.widx_mem[i-1],
-    };
-    let woff = wpos + (s.len() as u32) + 1;
-    self.widx_mem.push(woff);
-    self.widx_file.write_u32::<LE>(woff).unwrap();
-    writeln!(&mut self.wlog_file, "{}", &s).unwrap();
-    JournalEntryNum{_idx: widx}
+    let mut s = json_fmt.to_string(&entry).unwrap();
+    let slen = s.len();
+    let hend = slen - (11 + HASH_SIZE * 2 + 2);
+    let mut h = Blake2s::new_hash();
+    {
+      let b = s.as_bytes();
+      assert!(b.starts_with(b"{"));
+      assert!(b[hend .. ].starts_with(b", \"hash\": \""));
+      assert!(b.ends_with(b"\"}"));
+      h.hash_bytes(&b[1 .. hend]);
+    }
+    unsafe {
+      let mut s = s.as_mut_str();
+      let mut b = s.as_bytes_mut();
+      let hash = HexFormat::default().to_string(&h.finalize());
+      (&mut b[hend + 11 .. slen - 2]).copy_from_slice(hash.as_bytes());
+    }
+    self.backend.append(s)
   }
 }

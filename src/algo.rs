@@ -1,1 +1,1 @@
-pub use _pythia_algo::*;
+pub use _algo::*;

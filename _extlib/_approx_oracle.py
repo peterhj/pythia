@@ -68,6 +68,8 @@ class ApproxOracleEndpoint:
             return cls.deepseek_r1_20250120()
         elif _match_str(model, "deepseek-v3-chat-20250324"):
             return cls.deepseek_v3_chat_20250324()
+        elif _match_str(model, "xai-grok-3-mini-20250520"):
+            return cls.xai_grok_3_mini()
         elif _match_str(model, "xai-grok-3-mini-beta-20250418"):
             return cls.xai_grok_3_mini_beta()
         else:
@@ -254,6 +256,18 @@ class ApproxOracleEndpoint:
             endpoint_api_token = XAI_API_KEY,
             endpoint_api_protocol = "openai",
             **kwargs,
+        )
+
+    @classmethod
+    def xai_grok_3_mini(cls) -> Any:
+        return cls.xai(
+            model = "xai-grok-3-mini-20250520",
+            endpoint_model = "grok-3-mini",
+            endpoint_max_new_tokens = 131072,
+            endpoint_extra_params = {
+                "reasoning_effort": "high",
+            },
+            endpoint_throttle_rps = 10,
         )
 
     @classmethod
@@ -525,7 +539,7 @@ class ApproxOracleInterface:
     worker: ApproxOracleWorker = None
     default_model: str = "deepseek-v3-chat-20250324"
     default_timeout: int = 1620
-    concurrency: int = 112
+    concurrency: int = 192
 
     def __post_init__(self) -> None:
         print(f"DEBUG: ApproxOracleInterface.__post_init__")
@@ -601,7 +615,8 @@ class ApproxOracleAsyncInterface:
     worker: ApproxOracleWorker = None
     default_model: str = "deepseek-v3-chat-20250324"
     default_timeout: int = 1620
-    concurrency: int = 112
+    concurrency: int = 192
+    shutdown_t1: str = None
 
     _get_lock: Any = None
     _next_get_t0: Any = None
@@ -622,6 +637,15 @@ class ApproxOracleAsyncInterface:
         def _query_work_item():
             t = datetime.utcnow()
             t0 = None
+            if self.shutdown_t1 is not None:
+                try:
+                    t1 = datetime.fromisoformat(self.shutdown_t1)
+                    if t >= t1:
+                        print(f"DEBUG: ApproxOracleAsyncInterface.get: key = {item.key} t = {t.isoformat()} t1 = {t1.isoformat()} shutdown")
+                        return work_item
+                except Exception as e:
+                    print(f"DEBUG: ApproxOracleAsyncInterface.get: key = {item.key} t = {t.isoformat()} shutdown except = {e}")
+                    return work_item
             if endpoint.endpoint_throttle_rps is not None:
                 throttle_delay = 1.0 / endpoint.endpoint_throttle_rps
             else:

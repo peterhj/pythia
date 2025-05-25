@@ -76,6 +76,21 @@
 [submodule "dep/cfg-if"]
 	path = dep/cfg-if
 	url = https://github.com/peterhj/cfg-if
+[submodule "dep/chardetng"]
+	path = dep/chardetng
+	url = https://github.com/peterhj/chardetng
+[submodule "dep/crc32fast"]
+	path = dep/crc32fast
+	url = https://github.com/peterhj/crc32fast
+[submodule "dep/encoding_rs"]
+	path = dep/encoding_rs
+	url = https://github.com/peterhj/encoding_rs
+[submodule "dep/gunzip"]
+	path = dep/gunzip
+	url = https://github.com/peterhj/gunzip
+[submodule "dep/diffy"]
+	path = dep/diffy
+	url = https://github.com/peterhj/diffy
 [submodule "dep/getrandom"]
 	path = dep/getrandom
 	url = https://github.com/peterhj/getrandom
@@ -88,15 +103,33 @@
 [submodule "dep/memoffset"]
 	path = dep/memoffset
 	url = https://github.com/peterhj/memoffset
+[submodule "dep/os_socketaddr"]
+	path = dep/os_socketaddr
+	url = https://github.com/peterhj/os_socketaddr
+[submodule "dep/parking_lot"]
+	path = dep/parking_lot
+	url = https://github.com/peterhj/parking_lot
 [submodule "dep/portable-atomic"]
 	path = dep/portable-atomic
 	url = https://github.com/peterhj/portable-atomic
 [submodule "dep/pyo3"]
 	path = dep/pyo3
 	url = https://github.com/peterhj/pyo3
+[submodule "dep/scopeguard"]
+	path = dep/scopeguard
+	url = https://github.com/peterhj/scopeguard
+[submodule "dep/smallvec"]
+	path = dep/smallvec
+	url = https://github.com/peterhj/smallvec
 [submodule "dep/target-lexicon"]
 	path = dep/target-lexicon
 	url = https://github.com/peterhj/target-lexicon
 [submodule "dep/textwrap"]
 	path = dep/textwrap
 	url = https://github.com/peterhj/textwrap
+[submodule "dep/triomphe"]
+	path = dep/triomphe
+	url = https://github.com/peterhj/triomphe
+[submodule "dep/uv"]
+	path = dep/uv
+	url = https://github.com/peterhj/uv

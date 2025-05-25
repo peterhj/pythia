@@ -1,0 +1,20 @@
+[package]
+name = "_extmod"
+version = "0.1.0-devel"
+edition = "2021"
+rust-version = "1.78.0"
+authors = ["Peter Jin <peterhaijin@gmail.com>"]
+license = "Apache-2.0"
+
+[build-dependencies]
+pyo3-build-config = { version = "^0.23" }
+
+[dependencies]
+pyo3 = { version = "^0.23", features = ["auto-initialize", "serde"] }
+#pyo3-ffi = { version = "^0.23" }
+serde = { version = "^1.0", features = ["derive"] }
+serde_json = { version = "^1.0" }
+#serde_json_fmt = { version = "0.2.0-devel" }
+
+[lib]
+crate-type = ["cdylib"]

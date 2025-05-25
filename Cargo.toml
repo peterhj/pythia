@@ -32,20 +32,23 @@ default = ["pyo3"]
 #pyo3 = []
 #pyo3 = ["dep:pyo3-build-config", "dep:pyo3"]
 #pyo3 = ["dep:pyo3", "dep:pyo3-ffi"]
-pyo3 = ["dep:pyo3", "dep:pyo3-ffi", "_pythia_algo/pyo3"]
+pyo3 = ["dep:pyo3", "dep:pyo3-ffi", "_algo/pyo3"]
 rayon = []
 #rayon = ["dep:rayon"]
 
-[build-dependencies]
+#[build-dependencies]
 #pyo3-build-config = { version = "^0.23", optional = true }
 
 [dependencies]
-_pythia_algo = { path = "_algo" }
+_algo = { path = "_algo" }
+_extmod = { path = "_extmod" }
 bitflags = { version = "^2.8" }
 byteorder = { version = "^1.5" }
+chardetng = { version = "^0.1" }
 #crossbeam-utils = { version = "^0.8" }
 diffy = { version = "^0.4" }
 getrandom = { version = "^0.2" }
+gunzip = { version = "^0.1" }
 libc = { version = "^0.2" }
 once_cell = { version = "^1" }
 paste = { version = "^1.0" }
@@ -61,6 +64,11 @@ syn = { version = "^2.0", features = ["full", "extra-traits"] }
 term_colors = { version = "^2" }
 textwrap = { version = "^0.16", default-features = false }
 time = { version = "^0.1" }
+uv = { version = "0.1.0-devel" }
+
+[dev-dependencies]
+#_extmod = { path = "_extmod" }
+#uv = { version = "0.1.0-devel" }
 
 [lib]
 #crate-type = ["lib", "cdylib"]
@@ -69,6 +77,10 @@ crate-type = ["lib"]
 [[bin]]
 name = "pythia"
 path = "tools/interp.rs"
+
+[[bin]]
+name = "pythia_journal"
+path = "tools/journal.rs"
 
 [[bin]]
 name = "boot-build"
@@ -108,6 +120,14 @@ path = "tools/boot-aikido.rs"
 name = "boot-extract"
 path = "tools/boot-extract.rs"
 
+[[bin]]
+name = "boot-json"
+path = "tools/boot-json.rs"
+
+[[bin]]
+name = "boot-tar"
+path = "tools/boot-tar.rs"
+
 [patch.crates-io]
 aho-corasick = { path = "dep/aho-corasick" }
 autocfg = { path = "dep/autocfg" }
@@ -115,12 +135,16 @@ bitflags = { path = "dep/bitflags" }
 branches = { path = "dep/branches" }
 byteorder = { path = "dep/byteorder" }
 cfg-if = { path = "dep/cfg-if" }
+chardetng = { path = "dep/chardetng" }
+crc32fast = { path = "dep/crc32fast" }
 #crossbeam-deque = { path = "dep/crossbeam/crossbeam-deque" }
 #crossbeam-utils = { path = "dep/crossbeam/crossbeam-utils" }
-diffy = { path = "../diffy" }
+diffy = { path = "dep/diffy" }
 #either = { path = "dep/either" }
+encoding_rs = { path = "dep/encoding_rs" }
 fxhash2 = { path = "dep/fxhash2" }
 getrandom = { path = "dep/getrandom" }
+gunzip = { path = "dep/gunzip" }
 heck = { path = "dep/heck" }
 indoc = { path = "dep/indoc" }
 itoa = { path = "dep/itoa" }
@@ -128,6 +152,8 @@ libc = { path = "dep/libc" }
 memchr = { path = "dep/memchr" }
 memoffset = { path = "dep/memoffset" }
 once_cell = { path = "dep/once_cell" }
+os_socketaddr = { path = "dep/os_socketaddr" }
+parking_lot = { path = "dep/parking_lot" }
 paste = { path = "dep/paste" }
 portable-atomic = { path = "dep/portable-atomic" }
 proc-macro2 = { path = "dep/proc-macro2" }
@@ -140,17 +166,19 @@ rclite = { path = "dep/rclite" }
 regex = { path = "dep/regex" }
 regex-syntax = { path = "dep/regex/regex-syntax" }
 ryu = { path = "dep/ryu" }
+scopeguard = { path = "dep/scopeguard" }
 serde = { path = "dep/serde/serde" }
 serde_json = { path = "dep/serde_json" }
 serde_json_fmt = { path = "dep/serde_json_fmt" }
 signal_hook = { path = "dep/signal_hook" }
+smallvec = { path = "dep/smallvec" }
 smol_str = { path = "dep/smol_str" }
 syn = { path = "dep/syn" }
 target-lexicon = { path = "dep/target-lexicon" }
-term_colors = { path = "../term_colors" }
-#term_colors = { path = "dep/term_colors" }
+term_colors = { path = "dep/term_colors" }
 textwrap = { path = "dep/textwrap" }
 time = { path = "dep/time-0.1" }
-triomphe = { path = "../triomphe" }
+triomphe = { path = "dep/triomphe" }
 unicode-ident = { path = "dep/unicode-ident" }
 unindent = { path = "dep/indoc/unindent" }
+uv = { path = "dep/uv" }
