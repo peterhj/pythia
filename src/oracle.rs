@@ -2,7 +2,7 @@ use crate::_extlib::{_EXTLIB};
 use crate::algo::{BTreeMap};
 use crate::algo::str::{SafeStr};
 use crate::clock::{Timestamp};
-use crate::journal::{JournalEntryExt, JournalEntrySort_, JournalEntryNum, JournalExt};
+use crate::journal::{JournalExt, JournalEntryExt, JournalEntrySort_};
 
 use pyo3::prelude::*;
 use pyo3::{IntoPyObjectExt};
@@ -283,7 +283,7 @@ impl ApproxOracleInterface {
 pub struct ApproxOracleIndex {
   iface: ApproxOracleInterface,
   // FIXME: probably want a better data structure.
-  kqmap: BTreeMap<(i64, SafeStr), (JournalEntryNum, ApproxOracleItem)>,
+  kqmap: BTreeMap<(i64, SafeStr), (i64, ApproxOracleItem)>,
 }
 
 impl ApproxOracleIndex {
@@ -304,8 +304,9 @@ impl ApproxOracleIndex {
     self.iface.poll()
   }
 
-  pub fn commit<J: JournalExt>(&mut self, journal: &mut J, item: &ApproxOracleItem) -> JournalEntryNum {
-    let jnum = journal.append(item);
+  pub fn commit<J: JournalExt>(&mut self, journal: &mut J, item: &ApproxOracleItem) -> i64 {
+    let result = journal.append(item);
+    let jnum = result.eid;
     self.kqmap.insert((item.key, item.query.clone()), (jnum, item.clone()));
     jnum
   }

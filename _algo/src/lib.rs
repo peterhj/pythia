@@ -3,6 +3,8 @@ extern crate fxhash2;
 extern crate pyo3;
 extern crate rclite;
 extern crate serde;
+extern crate serde_json;
+extern crate serde_json_fmt;
 extern crate smol_str;
 extern crate triomphe;
 
@@ -15,8 +17,11 @@ pub use std::sync::{Arc};
 
 pub mod arc;
 pub mod blake2s;
+pub mod base64;
 pub mod cell;
 pub mod extract;
+pub mod hex;
+pub mod json;
 pub mod rc;
 pub mod str;
 pub mod token;

@@ -41,7 +41,9 @@ rayon = []
 
 [dependencies]
 _algo = { path = "_algo" }
+_data = { path = "_data" }
 _extmod = { path = "_extmod" }
+_util = { path = "_util" }
 bitflags = { version = "^2.8" }
 byteorder = { version = "^1.5" }
 chardetng = { version = "^0.1" }
@@ -65,6 +67,7 @@ term_colors = { version = "^2" }
 textwrap = { version = "^0.16", default-features = false }
 time = { version = "^0.1" }
 uv = { version = "0.1.0-devel" }
+walkdir = { version = "^2.5" }
 
 [dev-dependencies]
 #_extmod = { path = "_extmod" }
@@ -128,6 +131,14 @@ path = "tools/boot-json.rs"
 name = "boot-tar"
 path = "tools/boot-tar.rs"
 
+[[bin]]
+name = "boot-arxiv"
+path = "tools/boot-arxiv.rs"
+
+[[bin]]
+name = "boot-arxiv-metadata"
+path = "tools/boot-arxiv-metadata.rs"
+
 [patch.crates-io]
 aho-corasick = { path = "dep/aho-corasick" }
 autocfg = { path = "dep/autocfg" }
@@ -166,6 +177,7 @@ rclite = { path = "dep/rclite" }
 regex = { path = "dep/regex" }
 regex-syntax = { path = "dep/regex/regex-syntax" }
 ryu = { path = "dep/ryu" }
+same-file = { path = "../same-file" }
 scopeguard = { path = "dep/scopeguard" }
 serde = { path = "dep/serde/serde" }
 serde_json = { path = "dep/serde_json" }
@@ -182,3 +194,4 @@ triomphe = { path = "dep/triomphe" }
 unicode-ident = { path = "dep/unicode-ident" }
 unindent = { path = "dep/indoc/unindent" }
 uv = { path = "dep/uv" }
+walkdir = { path = "../walkdir" }

@@ -24,6 +24,7 @@ fn main() {
   let mut n = 0;
   let mut n_tar = 0;
   let mut n_tar_shape = 0;
+  let mut n_tar_chk = 0;
   let mut n_non_tar = 0;
   for (i, e) in it.enumerate() {
     if i == 0 {
@@ -53,6 +54,7 @@ fn main() {
           let mut e_buf = Vec::new();
           iocopy(&mut e_file, &mut e_buf).unwrap();
           let mut tar = false;
+          let mut tar_chk = false;
           let mut nonascii = false;
           /*for &x in &e_buf[ .. min(512, e_buf.len())] {
             if x == 0 {
@@ -66,11 +68,18 @@ fn main() {
               Ok(true) => {
                 tar = true;
               }
+              Ok(false) => {
+                tar = true;
+                tar_chk = true;
+              }
               _ => {}
             }
           }
           if !tar {
             n_non_tar += 1;
+            if cat == "cs" {
+              println!("{:?}", e);
+            }
             // TODO: chardet.
             let mut enc = EncodingDetector::new();
             nonascii = enc.feed(&e_buf, true);
@@ -116,11 +125,20 @@ fn main() {
             }
           } else {
             n_tar += 1;
+            if tar_chk {
+              n_tar_chk += 1;
+            }
             let e_buf = Cursor::new(e_buf);
             let e_file = TarFile::new(e_buf);
             for ee in e_file.entry_iter() {
               //println!("{:?}", ee);
               let ee = ee.unwrap();
+              let ep = ee.path.as_os_str().to_str().unwrap();
+              if ep.ends_with(".tex") {
+                if cat == "cs" {
+                  println!("{:?}", ee);
+                }
+              }
             }
           }
         }
@@ -130,6 +148,7 @@ fn main() {
   println!("DEBUG: n = {}", n);
   println!("DEBUG: n tar = {}", n_tar);
   println!("DEBUG: n tar shape = {}", n_tar_shape);
+  println!("DEBUG: n tar chk = {}", n_tar_chk);
   println!("DEBUG: n non tar = {}", n_non_tar);
   println!("{:?}", utfs);
   println!("{:?}", non_utfs);

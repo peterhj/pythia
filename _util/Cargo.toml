@@ -1,0 +1,16 @@
+[package]
+name = "_util"
+version = "0.1.0-devel"
+edition = "2021"
+rust-version = "1.78.0"
+authors = ["Peter Jin <peterhaijin@gmail.com>"]
+license = "Apache-2.0"
+
+#[features]
+#default = []
+
+[dependencies]
+#_algo = { path = "../_algo" }
+chardetng = { version = "^0.1" }
+encoding_rs = { version = "*" }
+gunzip = { version = "^0.1" }

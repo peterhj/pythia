@@ -267,7 +267,7 @@ class ApproxOracleEndpoint:
             endpoint_extra_params = {
                 "reasoning_effort": "high",
             },
-            endpoint_throttle_rps = 10,
+            endpoint_throttle_rps = 64,
         )
 
     @classmethod
@@ -279,6 +279,24 @@ class ApproxOracleEndpoint:
             endpoint_extra_params = {
                 "reasoning_effort": "high",
             },
+            endpoint_throttle_rps = 10,
+        )
+
+    @classmethod
+    def xai_grok_3(cls) -> Any:
+        return cls.xai(
+            model = "xai-grok-3-20250520",
+            endpoint_model = "grok-3",
+            endpoint_max_new_tokens = 131072,
+            endpoint_throttle_rps = 64,
+        )
+
+    @classmethod
+    def xai_grok_3_beta(cls) -> Any:
+        return cls.xai(
+            model = "xai-grok-3-beta-20250418",
+            endpoint_model = "grok-3-beta",
+            endpoint_max_new_tokens = 131072,
             endpoint_throttle_rps = 10,
         )
 

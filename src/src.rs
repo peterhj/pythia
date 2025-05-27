@@ -37,4 +37,4 @@ _src!(SYS, "/src/sys.rs");
 _src!(SYS_MMAP, "/src/sys/mmap.rs");
 _src!(TAP, "/src/tap.rs");
 _src!(UTIL, "/src/util.rs");
-_src!(UTIL_HEX, "/src/util/hex.rs");
+//_src!(UTIL_HEX, "/src/util/hex.rs");

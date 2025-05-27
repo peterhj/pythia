@@ -1,31 +1,96 @@
+use crate::algo::base64::{Base64Format};
 use crate::algo::blake2s::{Blake2s};
+//use crate::algo::hex::{HexFormat};
+use crate::algo::json::{JsonValue};
 use crate::clock::{Timestamp};
-use crate::util::hex::{HexFormat};
 
 use byteorder::{LittleEndian as LE, ReadBytesExt, WriteBytesExt};
-use once_cell::sync::{Lazy};
+//use once_cell::sync::{Lazy};
 use serde::{Serialize, Deserialize};
 use serde_json_fmt::{JsonFormat};
 
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write, Seek, SeekFrom};
 use std::path::{PathBuf};
+use std::str::{FromStr};
 
 pub const HASH_SIZE: usize = 32;
 
-pub static _STORE: Lazy<DevelJournal_> = Lazy::new(|| DevelJournal_::cold_start());
+//pub static _STORE: Lazy<DevelJournal_> = Lazy::new(|| DevelJournal_::cold_start());
 
 #[derive(Clone, Copy, Serialize, Deserialize, Debug)]
 #[non_exhaustive]
 pub enum JournalEntrySort_ {
   #[serde(rename = "root")]
   _Root,
+  #[serde(rename = "aikido")]
+  Aikido,
   #[serde(rename = "approx-oracle")]
   ApproxOracle,
   #[serde(rename = "approx-oracle-test")]
   ApproxOracleTest,
   #[serde(rename = "boot-test")]
   BootTest,
+}
+
+impl FromStr for JournalEntrySort_ {
+  type Err = ();
+
+  fn from_str(s: &str) -> Result<JournalEntrySort_, ()> {
+    Ok(match s {
+      "root" |
+      "\"root\"" => {
+        JournalEntrySort_::_Root
+      }
+      "aikido" |
+      "\"aikido\"" => {
+        JournalEntrySort_::Aikido
+      }
+      "approx-oracle" |
+      "\"approx-oracle\"" => {
+        JournalEntrySort_::ApproxOracle
+      }
+      "approx-oracle-test" |
+      "\"approx-oracle-test\"" => {
+        JournalEntrySort_::ApproxOracleTest
+      }
+      "boot-test" |
+      "\"boot-test\"" => {
+        JournalEntrySort_::BootTest
+      }
+      _ => return Err(())
+    })
+  }
+}
+
+pub struct RootSort_ {
+}
+
+impl RootSort_ {
+  pub fn item_from_value(v: JsonValue) -> () {
+    // FIXME
+    //serde_json::from_value(_)
+  }
+}
+
+pub struct AikidoSort_ {
+}
+
+impl AikidoSort_ {
+  pub fn item_from_value(v: JsonValue) -> () {
+    // FIXME
+    //serde_json::from_value(_)
+  }
+}
+
+pub struct ApproxOracleSort_ {
+}
+
+impl ApproxOracleSort_ {
+  pub fn item_from_value(v: JsonValue) -> () {
+    // FIXME
+    //serde_json::from_value(_)
+  }
 }
 
 pub trait JournalEntryExt {
@@ -48,6 +113,12 @@ impl JournalEntryExt for BootTest {
   fn _sort(&self) -> JournalEntrySort_ {
     JournalEntrySort_::BootTest
   }
+}
+
+#[derive(Clone, Debug)]
+pub struct JournalEntryResult {
+  pub eid:  i64,
+  pub t:    Timestamp,
 }
 
 #[derive(Serialize, Debug)]
@@ -168,6 +239,7 @@ impl JournalBackend {
     }
     println!("DEBUG: JournalBackend::cold_start: widx len = {}", widx_mem.len());
     println!("DEBUG: JournalBackend::cold_start: truncate = {:?}", truncate);
+    // FIXME: data "safe" truncate.
     if truncate {
       let t0_s = t0.to_string().replace(":", "_");
       let mut wlog_dst_path = root_path.clone();
@@ -215,7 +287,7 @@ impl JournalBackend {
     //this
   }
 
-  pub fn append<S: AsRef<str>>(&mut self, s: S) -> JournalEntryNum {
+  pub fn _append<S: AsRef<str>>(&mut self, s: S) -> JournalEntryNum {
     let s = s.as_ref();
     let widx = self.widx_mem.len();
     let wpos = match widx {
@@ -246,18 +318,22 @@ impl DevelJournal_ {
 }
 
 pub trait JournalExt {
-  fn append<I: JournalEntryExt + Serialize>(&mut self, item: &I) -> JournalEntryNum where Self: Sized;
+  fn append<I: JournalEntryExt + Serialize>(&mut self, item: &I) -> JournalEntryResult where Self: Sized;
 }
 
 impl JournalExt for DevelJournal_ {
-  fn append<I: JournalEntryExt + Serialize>(&mut self, item: &I) -> JournalEntryNum {
+  fn append<I: JournalEntryExt + Serialize>(&mut self, item: &I) -> JournalEntryResult {
     let t = Timestamp::fresh();
     let widx = self.backend.widx_mem.len();
     let eid: i64 = widx.try_into().unwrap();
     let sort = item._sort();
     let mut hval = Vec::with_capacity(HASH_SIZE);
     hval.resize(HASH_SIZE, 0);
-    let hash = HexFormat::default().to_string(&hval);
+    let hash = Base64Format::default().to_string(&hval);
+    let eres = JournalEntryResult{
+      eid,
+      t,
+    };
     let entry = JournalEntry_{
       eid,
       t,
@@ -283,9 +359,10 @@ impl JournalExt for DevelJournal_ {
     unsafe {
       let mut s = s.as_mut_str();
       let mut b = s.as_bytes_mut();
-      let hash = HexFormat::default().to_string(&h.finalize());
+      let hash = Base64Format::default().to_string(&h.finalize());
       (&mut b[hend + 11 .. slen - 2]).copy_from_slice(hash.as_bytes());
     }
-    self.backend.append(s)
+    self.backend._append(s);
+    eres
   }
 }

@@ -1,0 +1,15 @@
+[package]
+name = "_data"
+version = "0.1.0-devel"
+edition = "2021"
+rust-version = "1.78.0"
+authors = ["Peter Jin <peterhaijin@gmail.com>"]
+license = "Apache-2.0"
+
+#[features]
+#default = []
+
+[dependencies]
+_algo = { path = "../_algo" }
+_util = { path = "../_util" }
+walkdir = { version = "^2.5" }

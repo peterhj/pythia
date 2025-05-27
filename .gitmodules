@@ -82,18 +82,18 @@
 [submodule "dep/crc32fast"]
 	path = dep/crc32fast
 	url = https://github.com/peterhj/crc32fast
-[submodule "dep/encoding_rs"]
-	path = dep/encoding_rs
-	url = https://github.com/peterhj/encoding_rs
-[submodule "dep/gunzip"]
-	path = dep/gunzip
-	url = https://github.com/peterhj/gunzip
 [submodule "dep/diffy"]
 	path = dep/diffy
 	url = https://github.com/peterhj/diffy
+[submodule "dep/encoding_rs"]
+	path = dep/encoding_rs
+	url = https://github.com/peterhj/encoding_rs
 [submodule "dep/getrandom"]
 	path = dep/getrandom
 	url = https://github.com/peterhj/getrandom
+[submodule "dep/gunzip"]
+	path = dep/gunzip
+	url = https://github.com/peterhj/gunzip
 [submodule "dep/heck"]
 	path = dep/heck
 	url = https://github.com/peterhj/heck

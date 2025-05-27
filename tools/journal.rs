@@ -1,7 +1,14 @@
 extern crate pythia;
 extern crate uv;
 
-use pythia::journal::{JournalBackend};
+use pythia::algo::json::{deserialize_json_value};
+use pythia::journal::{
+  JournalEntrySort_,
+  JournalBackend,
+  RootSort_,
+  AikidoSort_,
+  ApproxOracleSort_,
+};
 use uv::*;
 use uv::bindings::*;
 use uv::extras::*;
@@ -80,6 +87,22 @@ impl UvAllocCb for Backend {
   }
 }
 
+impl Backend {
+  pub fn _write_response(client: &UvStream, response: &[u8]) {
+    let mut backing_buf = BackingBuf::new_uninit(response.len());
+    backing_buf.as_mut_bytes().copy_from_slice(response);
+    let write_buf = UvBuf::from_raw_parts_unchecked(backing_buf.as_ptr() as _, backing_buf.len());
+    BACKEND.with(|backend| {
+      let mut store = backend.store.borrow_mut();
+      if let Some(_) = store.buf.replace(backing_buf) {
+        println!("DEBUG: Backend: _write: warning: backing buf was already stored!");
+      }
+    });
+    let req = UvWrite::new();
+    client.write::<Backend>(req, &write_buf);
+  }
+}
+
 impl UvReadCb for Backend {
   fn callback(client: UvStream, nread: isize, buf: &mut UvBuf) {
     println!("DEBUG: Backend: read callback: nread = {} buf.len = {}", nread, buf.len());
@@ -108,114 +131,108 @@ impl UvReadCb for Backend {
     }
     let nread = nread as usize;
     if nread >= 4 {
-      if let Some(b) = buf.as_bytes() {
+      if let Some(buf) = buf.as_bytes() {
         // TODO
-        let action = if &b[ .. 4] == b"put\n" {
+        let action = if &buf[ .. 4] == b"put\n" {
           APIAction::Put
-        } else if &b[ .. 4] == b"get\n" {
+        } else if &buf[ .. 4] == b"get\n" {
           APIAction::Get
         } else {
-          let mut backing_buf = BackingBuf::new_uninit(RESPONSE_ERR.len());
-          backing_buf.as_mut_bytes().copy_from_slice(RESPONSE_ERR);
-          let write_buf = UvBuf::from_raw_parts_unchecked(backing_buf.as_ptr() as _, backing_buf.len());
-          BACKEND.with(|backend| {
-            let mut store = backend.store.borrow_mut();
-            if let Some(_) = store.buf.replace(backing_buf) {
-              println!("DEBUG: Backend: read callback: warning: backing buf was already stored!");
-            }
-          });
-          let req = UvWrite::new();
-          client.write::<Backend>(req, &write_buf);
+          Backend::_write_response(&client, RESPONSE_ERR);
           return;
         };
         match action {
           APIAction::Put => {
-            if nread <= 4 {
-              let mut backing_buf = BackingBuf::new_uninit(RESPONSE_ERR.len());
-              backing_buf.as_mut_bytes().copy_from_slice(RESPONSE_ERR);
-              let write_buf = UvBuf::from_raw_parts_unchecked(backing_buf.as_ptr() as _, backing_buf.len());
-              BACKEND.with(|backend| {
-                let mut store = backend.store.borrow_mut();
-                if let Some(_) = store.buf.replace(backing_buf) {
-                  println!("DEBUG: Backend: read callback: warning: backing buf was already stored!");
-                }
-              });
-              let req = UvWrite::new();
-              client.write::<Backend>(req, &write_buf);
-              return;
-            }
-            if b[nread-1] != b'\n' {
-              let mut backing_buf = BackingBuf::new_uninit(RESPONSE_ERR.len());
-              backing_buf.as_mut_bytes().copy_from_slice(RESPONSE_ERR);
-              let write_buf = UvBuf::from_raw_parts_unchecked(backing_buf.as_ptr() as _, backing_buf.len());
-              BACKEND.with(|backend| {
-                let mut store = backend.store.borrow_mut();
-                if let Some(_) = store.buf.replace(backing_buf) {
-                  println!("DEBUG: Backend: read callback: warning: backing buf was already stored!");
-                }
-              });
-              let req = UvWrite::new();
-              client.write::<Backend>(req, &write_buf);
-              return;
-            }
-            for p in 4 .. (nread - 1) {
-              if b[p] == b'\n' {
-                let mut backing_buf = BackingBuf::new_uninit(RESPONSE_ERR.len());
-                backing_buf.as_mut_bytes().copy_from_slice(RESPONSE_ERR);
-                let write_buf = UvBuf::from_raw_parts_unchecked(backing_buf.as_ptr() as _, backing_buf.len());
-                BACKEND.with(|backend| {
-                  let mut store = backend.store.borrow_mut();
-                  if let Some(_) = store.buf.replace(backing_buf) {
-                    println!("DEBUG: Backend: read callback: warning: backing buf was already stored!");
-                  }
-                });
-                let req = UvWrite::new();
-                client.write::<Backend>(req, &write_buf);
-                return;
-              }
-            }
-            match from_utf8(&b[4 .. (nread - 1)]) {
-              Err(_) => {
-                let mut backing_buf = BackingBuf::new_uninit(RESPONSE_ERR.len());
-                backing_buf.as_mut_bytes().copy_from_slice(RESPONSE_ERR);
-                let write_buf = UvBuf::from_raw_parts_unchecked(backing_buf.as_ptr() as _, backing_buf.len());
-                BACKEND.with(|backend| {
-                  let mut store = backend.store.borrow_mut();
-                  if let Some(_) = store.buf.replace(backing_buf) {
-                    println!("DEBUG: Backend: read callback: warning: backing buf was already stored!");
-                  }
-                });
-                let req = UvWrite::new();
-                client.write::<Backend>(req, &write_buf);
-                return;
-              }
-              Ok(s) => {
-                BACKEND.with(|backend| {
-                  println!("DEBUG: Backend: read callback: journal append");
-                  backend.inner.borrow_mut().append(s);
-                });
-              }
-            }
           }
           _ => {
             // TODO
           }
         }
+        if nread <= 4 {
+          Backend::_write_response(&client, RESPONSE_ERR);
+          return;
+        }
+        let sort_start = 4;
+        let mut sort_end = nread as usize;
+        /*if buf[nread-1] != b'\n' {
+          Backend::_write_response(&client, RESPONSE_ERR);
+          return;
+        }*/
+        for p in 4 .. nread as usize {
+          if buf[p] == b'\n' {
+            sort_end = p;
+            break;
+          }
+        }
+        let sort: JournalEntrySort_ = match from_utf8(&buf[sort_start .. sort_end]) {
+          Err(_) => {
+            Backend::_write_response(&client, RESPONSE_ERR);
+            return;
+          }
+          Ok(s) => {
+            match s.parse() {
+              Err(_) => {
+                println!("DEBUG: Backend: read callback: warning: invalid sort: s = {:?}", s);
+                Backend::_write_response(&client, RESPONSE_ERR);
+                return;
+              }
+              Ok(sort) => {
+                println!("DEBUG: Backend: read callback: sort = {:?}", sort);
+                sort
+              }
+            }
+          }
+        };
+        let item_start = sort_end + 1;
+        let mut item_end = nread as usize;
+        for p in item_start .. nread as usize {
+          if buf[p] == b'\n' {
+            item_end = p;
+            break;
+          }
+        }
+        let item_v = match deserialize_json_value(&buf[item_start .. item_end]) {
+          Err(_) => {
+            println!("DEBUG: Backend: read callback: warning: invalid item");
+            Backend::_write_response(&client, RESPONSE_ERR);
+            return;
+          }
+          Ok(v) => {
+            println!("DEBUG: Backend: read callback: valid item");
+            v
+          }
+        };
+        // FIXME
+        match sort {
+          JournalEntrySort_::_Root => {
+            println!("DEBUG: Backend: read callback: sort = {:?}", sort);
+            let item = RootSort_::item_from_value(item_v);
+          }
+          JournalEntrySort_::Aikido => {
+            println!("DEBUG: Backend: read callback: sort = {:?}", sort);
+            let item = AikidoSort_::item_from_value(item_v);
+          }
+          JournalEntrySort_::ApproxOracle => {
+            println!("DEBUG: Backend: read callback: sort = {:?}", sort);
+            let item = ApproxOracleSort_::item_from_value(item_v);
+          }
+          _ => {
+            println!("DEBUG: Backend: read callback: unsupported sort = {:?}", sort);
+          }
+        }
+        /*
+        let result = BACKEND.with(|backend| {
+          println!("DEBUG: Backend: read callback: journal append");
+          backend.inner.borrow_mut()._append(s)
+        });
+        */
       }
     }
     println!("DEBUG: Backend: read callback: write response...");
     // TODO: always assure buffer lifetime.
     //let res_str = format!("Hello, world! {}\n", nread);
     //let res_buf = res_str.as_bytes();
-    let mut backing_buf = BackingBuf::new_uninit(RESPONSE_OK.len());
-    backing_buf.as_mut_bytes().copy_from_slice(RESPONSE_OK);
-    let write_buf = UvBuf::from_raw_parts_unchecked(backing_buf.as_ptr() as _, backing_buf.len());
-    BACKEND.with(|backend| {
-      let mut store = backend.store.borrow_mut();
-      if let Some(_) = store.buf.replace(backing_buf) {
-        println!("DEBUG: Backend: read callback: warning: backing buf was already stored!");
-      }
-    });
+    Backend::_write_response(&client, RESPONSE_OK);
     let (backing_ptr, backing_len) = buf.take_raw_parts();
     if let Some(mut backing_buf) = BackingBuf::maybe_from_raw_parts_unchecked(backing_ptr as _, backing_len) {
       BACKEND.with(|backend| {
@@ -227,8 +244,6 @@ impl UvReadCb for Backend {
         backing_buf.free_unchecked();
       });
     }
-    let req = UvWrite::new();
-    client.write::<Backend>(req, &write_buf);
     //let req = UvShutdown::new();
     //client.shutdown::<Backend>(req);
   }
