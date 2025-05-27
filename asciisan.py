@@ -8,17 +8,19 @@ def main():
     for line_idx, line in enumerate(f):
         for char_idx, c in enumerate(line):
             x = ord(c)
-            if warn > 10:
-                warn += 1
-            elif warn == 10:
-                print(f"warning: ...")
-                warn += 1
-            elif x >= 127:
-                # FIXME: column in units of chars.
-                print(f"warning: non-ascii char = 0x{x:02x} line = {line_idx+1} col = {char_idx+1}")
-                warn += 1
-            elif x < 32 and x not in (0xa, 0xd):
-                print(f"warning: control char = 0x{x:02x} line = {line_idx+1} col = {char_idx+1}")
+            w = None
+            if x >= 127:
+                w = "non-ascii"
+            elif x < 32 and x not in (9, 0xa, 0xd):
+                w = "control"
+            if w:
+                if warn > 10:
+                    pass
+                elif warn == 10:
+                    print(f"warning: ...")
+                else:
+                    # FIXME: column in units of chars.
+                    print(f"warning: {w} char = 0x{x:02x} line = {line_idx+1} col = {char_idx+1}")
                 warn += 1
     if warn > 0:
         print(f"warning: total {warn} non-ascii or control chars")
