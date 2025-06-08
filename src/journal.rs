@@ -3,6 +3,7 @@ use crate::algo::blake2s::{Blake2s};
 //use crate::algo::hex::{HexFormat};
 use crate::algo::json::{JsonValue};
 use crate::clock::{Timestamp};
+use crate::oracle::{ApproxOracleItem};
 
 use byteorder::{LittleEndian as LE, ReadBytesExt, WriteBytesExt};
 //use once_cell::sync::{Lazy};
@@ -10,7 +11,8 @@ use serde::{Serialize, Deserialize};
 use serde_json_fmt::{JsonFormat};
 
 use std::fs::{File, OpenOptions};
-use std::io::{BufRead, BufReader, Write, Seek, SeekFrom};
+use std::io::{BufRead, BufReader, Read, Write, Seek, SeekFrom};
+use std::net::{TcpStream};
 use std::path::{PathBuf};
 use std::str::{FromStr};
 
@@ -31,6 +33,8 @@ pub enum JournalEntrySort_ {
   ApproxOracleTest,
   #[serde(rename = "boot-test")]
   BootTest,
+  #[serde(rename = "test")]
+  Test,
 }
 
 impl FromStr for JournalEntrySort_ {
@@ -57,6 +61,10 @@ impl FromStr for JournalEntrySort_ {
       "boot-test" |
       "\"boot-test\"" => {
         JournalEntrySort_::BootTest
+      }
+      "test" |
+      "\"test\"" => {
+        JournalEntrySort_::Test
       }
       _ => return Err(())
     })
@@ -87,9 +95,19 @@ pub struct ApproxOracleSort_ {
 }
 
 impl ApproxOracleSort_ {
-  pub fn item_from_value(v: JsonValue) -> () {
+  pub fn item_from_value(v: JsonValue) -> Result<ApproxOracleItem, String> {
+    serde_json::from_value::<ApproxOracleItem>(v).map_err(|e| format!("{:?}", e))
+  }
+}
+
+pub struct TestSort_ {
+}
+
+impl TestSort_ {
+  pub fn item_from_value(v: JsonValue) -> Result<Test, String> {
     // FIXME
-    //serde_json::from_value(_)
+    let t = serde_json::from_value::<Test>(v).map_err(|e| format!("{:?}", e))?;
+    Ok(t)
   }
 }
 
@@ -112,6 +130,17 @@ pub struct BootTest;
 impl JournalEntryExt for BootTest {
   fn _sort(&self) -> JournalEntrySort_ {
     JournalEntrySort_::BootTest
+  }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Test {
+  pub hello: String,
+}
+
+impl JournalEntryExt for Test {
+  fn _sort(&self) -> JournalEntrySort_ {
+    JournalEntrySort_::Test
   }
 }
 
@@ -279,12 +308,15 @@ impl JournalBackend {
     let wlog_file = OpenOptions::new()
         .append(true).create(true)
         .open(&wlog_path).unwrap();
-    JournalBackend{
+    let mut this = JournalBackend{
       widx_mem,
       widx_file,
       wlog_file,
+    };
+    if this.widx_mem.len() <= 0 {
+      this.append_item(&_Root);
     }
-    //this
+    this
   }
 
   pub fn _append<S: AsRef<str>>(&mut self, s: S) -> JournalEntryNum {
@@ -299,6 +331,55 @@ impl JournalBackend {
     self.widx_file.write_u32::<LE>(woff).unwrap();
     writeln!(&mut self.wlog_file, "{}", s).unwrap();
     JournalEntryNum{_idx: widx}
+  }
+
+  pub fn append_item<I: JournalEntryExt + Serialize>(&mut self, item: &I) -> JournalEntryResult {
+    let t = Timestamp::fresh();
+    let widx = self.widx_mem.len();
+    let eid: i64 = widx.try_into().unwrap();
+    let sort = item._sort();
+    let mut hval = Vec::with_capacity(HASH_SIZE);
+    hval.resize(HASH_SIZE, 0);
+    let hash = Base64Format::default().to_string(&hval);
+    let eres = JournalEntryResult{
+      eid,
+      t,
+    };
+    let entry = JournalEntry_{
+      eid,
+      t,
+      sort,
+      item,
+      hash,
+    };
+    let json_fmt = JsonFormat::new()
+        .ascii(true)
+        .colon(": ").unwrap()
+        .comma(", ").unwrap();
+    let mut s = json_fmt.to_string(&entry).unwrap();
+    println!("DEBUG: JournalBackend::append_item: s = {:?}", s);
+    let slen = s.len();
+    //let hend = slen - (11 + HASH_SIZE * 2 + 2);
+    let hend = slen - (12 + 43 + 2);
+    println!("DEBUG: end = {:?}", s.get(hend .. ).unwrap());
+    println!("DEBUG: len = {}", s.get(hend .. ).unwrap().len());
+    println!("DEBUG: hlen = {}", hend);
+    let mut h = Blake2s::new_hash();
+    {
+      let b = s.as_bytes();
+      assert!(b.starts_with(b"{"));
+      assert!(b[hend .. ].starts_with(b", \"hash\": \""));
+      assert!(b.ends_with(b"\"}"));
+      h.hash_bytes(&b[1 .. hend]);
+    }
+    unsafe {
+      let mut s = s.as_mut_str();
+      let mut b = s.as_bytes_mut();
+      let hash = Base64Format::default().to_string(&h.finalize());
+      (&mut b[hend + 11 .. slen - 2]).copy_from_slice(hash.as_bytes());
+    }
+    self._append(s);
+    eres
   }
 }
 
@@ -366,3 +447,34 @@ impl JournalExt for DevelJournal_ {
     eres
   }
 }
+
+/*pub struct JournalInterface {
+  stream: TcpStream,
+}
+
+impl JournalInterface {
+  pub fn new() -> JournalInterface {
+    JournalInterface{
+      stream: TcpStream::connect("127.0.0.1:9001").unwrap(),
+    }
+  }
+
+  pub fn hi(&mut self) {
+    self.stream.write_all(b"hi \n").unwrap();
+    let mut buf = [0u8; 4];
+    let nread = self.stream.read(&mut buf).unwrap();
+    match &buf[ .. nread] {
+      b"ok \n" => {}
+      b"err\n" => {}
+      _ => {
+        // TODO
+      }
+    }
+  }
+
+  pub fn put(&mut self) {
+  }
+
+  pub fn get(&mut self) {
+  }
+}*/

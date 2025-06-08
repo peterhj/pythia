@@ -1,7 +1,9 @@
+use crate::algo::{SmolStr};
+
 #[cfg(feature = "pyo3")]
 use pyo3::prelude::*;
 use serde::{Serialize, Deserialize};
-use serde::de::{Deserializer};
+use serde::de::{Deserializer, Error as DError};
 use serde::ser::{Serializer};
 use time::{Duration, Timespec, Tm, get_time};
 
@@ -47,9 +49,9 @@ impl Serialize for Timestamp {
 }
 
 impl<'d> Deserialize<'d> for Timestamp {
-  fn deserialize<D: Deserializer<'d>>(_deserializer: D) -> Result<Timestamp, D::Error> {
-    // TODO
-    unimplemented!()
+  fn deserialize<D: Deserializer<'d>>(deserializer: D) -> Result<Timestamp, D::Error> {
+    let s = SmolStr::deserialize(deserializer)?;
+    s.parse().map_err(|e| <D::Error as DError>::custom(format!("{:?}", e)))
   }
 }
 

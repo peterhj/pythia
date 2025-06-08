@@ -1,14 +1,18 @@
 use crate::algo::{BTreeMap};
 use crate::algo::blake2s::{Blake2s};
+use crate::algo::hex::{HexFormat};
+use crate::algo::json::{JsonFormat};
 use crate::clock::{Timestamp};
-use crate::util::hex::{HexFormat};
 
 use getrandom::{getrandom};
 use serde::{Serialize};
 use serde::ser::{Serializer, SerializeStruct};
 
 use std::fmt::{Display, Debug, Formatter, Result as FmtResult};
+use std::fs::{OpenOptions, create_dir};
+use std::io::{BufWriter, Write};
 use std::mem::{replace};
+use std::path::{PathBuf};
 
 pub const HASH_SIZE: usize = 32;
 pub const SHORT_HASH_SIZE: usize = 16;
@@ -156,6 +160,10 @@ impl ContentHash {
     ContentHash{inner}
   }
 
+  pub fn _as_data_bytes(&self) -> &[u8] {
+    &self.inner
+  }
+
   pub fn to_string(&self) -> String {
     HexFormat::default().lower()
       .to_string(&self.inner)
@@ -177,7 +185,7 @@ impl FramePointer {
   }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Debug)]
 pub enum SnapshotMarker {
   FreshFrame,
   Merge,
@@ -186,13 +194,14 @@ pub enum SnapshotMarker {
 }
 
 // TODO
-#[derive(Clone, Debug)]
+#[derive(Clone, Serialize, Debug)]
 pub struct SnapshotMetadata {
   frame: FrameId,
   prev: Vec<SnapshotHash>,
   mark: Vec<SnapshotMarker>,
   timestamp: Timestamp,
   // TODO: "author" info.
+  // TODO: message or comment.
 }
 
 // TODO
@@ -202,6 +211,7 @@ pub struct Snapshot {
   rehash: bool,
   //lasthash: Timestamp,
   metadata: SnapshotMetadata,
+  //dokidata: SnapshotDokiData,
   //testdata: SnapshotTestData,
   hashdata: SnapshotData,
 }
@@ -234,40 +244,12 @@ impl Snapshot {
 
 // TODO
 #[derive(Clone)]
-pub enum Data {
+pub struct SnapshotDokiData {
   // TODO
-  Empty,
-  String(String),
-  //List(Vec<Data>),
-  //Tree(Vec<(String, Data)>),
-}
-
-impl Data {
-  pub fn content_hash(&self) -> ContentHash {
-    match self {
-      &Data::Empty => {
-        ContentHash::empty()
-      }
-      &Data::String(ref s) => {
-        let mut h = Blake2s::new_hash();
-        h.hash_bytes(s.as_bytes());
-        ContentHash::from(h.finalize())
-      }
-    }
-  }
-
-  pub fn mut_string(&mut self) -> &mut String {
-    match self as &_ {
-      &Data::Empty => {
-        *self = Data::String(String::new());
-      }
-      &Data::String(_) => {}
-    }
-    match self {
-      &mut Data::String(ref mut s) => s,
-      _ => panic!("bug")
-    }
-  }
+  hash: ContentHash,
+  rehash: bool,
+  //lasthash: Timestamp,
+  data: Data,
 }
 
 // TODO
@@ -287,7 +269,8 @@ pub struct SnapshotData {
   hash: ContentHash,
   rehash: bool,
   //lasthash: Timestamp,
-  data: Data,
+  data: Object,
+  //data: Data,
   //test_data: _,
   //review_data: _,
   //merge_data: _,
@@ -300,7 +283,7 @@ impl SnapshotData {
     SnapshotData{
       hash: ContentHash::empty(),
       rehash: false,
-      data: Data::Empty,
+      data: Object::empty(),
     }
   }
 
@@ -308,38 +291,322 @@ impl SnapshotData {
     if !self.rehash {
       return
     }
-    self.hash = self.data.content_hash();
+    //self.hash = self.data.content_hash();
+    self.data.rehash();
+    self.hash = self.data.hash.clone();
     self.rehash = false;
   }
 
-  pub fn data(&self) -> &Data {
+  pub fn data(&self) -> &Object {
     &self.data
   }
 
-  pub fn mut_data(&mut self) -> &mut Data {
+  pub fn mut_data(&mut self) -> &mut Object {
     self.rehash = true;
     &mut self.data
   }
 }
 
-pub type Repo = DBase;
-
-pub struct DBase {
-  snapshots: BTreeMap<SnapshotHash, Snapshot>,
-  frames: BTreeMap<FrameId, FramePointer>,
+// TODO
+#[derive(Clone)]
+pub enum Data {
+  // FIXME: should not be inline but stored in the Store...
+  Empty,
+  String(String),
+  //List(Vec<Data>),
+  //Tree(Vec<(String, Data)>),
+  Tree(BTreeMap<String, Data>),
 }
 
-impl DBase {
-  pub fn root() -> DBase {
-    DBase{
+impl Data {
+  pub fn empty() -> Data {
+    Data::Empty
+  }
+
+  pub fn tree() -> Data {
+    Data::Tree(BTreeMap::new())
+  }
+
+  pub fn tree_insert_str(&mut self, k: &str, v: &str) {
+    match self {
+      &mut Data::Tree(ref mut kvs) => {
+        kvs.insert(k.to_owned(), Data::String(v.to_owned()));
+      }
+      _ => panic!("bug")
+    }
+  }
+
+  pub fn content_hash(&self) -> ContentHash {
+    match self {
+      &Data::Empty => {
+        ContentHash::empty()
+      }
+      &Data::String(ref s) => {
+        let mut h = Blake2s::new_hash();
+        h.hash_bytes(s.as_bytes());
+        ContentHash::from(h.finalize())
+      }
+      &Data::Tree(ref kvs) => {
+        let mut htree = Blake2s::new_hash();
+        for (k, v) in kvs.iter() {
+          let mut h = Blake2s::new_hash();
+          h.hash_bytes(k.as_bytes());
+          let hk = ContentHash::from(h.finalize());
+          let hv = v.content_hash();
+          htree.hash_bytes(hk._as_data_bytes());
+          htree.hash_bytes(hv._as_data_bytes());
+        }
+        ContentHash::from(htree.finalize())
+      }
+    }
+  }
+
+  pub fn mut_string(&mut self) -> &mut String {
+    match self as &_ {
+      &Data::Empty => {
+        *self = Data::String(String::new());
+      }
+      &Data::String(_) => {}
+      _ => unimplemented!()
+    }
+    match self {
+      &mut Data::String(ref mut s) => s,
+      _ => panic!("bug")
+    }
+  }
+}
+
+#[derive(Clone)]
+pub enum ObjectData {
+  Empty,
+  String(String),
+  Tree(BTreeMap<String, Object>),
+}
+
+impl ObjectData {
+  pub fn content_hash(&mut self) -> ContentHash {
+    match self {
+      &mut ObjectData::Empty => {
+        ContentHash::empty()
+      }
+      &mut ObjectData::String(ref s) => {
+        let mut h = Blake2s::new_hash();
+        h.hash_bytes(s.as_bytes());
+        ContentHash::from(h.finalize())
+      }
+      &mut ObjectData::Tree(ref mut kvs) => {
+        let mut htree = Blake2s::new_hash();
+        for (k, v) in kvs.iter_mut() {
+          let mut h = Blake2s::new_hash();
+          h.hash_bytes(k.as_bytes());
+          let hk = ContentHash::from(h.finalize());
+          v.rehash();
+          let hv = v.hash.clone();
+          htree.hash_bytes(hk._as_data_bytes());
+          htree.hash_bytes(hv._as_data_bytes());
+        }
+        ContentHash::from(htree.finalize())
+      }
+    }
+  }
+}
+
+// TODO: replacement for Data.
+#[derive(Clone)]
+pub struct Object {
+  hash: ContentHash,
+  rehash: bool,
+  data: ObjectData,
+}
+
+impl Object {
+  pub fn empty() -> Object {
+    Object{
+      hash: ContentHash::empty(),
+      rehash: false,
+      data: ObjectData::Empty,
+    }
+  }
+
+  pub fn string_from(s: &str) -> Object {
+    Object{
+      hash: ContentHash::empty(),
+      rehash: true,
+      data: ObjectData::String(s.to_owned()),
+    }
+  }
+
+  pub fn tree() -> Object {
+    Object{
+      hash: ContentHash::empty(),
+      rehash: true,
+      data: ObjectData::Tree(BTreeMap::new()),
+    }
+  }
+
+  pub fn tree_insert_str(&mut self, k: &str, v: &str) {
+    match &mut self.data {
+      &mut ObjectData::Tree(ref mut kvs) => {
+        kvs.insert(k.to_owned(), Object::string_from(v));
+      }
+      _ => panic!("bug")
+    }
+  }
+
+  pub fn rehash(&mut self, /*store: &mut Store*/) {
+    if !self.rehash {
+      return
+    }
+    self.hash = self.data.content_hash();
+    self.rehash = false;
+  }
+
+  pub fn mut_string(&mut self) -> &mut String {
+    self.rehash = true;
+    match &self.data {
+      &ObjectData::Empty => {
+        self.data = ObjectData::String(String::new());
+      }
+      &ObjectData::String(_) => {}
+      _ => unimplemented!()
+    }
+    match &mut self.data {
+      &mut ObjectData::String(ref mut s) => s,
+      _ => panic!("bug")
+    }
+  }
+}
+
+pub type Repo = Store;
+
+pub struct Store {
+  frames: BTreeMap<FrameId, FramePointer>,
+  snapshots: BTreeMap<SnapshotHash, Snapshot>,
+  objects: BTreeMap<ContentHash, Object>,
+}
+
+impl Store {
+  pub fn root() -> Store {
+    Store{
       snapshots: BTreeMap::new(),
       frames: BTreeMap::new(),
+      objects: BTreeMap::new(),
     }
   }
 
   pub fn debug_dump(&self) {
-    println!("DEBUG: DBase::debug_dump: snapshot count = {}", self.snapshots.len());
-    println!("DEBUG: DBase::debug_dump: frame count    = {}", self.frames.len());
+    println!("DEBUG: Store::debug_dump: snapshot count = {}", self.snapshots.len());
+    println!("DEBUG: Store::debug_dump: frame count    = {}", self.frames.len());
+  }
+
+  pub fn _save(&self) {
+    let manifest_dir = PathBuf::from(crate::build::MANIFEST_DIR);
+    let mut save_dir = manifest_dir.clone();
+    save_dir.push(".aikido");
+    let _ = create_dir(&save_dir).ok();
+    let mut snapshot_path = save_dir.clone();
+    snapshot_path.push("_log.jsonl");
+    let log_file = OpenOptions::new()
+      .create(true)
+      .append(true)
+      .open(&snapshot_path).unwrap();
+    let mut log_file = BufWriter::new(log_file);
+    /*#[derive(Default, Serialize, Debug)]
+    enum _FrameType {
+      #[default]
+      #[serde(rename = "frame")]
+      Frame,
+    }
+    #[derive(Serialize, Debug)]
+    struct _Frame {
+      _type: _FrameType,
+      id: FrameId,
+      init: SnapshotHash,
+      last: SnapshotHash,
+    }*/
+    #[derive(Default, Serialize, Debug)]
+    enum _SnapshotType {
+      #[default]
+      #[serde(rename = "snapshot")]
+      Snapshot,
+    }
+    #[derive(Serialize, Debug)]
+    struct _Snapshot {
+      _type: _SnapshotType,
+      hash: SnapshotHash,
+      metadata: SnapshotMetadata,
+      data: ContentHash,
+    }
+    for (hash, snapshot) in self.snapshots.iter() {
+      assert_eq!(hash, &snapshot.hash);
+      assert!(!snapshot.rehash);
+      assert!(!snapshot.hashdata.rehash);
+      let m = _Snapshot{
+        _type: Default::default(),
+        hash: hash.clone(),
+        metadata: snapshot.metadata.clone(),
+        data: snapshot.hashdata.hash.clone(),
+      };
+      let json_fmt = JsonFormat::new()
+          .ascii(true)
+          .comma(", ").unwrap()
+          .colon(": ").unwrap()
+      ;
+      let s = json_fmt.to_string(&m).unwrap();
+      writeln!(&mut log_file, "{}", s).unwrap();
+      self._save_object(&snapshot.hashdata.data, &mut log_file, );
+    }
+  }
+
+  pub fn _save_object<W: Write>(&self, obj: &Object, log_file: &mut W) {
+    /*#[derive(Default, Serialize, Debug)]
+    enum _StringType {
+      #[default]
+      #[serde(rename = "object/string")]
+      String,
+    }
+    #[derive(Serialize, Debug)]
+    struct _StringObject {
+      _type: _EmptyType,
+      hash: ContentHash,
+      content: String,
+    }*/
+    #[derive(Default, Serialize, Debug)]
+    enum _TreeType {
+      #[default]
+      //#[serde(rename = "object")]
+      #[serde(rename = "object/tree")]
+      Tree,
+    }
+    #[derive(Serialize, Debug)]
+    struct _TreeObject {
+      _type: _TreeType,
+      hash: ContentHash,
+      up: ContentHash,
+      key: String,
+    }
+    match &obj.data {
+      &ObjectData::Empty => {}
+      &ObjectData::Tree(ref kvs) => {
+        for (k, v) in kvs.iter() {
+          assert!(!v.rehash);
+          let o = _TreeObject{
+            _type: Default::default(),
+            hash: v.hash.clone(),
+            up: obj.hash.clone(),
+            key: k.clone(),
+          };
+          let json_fmt = JsonFormat::new()
+              .ascii(true)
+              .comma(", ").unwrap()
+              .colon(": ").unwrap()
+          ;
+          let s = json_fmt.to_string(&o).unwrap();
+          writeln!(log_file, "{}", s).unwrap();
+        }
+      }
+      _ => unimplemented!()
+    }
   }
 
   pub fn fresh_frame(&mut self) -> FrameId {
@@ -384,8 +651,8 @@ impl DBase {
           frameptr.init = snapshot.hash.clone();
         }
         frameptr.last = snapshot.hash.clone();
-        println!("DEBUG: DBase::commit_snapshot: metadata = {:?}", &snapshot.metadata);
-        println!("DEBUG: DBase::commit_snapshot: frameptr = {:?}", &frameptr);
+        println!("DEBUG: Store::commit_snapshot: metadata = {:?}", &snapshot.metadata);
+        println!("DEBUG: Store::commit_snapshot: frameptr = {:?}", &frameptr);
       }
     }
     match self.snapshots.insert(snapshot.hash.clone(), snapshot) {
@@ -410,8 +677,32 @@ impl Frame {
     }
   }
 
-  pub fn debug_print_status(&self, dbase: &DBase) {
-    match dbase.get_snapshot(self.snapshot.clone()) {
+  pub fn _new(metadata: SnapshotMetadata, data: SnapshotData, store: &mut Store) -> Frame {
+    let mut merkle_buf = Vec::new();
+    merkle_buf.extend(&*metadata.frame.inner);
+    merkle_buf.extend(&*metadata.prev[0].inner);
+    merkle_buf.extend(&*data.hash.inner);
+    let mut h = Blake2s::new_hash();
+    h.hash_bytes(&merkle_buf);
+    let hash = SnapshotHash::from(h.finalize());
+    let snapshot = Snapshot{
+      hash,
+      rehash: false,
+      metadata,
+      //testdata: _,
+      hashdata: data.clone(),
+    };
+    let snapshot_hash = snapshot.hash.clone();
+    store.commit_snapshot(snapshot);
+    Frame{
+      snapshot: snapshot_hash,
+      modified: false,
+      hashdata: data,
+    }
+  }
+
+  pub fn debug_print_status(&self, store: &Store) {
+    match store.get_snapshot(self.snapshot.clone()) {
       None => {
         println!("DEBUG: Frame::debug_print_status: frame = {} snapshot = {} modified? = {:?}",
             FrameId::root(),
@@ -429,9 +720,24 @@ impl Frame {
     }
   }
 
-  pub fn fresh(&self, dbase: &mut DBase) -> Frame {
+  pub fn import(&self, import_data: Object, store: &mut Store) -> Frame {
     let timestamp = Timestamp::fresh();
-    let frame_id = dbase.fresh_frame();
+    let frame_id = store.fresh_frame();
+    let metadata = SnapshotMetadata {
+      frame: frame_id,
+      prev: vec![self.snapshot.clone()],
+      timestamp,
+      mark: vec![SnapshotMarker::FreshFrame],
+    };
+    let mut hashdata = self.hashdata.clone();
+    let _ = replace(hashdata.mut_data(), import_data);
+    hashdata.rehash();
+    Frame::_new(metadata, hashdata, store)
+  }
+
+  pub fn fresh(&self, store: &mut Store) -> Frame {
+    let timestamp = Timestamp::fresh();
+    let frame_id = store.fresh_frame();
     let metadata = SnapshotMetadata {
       frame: frame_id,
       prev: vec![self.snapshot.clone()],
@@ -441,30 +747,10 @@ impl Frame {
     println!("DEBUG: Frame::fresh: metadata = {:?}", metadata);
     let mut hashdata = self.hashdata.clone();
     hashdata.rehash();
-    let mut merkle_buf = Vec::new();
-    merkle_buf.extend(&*metadata.frame.inner);
-    merkle_buf.extend(&*metadata.prev[0].inner);
-    merkle_buf.extend(&*hashdata.hash.inner);
-    let mut h = Blake2s::new_hash();
-    h.hash_bytes(&merkle_buf);
-    let hash = SnapshotHash::from(h.finalize());
-    let snapshot = Snapshot{
-      hash,
-      rehash: false,
-      metadata,
-      //testdata: _,
-      hashdata: hashdata.clone(),
-    };
-    let snapshot_hash = snapshot.hash.clone();
-    dbase.commit_snapshot(snapshot);
-    Frame{
-      snapshot: snapshot_hash,
-      modified: false,
-      hashdata,
-    }
+    Frame::_new(metadata, hashdata, store)
   }
 
-  pub fn commit(&mut self, dbase: &mut DBase) {
+  pub fn commit(&mut self, store: &mut Store) {
     if !self.modified {
       return;
     }
@@ -478,10 +764,10 @@ impl Frame {
     }
     if self.snapshot.is_root() {
       let hashdata = replace(&mut self.hashdata, SnapshotData::empty());
-      *self = self.fresh(dbase);
+      *self = self.fresh(store);
       let _ = replace(&mut self.hashdata, hashdata);
     }
-    let mut snapshot = match dbase.get_snapshot(old_snapshot.clone()) {
+    let mut snapshot = match store.get_snapshot(old_snapshot.clone()) {
       None => panic!("bug"),
       Some(snapshot) => snapshot
     };
@@ -492,7 +778,7 @@ impl Frame {
     snapshot.hashdata = self.hashdata.clone();
     snapshot.force_rehash();
     let snapshot_hash = snapshot.hash.clone();
-    dbase.commit_snapshot(snapshot);
+    store.commit_snapshot(snapshot);
     self.snapshot = snapshot_hash;
     self.modified = false;
   }

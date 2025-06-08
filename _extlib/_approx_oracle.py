@@ -11,6 +11,8 @@ import time
 import traceback
 import urllib.request
 
+from _extlib._journal import JournalAsyncInterface
+
 HOME = os.environ["HOME"]
 API_TOKENS_DIR = os.path.join(HOME, ".pythia", "api_tokens")
 
@@ -27,11 +29,12 @@ def _load_api_token(key, domain):
             pass
     return api_token
 
-DEEPSEEK_API_KEY   = _load_api_token("DEEPSEEK",   "deepseek.com")
-HYPERBOLIC_API_KEY = _load_api_token("HYPERBOLIC", "hyperbolic.xyz")
-OPENROUTER_API_KEY = _load_api_token("OPENROUTER", "openrouter.ai")
-TOGETHER_API_KEY   = _load_api_token("TOGETHER",   "together.xyz")
-XAI_API_KEY        = _load_api_token("XAI",        "x.ai")
+DEEPSEEK_API_KEY    = _load_api_token("DEEPSEEK",   "deepseek.com")
+GEMINI_API_KEY      = _load_api_token("GEMINI",     "aistudio.google.com")
+HYPERBOLIC_API_KEY  = _load_api_token("HYPERBOLIC", "hyperbolic.xyz")
+OPENROUTER_API_KEY  = _load_api_token("OPENROUTER", "openrouter.ai")
+TOGETHER_API_KEY    = _load_api_token("TOGETHER",   "together.xyz")
+XAI_API_KEY         = _load_api_token("XAI",        "x.ai")
 
 def _match_str(query: str, pat: str) -> bool:
     return query == pat or query == f"\"{pat}\""
@@ -42,6 +45,12 @@ class _ApproxOracleResponseItem:
     think: str = None
     value: str = None
     data: Any = None
+    t0: str = None
+    t1: str = None
+
+@dataclass
+class ApproxOracleResponseItem:
+    data: str = None
     t0: str = None
     t1: str = None
 
@@ -64,14 +73,22 @@ class ApproxOracleEndpoint:
 
     @classmethod
     def from_model(cls, model: str) -> Any:
-        if _match_str(model, "deepseek-r1-20250120"):
-            return cls.deepseek_r1_20250120()
+        if _match_str(model, "deepseek-r1-20250528"):
+            return cls.deepseek_r1_20250528()
         elif _match_str(model, "deepseek-v3-chat-20250324"):
             return cls.deepseek_v3_chat_20250324()
+        elif _match_str(model, "gemini-2.5-flash-preview-20250520"):
+            return cls.gemini_2_5_flash_preview_20250520()
+        elif _match_str(model, "gemini-2.5-flash-preview-20250520"):
+            return cls.gemini_2_5_flash_preview_20250520()
         elif _match_str(model, "xai-grok-3-mini-20250520"):
             return cls.xai_grok_3_mini()
+        elif _match_str(model, "xai-grok-3-20250520"):
+            return cls.xai_grok_3()
         elif _match_str(model, "xai-grok-3-mini-beta-20250418"):
             return cls.xai_grok_3_mini_beta()
+        elif _match_str(model, "xai-grok-3-beta-20250418"):
+            return cls.xai_grok_3_beta()
         else:
             raise NotImplementedError
 
@@ -85,9 +102,9 @@ class ApproxOracleEndpoint:
         )
 
     @classmethod
-    def deepseek_r1_20250120(cls) -> Any:
+    def deepseek_r1_20250528(cls) -> Any:
         return cls.deepseek(
-            model = "deepseek-r1-20250120",
+            model = "deepseek-r1-20250528",
             endpoint_model = "deepseek-reasoner",
             endpoint_max_new_tokens = 8192,
             endpoint_throttle_rps = 64,
@@ -100,6 +117,25 @@ class ApproxOracleEndpoint:
             endpoint_model = "deepseek-chat",
             endpoint_max_new_tokens = 8192,
             endpoint_throttle_rps = 64,
+        )
+
+    @classmethod
+    def gemini(cls, **kwargs) -> Any:
+        return cls(
+            endpoint_api_url = "https://generativelanguage.googleapis.com",
+            endpoint_api_token = GEMINI_API_KEY,
+            endpoint_api_protocol = "gemini",
+            **kwargs,
+        )
+
+    @classmethod
+    def gemini_2_5_flash_preview_20250520(cls) -> Any:
+        return cls.gemini(
+            model = "gemini-2.5-flash-preview-20250520",
+            endpoint_model = "models/gemini-2.5-flash-preview-05-20",
+            endpoint_max_new_tokens = 65536,
+            endpoint_throttle_rps = 2,
+            # endpoint_throttle_rps = 2.5,
         )
 
     @classmethod
@@ -267,7 +303,10 @@ class ApproxOracleEndpoint:
             endpoint_extra_params = {
                 "reasoning_effort": "high",
             },
-            endpoint_throttle_rps = 64,
+            #endpoint_throttle_rps = 3,
+            endpoint_throttle_rps = 5,
+            #endpoint_throttle_rps = 10,
+            #endpoint_throttle_rps = 64,
         )
 
     @classmethod
@@ -279,7 +318,9 @@ class ApproxOracleEndpoint:
             endpoint_extra_params = {
                 "reasoning_effort": "high",
             },
-            endpoint_throttle_rps = 10,
+            endpoint_throttle_rps = 3,
+            #endpoint_throttle_rps = 5,
+            #endpoint_throttle_rps = 10,
         )
 
     @classmethod
@@ -320,6 +361,17 @@ class ApproxOracleEndpoint:
             self._chat_endpoint_headers = {
                 "User-Agent": "curl/8.7.1",
                 "Authorization": "Bearer {}".format(self.endpoint_api_token),
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+        elif self.endpoint_api_protocol == "gemini":
+            self._chat_endpoint_url = "{}/v1beta/{}:generateContent?key={}".format(
+                self.endpoint_api_url,
+                self.endpoint_model,
+                self.endpoint_api_token,
+            )
+            self._chat_endpoint_headers = {
+                "User-Agent": "curl/8.7.1",
                 "Content-Type": "application/json",
                 "Accept": "application/json",
             }
@@ -374,6 +426,18 @@ class ApproxOracleEndpoint:
                     sample["temperature"] = 0.0
             elif self.model == "xai-grok-3-mini-beta-20250418":
                 pass
+            elif self.model == "xai-grok-3-mini-20250520":
+                pass
+            elif self.model == "xai-grok-3-beta-20250418":
+                if sample is None:
+                    sample = dict()
+                if sample.get("temperature", None) is None:
+                    sample["temperature"] = 0.0
+            elif self.model == "xai-grok-3-20250520":
+                if sample is None:
+                    sample = dict()
+                if sample.get("temperature", None) is None:
+                    sample["temperature"] = 0.0
             else:
                 if sample is None:
                     sample = dict()
@@ -381,6 +445,25 @@ class ApproxOracleEndpoint:
                     sample["temperature"] = 0.0
                 if sample.get("top_p", None) is None:
                     sample["top_p"] = 1.0
+        elif self.endpoint_api_protocol == "gemini":
+            # TODO: sampling params.
+            req_body = {
+                "contents": [
+                    {
+                        "parts": [
+                            {
+                                "text": messages[-1]["content"],
+                            }
+                        ],
+                    }
+                ],
+                "generationConfig": {
+                    "thinkingConfig": {
+                        "thinkingBudget": 0,
+                    },
+                    # "temperature": _,
+                },
+            }
         else:
             raise NotImplementedError
         if sample is not None:
@@ -388,7 +471,7 @@ class ApproxOracleEndpoint:
             req_body |= sample
         if self.endpoint_extra_params is not None:
             req_body |= self.endpoint_extra_params
-        temp = req_body.get("temperature", None)
+        #temp = req_body.get("temperature", None)
         #print(f"DEBUG: ApproxOracleEndpoint.query: req body = {req_body}")
         req_data = json.dumps(req_body).encode("utf-8")
         #print(f"DEBUG: ApproxOracleEndpoint.query: url      = {self._chat_endpoint_url}")
@@ -422,6 +505,11 @@ class ApproxOracleEndpoint:
                 if think_end_pos >= 0:
                     think = value[8:think_end_pos]
                     value = value[think_end_pos+10:]
+        elif self.endpoint_api_protocol == "gemini":
+            # TODO
+            print(f"DEBUG: gemini: res body:")
+            print(json.dumps(res_body))
+            value = res_body["candidates"][0]["content"]["parts"][-1].pop("text", None)
         else:
             raise NotImplementedError
         res.think = think
@@ -441,26 +529,35 @@ class ApproxOracleSampleItem:
     top_k: Optional[int] = None
 
 @dataclass
-class ApproxOracleItem:
-    #timestamp: str = None
-    key: Any = None
+class ApproxOracleGetItem:
+    key: str = None
     query: str = None
     model: str = None
-    ctr: int = None
+    ctr: int = 0
+
+@dataclass
+class ApproxOracleItem:
+    key: str = None
+    query: str = None
+    tag: str = None
+    model: str = None
+    ctr: int = 0
     sample: ApproxOracleSampleItem = None
     think: str = None
     value: str = None
     extra: Any = None
 
-@dataclass
-class ApproxOracleResExtra:
-    data: str = None
-    t0: str = None
-    t1: str = None
+    def get_item(self) -> ApproxOracleGetItem:
+        return ApproxOracleGetItem(
+            key=self.key,
+            query=self.query,
+            model=self.model,
+            ctr=self.ctr,
+        )
 
 @dataclass
 class ApproxOracleExtraItem:
-    res: ApproxOracleResExtra = None
+    res: ApproxOracleResponseItem = None
     exc: ApproxOracleExceptItem = None
 
 @dataclass
@@ -487,7 +584,7 @@ class _ApproxOracleWorkItem:
         item.think = self.res.think
         item.value = self.res.value
         item.extra = ApproxOracleExtraItem(
-            res=ApproxOracleResExtra(
+            res=ApproxOracleResponseItem(
                 data=self.res.data,
                 t0=self.res.t0,
                 t1=self.res.t1,
@@ -636,6 +733,7 @@ class ApproxOracleAsyncInterface:
     concurrency: int = 192
     shutdown_t1: str = None
 
+    _journal: JournalAsyncInterface = None
     _get_lock: Any = None
     _next_get_t0: Any = None
 
@@ -643,13 +741,28 @@ class ApproxOracleAsyncInterface:
         print(f"DEBUG: ApproxOracleAsyncInterface.__post_init__")
         if self.worker is None:
             self.worker = ApproxOracleWorker(self.concurrency)
-        self._get_lock = threading.Lock()
+        if self._journal is None:
+            self._journal = JournalAsyncInterface("approx-oracle")
+        if self._get_lock is None:
+            self._get_lock = threading.Lock()
 
     async def get(self, item: Union[ApproxOracleItem, dict]) -> ApproxOracleItem:
         if isinstance(item, dict):
             item = ApproxOracleItem(**item)
         if item.model is None or _match_str(item.model, "default"):
             item.model = self.default_model
+        #if False:
+        ret, ret_item = await self._journal.get(item)
+        if ret == "ok":
+            print(f"DEBUG: ApproxOracleAsyncInterface.get: journal.get: ok: ret item = {ret_item}")
+            if ret_item is not None:
+                item = ret_item
+                if isinstance(item, dict):
+                    item = ApproxOracleItem(**item)
+                if item.value is not None:
+                    return item
+        else:
+            print(f"DEBUG: ApproxOracleAsyncInterface.get: journal.get: other: {repr(ret)}")
         endpoint = ApproxOracleEndpoint.from_model(item.model)
         work_item = _ApproxOracleWorkItem(item)
         def _query_work_item():
@@ -685,7 +798,9 @@ class ApproxOracleAsyncInterface:
         loop = asyncio.get_running_loop()
         w = loop.run_in_executor(self.worker._poolexec, _query_work_item)
         work_item = await w
-        return work_item._finalize()
+        item = work_item._finalize()
+        await self._journal.put(item)
+        return item
 
     #def get_sync(self, item: Union[ApproxOracleItem, dict]):
 
@@ -705,11 +820,13 @@ def test_main():
 def test_main_async():
     print(f"DEBUG: _approx_oracle: test main (async)")
     iface = ApproxOracleAsyncInterface(
+        default_model="deepseek-v3-chat-20250324",
         #default_model="deepseek-r1-20250120",
     )
+    query = """How would I use `asyncio.gather` with both a `concurrent.futures.ThreadPoolExecutor` and an asyncio loop? Please provide a full toy example that involves making a POST request (using `urllib.request`) to "http://api.example.com/"."""
     result = asyncio.run(iface.get(ApproxOracleItem(
-        key=0,
-        query="""How would I use `asyncio.gather` with both a `concurrent.futures.ThreadPoolExecutor` and an asyncio loop? Please provide a full toy example that involves making a POST request (using `urllib.request`) to "http://api.example.com/".""",
+        #key=0,
+        query=query,
     )))
     print(result)
     print(f"DEBUG: _approx_oracle: think:")
@@ -738,5 +855,5 @@ def test_main_async_2():
 
 if __name__ == "__main__":
     #test_main()
-    #test_main_async()
-    test_main_async_2()
+    test_main_async()
+    #test_main_async_2()

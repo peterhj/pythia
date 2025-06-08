@@ -25,6 +25,11 @@ fn _main() {
     write!(&mut file, "{}", cwd.display()).unwrap();
   }
 
+  {
+    let mut file = File::create(out_dir.join("manifest_dir.txt")).unwrap();
+    write!(&mut file, "{}", manifest_dir.display()).unwrap();
+  }
+
   let out = Command::new("git")
     .current_dir(&manifest_dir)
     .arg("log")

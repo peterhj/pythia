@@ -8,6 +8,7 @@ use pythia::journal::{
   RootSort_,
   AikidoSort_,
   ApproxOracleSort_,
+  TestSort_,
 };
 use uv::*;
 use uv::bindings::*;
@@ -22,10 +23,11 @@ thread_local! {
   static BACKEND: Backend = Backend::new();
 }
 
-const RESPONSE_OK:  &'static [u8] = b"ok";
-const RESPONSE_ERR: &'static [u8] = b"err";
+//const RESPONSE_OK:  &'static [u8] = b"ok";
+//const RESPONSE_ERR: &'static [u8] = b"err";
 
 pub enum APIAction {
+  Hi,
   Put,
   Get,
 }
@@ -59,7 +61,7 @@ impl Backend {
     //sig.start::<Backend>(2);
     sig.start::<Backend>(15);
     println!("DEBUG: Backend::run: bind...");
-    tcp.bind(("127.0.0.1", 9000));
+    tcp.bind(("127.0.0.1", 9001));
     println!("DEBUG: Backend::run: listen...");
     tcp.listen::<Backend>();
     println!("DEBUG: Backend::run: run...");
@@ -101,6 +103,132 @@ impl Backend {
     let req = UvWrite::new();
     client.write::<Backend>(req, &write_buf);
   }
+
+  pub fn _handle_request(nread: usize, buf: &[u8]) -> Result<(), ()> {
+    // TODO
+    let action = match &buf[ .. 4] {
+      b"hi \n" => APIAction::Hi,
+      b"put\n" => APIAction::Put,
+      b"get\n" => APIAction::Get,
+      _ => {
+        return Err(());
+      }
+    };
+    match action {
+      APIAction::Hi => {
+        return Ok(());
+      }
+      APIAction::Put => {
+      }
+      APIAction::Get => {
+      }
+      _ => {
+        // TODO
+        unimplemented!();
+      }
+    }
+    if nread <= 4 {
+      return Err(());
+    }
+    let sort_start = 4;
+    let mut sort_end = nread as usize;
+    /*if buf[nread-1] != b'\n' {
+      Backend::_write_response(&client, RESPONSE_ERR);
+      return;
+    }*/
+    for p in 4 .. nread as usize {
+      if buf[p] == b'\n' {
+        sort_end = p;
+        break;
+      }
+    }
+    let sort: JournalEntrySort_ = match from_utf8(&buf[sort_start .. sort_end]) {
+      Err(_) => {
+        return Err(());
+      }
+      Ok(s) => {
+        match s.parse() {
+          Err(_) => {
+            println!("DEBUG: Backend: read callback: warning: invalid sort: s = {:?}", s);
+            return Err(());
+          }
+          Ok(sort) => {
+            println!("DEBUG: Backend: read callback: sort = {:?}", sort);
+            sort
+          }
+        }
+      }
+    };
+    let item_start = sort_end + 1;
+    let mut item_end = nread as usize;
+    for p in item_start .. nread as usize {
+      if buf[p] == b'\n' {
+        item_end = p;
+        break;
+      }
+    }
+    let item_v = match deserialize_json_value(&buf[item_start .. item_end]) {
+      Err(_) => {
+        println!("DEBUG: Backend: read callback: warning: invalid item");
+        return Err(());
+      }
+      Ok(v) => {
+        println!("DEBUG: Backend: read callback: valid item");
+        v
+      }
+    };
+    // FIXME
+    match sort {
+      JournalEntrySort_::_Root => {
+        println!("DEBUG: Backend: read callback: sort = {:?}", sort);
+        let item = RootSort_::item_from_value(item_v);
+      }
+      JournalEntrySort_::Aikido => {
+        println!("DEBUG: Backend: read callback: sort = {:?}", sort);
+        let item = AikidoSort_::item_from_value(item_v);
+      }
+      JournalEntrySort_::ApproxOracle => {
+        println!("DEBUG: Backend: read callback: sort = {:?}", sort);
+        match ApproxOracleSort_::item_from_value(item_v.clone()) {
+          Err(e) => {
+            println!("DEBUG: Backend: read callback: failed to deserialize item from value = {:?} error = {:?}", item_v, e);
+          }
+          Ok(item) => {
+            println!("DEBUG: Backend: read callback: append item = {:?}", item);
+            BACKEND.with(|backend| {
+              let mut inner = backend.inner.borrow_mut();
+              inner.append_item(&item);
+            });
+          }
+        }
+      }
+      JournalEntrySort_::Test => {
+        println!("DEBUG: Backend: read callback: sort = {:?}", sort);
+        match TestSort_::item_from_value(item_v.clone()) {
+          Err(e) => {
+            println!("DEBUG: Backend: read callback: failed to deserialize item from value = {:?} error = {:?}", item_v, e);
+          }
+          Ok(item) => {
+            println!("DEBUG: Backend: read callback: append item = {:?}", item);
+            /*let json_fmt = JsonFormat::new()
+                .ascii(true)
+                .colon(": ").unwrap()
+                .comma(", ").unwrap();
+            let s = json_fmt.to_string(&item).unwrap();*/
+            BACKEND.with(|backend| {
+              let mut inner = backend.inner.borrow_mut();
+              //inner._append(s);
+              inner.append_item(&item);
+            });
+          }
+        }
+      }
+      _ => {
+        println!("DEBUG: Backend: read callback: unsupported sort = {:?}", sort);
+      }
+    }
+    Ok(())
+  }
 }
 
 impl UvReadCb for Backend {
@@ -129,110 +257,38 @@ impl UvReadCb for Backend {
       client.shutdown::<Backend>(req);
       return;
     }
+    if nread < 4 {
+      println!("DEBUG: Backend: read callback: truncated");
+      let req = UvShutdown::new();
+      client.shutdown::<Backend>(req);
+      return;
+    }
     let nread = nread as usize;
-    if nread >= 4 {
-      if let Some(buf) = buf.as_bytes() {
-        // TODO
-        let action = if &buf[ .. 4] == b"put\n" {
-          APIAction::Put
-        } else if &buf[ .. 4] == b"get\n" {
-          APIAction::Get
-        } else {
-          Backend::_write_response(&client, RESPONSE_ERR);
-          return;
-        };
-        match action {
-          APIAction::Put => {
-          }
-          _ => {
-            // TODO
-          }
-        }
-        if nread <= 4 {
-          Backend::_write_response(&client, RESPONSE_ERR);
-          return;
-        }
-        let sort_start = 4;
-        let mut sort_end = nread as usize;
-        /*if buf[nread-1] != b'\n' {
-          Backend::_write_response(&client, RESPONSE_ERR);
-          return;
-        }*/
-        for p in 4 .. nread as usize {
-          if buf[p] == b'\n' {
-            sort_end = p;
-            break;
-          }
-        }
-        let sort: JournalEntrySort_ = match from_utf8(&buf[sort_start .. sort_end]) {
+    match buf.as_bytes() {
+      None => {
+        println!("DEBUG: Backend: read callback: invalid buffer");
+        let req = UvShutdown::new();
+        client.shutdown::<Backend>(req);
+        return;
+      }
+      Some(buf) => {
+        match Backend::_handle_request(nread, buf) {
           Err(_) => {
-            Backend::_write_response(&client, RESPONSE_ERR);
+            println!("DEBUG: Backend: read callback: request err");
+            Backend::_write_response(&client, b"err\n");
             return;
           }
-          Ok(s) => {
-            match s.parse() {
-              Err(_) => {
-                println!("DEBUG: Backend: read callback: warning: invalid sort: s = {:?}", s);
-                Backend::_write_response(&client, RESPONSE_ERR);
-                return;
-              }
-              Ok(sort) => {
-                println!("DEBUG: Backend: read callback: sort = {:?}", sort);
-                sort
-              }
-            }
-          }
-        };
-        let item_start = sort_end + 1;
-        let mut item_end = nread as usize;
-        for p in item_start .. nread as usize {
-          if buf[p] == b'\n' {
-            item_end = p;
-            break;
+          Ok(_) => {
+            // TODO: response.
           }
         }
-        let item_v = match deserialize_json_value(&buf[item_start .. item_end]) {
-          Err(_) => {
-            println!("DEBUG: Backend: read callback: warning: invalid item");
-            Backend::_write_response(&client, RESPONSE_ERR);
-            return;
-          }
-          Ok(v) => {
-            println!("DEBUG: Backend: read callback: valid item");
-            v
-          }
-        };
-        // FIXME
-        match sort {
-          JournalEntrySort_::_Root => {
-            println!("DEBUG: Backend: read callback: sort = {:?}", sort);
-            let item = RootSort_::item_from_value(item_v);
-          }
-          JournalEntrySort_::Aikido => {
-            println!("DEBUG: Backend: read callback: sort = {:?}", sort);
-            let item = AikidoSort_::item_from_value(item_v);
-          }
-          JournalEntrySort_::ApproxOracle => {
-            println!("DEBUG: Backend: read callback: sort = {:?}", sort);
-            let item = ApproxOracleSort_::item_from_value(item_v);
-          }
-          _ => {
-            println!("DEBUG: Backend: read callback: unsupported sort = {:?}", sort);
-          }
-        }
-        /*
-        let result = BACKEND.with(|backend| {
-          println!("DEBUG: Backend: read callback: journal append");
-          backend.inner.borrow_mut()._append(s)
-        });
-        */
       }
     }
-    println!("DEBUG: Backend: read callback: write response...");
+    println!("DEBUG: Backend: read callback: ok: write response...");
     // TODO: always assure buffer lifetime.
     //let res_str = format!("Hello, world! {}\n", nread);
     //let res_buf = res_str.as_bytes();
-    Backend::_write_response(&client, RESPONSE_OK);
+    Backend::_write_response(&client, b"ok \n");
     let (backing_ptr, backing_len) = buf.take_raw_parts();
     if let Some(mut backing_buf) = BackingBuf::maybe_from_raw_parts_unchecked(backing_ptr as _, backing_len) {
       BACKEND.with(|backend| {

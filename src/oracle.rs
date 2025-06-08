@@ -27,10 +27,14 @@ pub enum ApproxOracleModel {
   DeepSeek_V3_Chat_20250324_Hyperbolic,
   #[serde(rename = "deepseek-v3-chat-20241226-together")]
   DeepSeek_V3_Chat_20241226_Together,
+  #[serde(rename = "deepseek-r1-20250528")]
+  DeepSeek_R1_20250528,
   #[serde(rename = "deepseek-r1-20250120")]
   DeepSeek_R1_20250120,
   #[serde(rename = "xai-grok-3-mini-beta-20250418")]
   XAI_Grok_3_Mini_Beta_20250418,
+  #[serde(rename = "xai-grok-3-beta-20250418")]
+  XAI_Grok_3_Beta_20250418,
 }
 
 impl<'d> Deserialize<'d> for ApproxOracleModel {
@@ -79,17 +83,17 @@ impl FromStr for ApproxOracleModel {
       "\"deepseek-v3-chat-20250324\"" => {
         ApproxOracleModel::DeepSeek_V3_Chat_20250324
       }
-      "deepseek-v3-chat-20241226" |
-      "\"deepseek-v3-chat-20241226\"" => {
-        ApproxOracleModel::DeepSeek_V3_Chat_20241226
-      }
-      "deepseek-r1-20250120" |
-      "\"deepseek-r1-20250120\"" => {
-        ApproxOracleModel::DeepSeek_R1_20250120
+      "deepseek-r1-20250528" |
+      "\"deepseek-r1-20250528\"" => {
+        ApproxOracleModel::DeepSeek_R1_20250528
       }
       "xai-grok-3-mini-beta-20250418" |
       "\"xai-grok-3-mini-beta-20250418\"" => {
         ApproxOracleModel::XAI_Grok_3_Mini_Beta_20250418
+      }
+      "xai-grok-3-beta-20250418" |
+      "\"xai-grok-3-beta-20250418\"" => {
+        ApproxOracleModel::XAI_Grok_3_Beta_20250418
       }
       _ => return Err(())
     })
@@ -122,7 +126,7 @@ pub struct ApproxOracleRequestIntoPy {
 }
 
 #[derive(Clone, Serialize, Deserialize, FromPyObject, Debug)]
-pub struct ApproxOracleResExtra {
+pub struct ApproxOracleResponseItem {
   pub data: SafeStr,
   pub t0:   Timestamp,
   pub t1:   Timestamp,
@@ -144,22 +148,23 @@ pub struct ApproxOracleExceptItem {
 
 #[derive(Clone, Serialize, Deserialize, FromPyObject, Debug)]
 pub struct ApproxOracleExtraItem {
-  pub res:  Option<ApproxOracleResExtra>,
+  pub res:  Option<ApproxOracleResponseItem>,
   pub exc:  Option<ApproxOracleExceptItem>,
 }
 
 #[derive(Clone, Serialize, Deserialize, FromPyObject, Debug)]
-pub struct ApproxOracleItem<K=i64> {
+pub struct ApproxOracleItem<K=Option<SafeStr>> {
   //pub timestamp: Option<Timestamp>,
   // TODO: optional key incompat w/ kqmap (below).
   pub key: K,
   //pub key: Option<K>,
   pub query: SafeStr,
-  pub model: ApproxOracleModel,
+  pub tag: Option<SafeStr>,
   pub ctr: i64,
+  pub model: ApproxOracleModel,
   pub sample: Option<ApproxOracleSampleItem>,
   pub think: Option<SafeStr>,
-  pub value: SafeStr,
+  pub value: Option<SafeStr>,
   pub extra: Option<ApproxOracleExtraItem>,
 }
 
@@ -283,7 +288,7 @@ impl ApproxOracleInterface {
 pub struct ApproxOracleIndex {
   iface: ApproxOracleInterface,
   // FIXME: probably want a better data structure.
-  kqmap: BTreeMap<(i64, SafeStr), (i64, ApproxOracleItem)>,
+  kqmap: BTreeMap<(Option<SafeStr>, SafeStr), (i64, ApproxOracleItem)>,
 }
 
 impl ApproxOracleIndex {
@@ -307,14 +312,14 @@ impl ApproxOracleIndex {
   pub fn commit<J: JournalExt>(&mut self, journal: &mut J, item: &ApproxOracleItem) -> i64 {
     let result = journal.append(item);
     let jnum = result.eid;
-    self.kqmap.insert((item.key, item.query.clone()), (jnum, item.clone()));
+    self.kqmap.insert((item.key.clone(), item.query.clone()), (jnum, item.clone()));
     jnum
   }
 
-  pub fn get(&self, key: i64, query: &SafeStr) -> Option<ApproxOracleItem> {
+  pub fn get(&self, key: Option<&SafeStr>, query: &SafeStr) -> Option<ApproxOracleItem> {
     // TODO: temporary default key=0.
     // FIXME: tuple of borrowed str?
-    match self.kqmap.get(&(key, query.clone())) {
+    match self.kqmap.get(&(key.cloned(), query.clone())) {
       None => None,
       Some(&(_jnum, ref item)) => {
         Some(item.clone())

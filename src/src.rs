@@ -26,7 +26,7 @@ _src!(INTERP, "/src/interp.rs");
 _src!(INTERP_PRELUDE, "/src/interp/prelude.rs");
 _src!(INTERP_TEST, "/src/interp_test.rs");
 _src!(JOURNAL, "/src/journal.rs");
-_src!(META, "/src/meta.rs");
+//_src!(META, "/src/meta.rs");
 _src!(ORACLE, "/src/oracle.rs");
 _src!(PANICK, "/src/panick.rs");
 _src!(PARSE, "/src/parse.rs");
