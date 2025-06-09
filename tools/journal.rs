@@ -1,7 +1,7 @@
 extern crate pythia;
 extern crate uv;
 
-use pythia::algo::json::{deserialize_json_value};
+use pythia::algo::json::{JsonFormat, deserialize_json_value};
 use pythia::journal::{
   JournalEntrySort_,
   JournalBackend,
@@ -90,9 +90,25 @@ impl UvAllocCb for Backend {
 }
 
 impl Backend {
-  pub fn _write_response(client: &UvStream, response: &[u8]) {
-    let mut backing_buf = BackingBuf::new_uninit(response.len());
-    backing_buf.as_mut_bytes().copy_from_slice(response);
+  pub fn _cleanup_request(buf: &mut UvBuf) {
+    // TODO
+    let (backing_ptr, backing_len) = buf.take_raw_parts();
+    if let Some(mut backing_buf) = BackingBuf::maybe_from_raw_parts_unchecked(backing_ptr as _, backing_len) {
+      BACKEND.with(|backend| {
+        let mut store = backend.store.borrow_mut();
+        if !store.buf.remove(&backing_buf) {
+          println!("DEBUG: Backend: read callback: warning: backing buf was NOT in store!");
+        }
+        println!("DEBUG: Backend: read callback: free backing buf...");
+        backing_buf.free_unchecked();
+      });
+    }
+  }
+
+  pub fn _write_response(client: &UvStream, res_buf: &[u8]) {
+    let mut backing_buf = BackingBuf::new_uninit(res_buf.len() + 4);
+    (&mut backing_buf.as_mut_bytes()[ .. res_buf.len()]).copy_from_slice(res_buf);
+    (&mut backing_buf.as_mut_bytes()[res_buf.len() .. res_buf.len() + 4]).copy_from_slice(&u32::to_le_bytes(0u32));
     let write_buf = UvBuf::from_raw_parts_unchecked(backing_buf.as_ptr() as _, backing_buf.len());
     BACKEND.with(|backend| {
       let mut store = backend.store.borrow_mut();
@@ -104,7 +120,23 @@ impl Backend {
     client.write::<Backend>(req, &write_buf);
   }
 
-  pub fn _handle_request(nread: usize, buf: &[u8]) -> Result<(), ()> {
+  pub fn _write_response2(client: &UvStream, res_buf: &[u8], res_buf2: &[u8]) {
+    let mut backing_buf = BackingBuf::new_uninit(res_buf.len() + 4 + res_buf2.len());
+    (&mut backing_buf.as_mut_bytes()[ .. res_buf.len()]).copy_from_slice(res_buf);
+    (&mut backing_buf.as_mut_bytes()[res_buf.len() .. res_buf.len() + 4]).copy_from_slice(&u32::to_le_bytes(res_buf2.len() as u32));
+    (&mut backing_buf.as_mut_bytes()[res_buf.len() + 4 .. ]).copy_from_slice(res_buf2);
+    let write_buf = UvBuf::from_raw_parts_unchecked(backing_buf.as_ptr() as _, backing_buf.len());
+    BACKEND.with(|backend| {
+      let mut store = backend.store.borrow_mut();
+      if let Some(_) = store.buf.replace(backing_buf) {
+        println!("DEBUG: Backend: _write: warning: backing buf was already stored!");
+      }
+    });
+    let req = UvWrite::new();
+    client.write::<Backend>(req, &write_buf);
+  }
+
+  pub fn _handle_request(nread: usize, buf: &[u8]) -> Result<Option<Box<[u8]>>, ()> {
     // TODO
     let action = match &buf[ .. 4] {
       b"hi \n" => APIAction::Hi,
@@ -116,7 +148,7 @@ impl Backend {
     };
     match action {
       APIAction::Hi => {
-        return Ok(());
+        return Ok(None);
       }
       APIAction::Put => {
       }
@@ -194,11 +226,44 @@ impl Backend {
             println!("DEBUG: Backend: read callback: failed to deserialize item from value = {:?} error = {:?}", item_v, e);
           }
           Ok(item) => {
-            println!("DEBUG: Backend: read callback: append item = {:?}", item);
-            BACKEND.with(|backend| {
-              let mut inner = backend.inner.borrow_mut();
-              inner.append_item(&item);
-            });
+            match action {
+              APIAction::Hi => unreachable!(),
+              APIAction::Put => {
+                println!("DEBUG: Backend: read callback: put: append item = {:?}", item);
+                BACKEND.with(|backend| {
+                  let mut inner = backend.inner.borrow_mut();
+                  inner.append_item(&item);
+                });
+              }
+              APIAction::Get => {
+                println!("DEBUG: Backend: read callback: get: lookup item = {:?}", item);
+                return BACKEND.with(|backend| {
+                  let mut inner = backend.inner.borrow_mut();
+                  let key_item = item._into_key_item();
+                  match inner._lookup_approx_oracle_item(&key_item) {
+                    None => {
+                      println!("DEBUG: Backend: read callback: get: lookup result = None");
+                      // TODO
+                      Ok(None)
+                    }
+                    Some(item) => {
+                      let json_fmt = JsonFormat::new()
+                          .ascii(true)
+                          .colon(": ").unwrap()
+                          .comma(", ").unwrap();
+                      let s = json_fmt.to_string(&item).unwrap();
+                      println!("DEBUG: Backend: read callback: get: lookup result = {:?}", s);
+                      // TODO
+                      Ok(Some(s.into_bytes().into()))
+                    }
+                  }
+                });
+              }
+              _ => {
+                // TODO
+                unimplemented!();
+              }
+            }
           }
         }
       }
@@ -227,7 +292,7 @@ impl Backend {
         println!("DEBUG: Backend: read callback: unsupported sort = {:?}", sort);
       }
     }
-    Ok(())
+    Ok(None)
   }
 }
 
@@ -236,13 +301,26 @@ impl UvReadCb for Backend {
     println!("DEBUG: Backend: read callback: nread = {} buf.len = {}", nread, buf.len());
     if nread < 0 {
       let errno = nread as c_int;
-      if errno == UV_EOF {
-        println!("DEBUG: Backend: read callback: eof");
-      } else {
-        // FIXME
-        println!("DEBUG: Backend: read callback: error = {}", errno);
+      match errno {
+        UV_EOF => {
+          println!("DEBUG: Backend: read callback: eof");
+          let req = UvShutdown::new();
+          client.shutdown::<Backend>(req);
+        }
+        UV_ECONNRESET => {
+          println!("DEBUG: Backend: read callback: econnreset");
+          // TODO: close.
+        }
+        UV_ENOTCONN => {
+          println!("DEBUG: Backend: read callback: enotconn");
+          // TODO: close.
+        }
+        _ => {
+          // FIXME
+          println!("DEBUG: Backend: read callback: error = {}", errno);
+        }
       }
-      let (backing_ptr, backing_len) = buf.take_raw_parts();
+      /*let (backing_ptr, backing_len) = buf.take_raw_parts();
       if let Some(mut backing_buf) = BackingBuf::maybe_from_raw_parts_unchecked(backing_ptr as _, backing_len) {
         BACKEND.with(|backend| {
           let mut store = backend.store.borrow_mut();
@@ -252,16 +330,14 @@ impl UvReadCb for Backend {
           println!("DEBUG: Backend: read callback: free backing buf...");
           backing_buf.free_unchecked();
         });
-      }
-      let req = UvShutdown::new();
-      client.shutdown::<Backend>(req);
-      return;
+      }*/
+      return Backend::_cleanup_request(buf);
     }
     if nread < 4 {
       println!("DEBUG: Backend: read callback: truncated");
       let req = UvShutdown::new();
       client.shutdown::<Backend>(req);
-      return;
+      return Backend::_cleanup_request(buf);
     }
     let nread = nread as usize;
     match buf.as_bytes() {
@@ -269,37 +345,30 @@ impl UvReadCb for Backend {
         println!("DEBUG: Backend: read callback: invalid buffer");
         let req = UvShutdown::new();
         client.shutdown::<Backend>(req);
-        return;
+        return Backend::_cleanup_request(buf);
       }
       Some(buf) => {
         match Backend::_handle_request(nread, buf) {
           Err(_) => {
-            println!("DEBUG: Backend: read callback: request err");
+            println!("DEBUG: Backend: read callback: err: write response...");
             Backend::_write_response(&client, b"err\n");
-            return;
           }
-          Ok(_) => {
-            // TODO: response.
+          Ok(None) => {
+            println!("DEBUG: Backend: read callback: ok: write short response...");
+            // TODO: always assure buffer lifetime.
+            //let res_str = format!("Hello, world! {}\n", nread);
+            //let res_buf = res_str.as_bytes();
+            Backend::_write_response(&client, b"ok \n");
+          }
+          Ok(Some(res_payload_buf)) => {
+            println!("DEBUG: Backend: read callback: ok: write full response...");
+            // TODO: full response.
+            Backend::_write_response2(&client, b"ok \n", &res_payload_buf);
           }
         }
       }
     }
-    println!("DEBUG: Backend: read callback: ok: write response...");
-    // TODO: always assure buffer lifetime.
-    //let res_str = format!("Hello, world! {}\n", nread);
-    //let res_buf = res_str.as_bytes();
-    Backend::_write_response(&client, b"ok \n");
-    let (backing_ptr, backing_len) = buf.take_raw_parts();
-    if let Some(mut backing_buf) = BackingBuf::maybe_from_raw_parts_unchecked(backing_ptr as _, backing_len) {
-      BACKEND.with(|backend| {
-        let mut store = backend.store.borrow_mut();
-        if !store.buf.remove(&backing_buf) {
-          println!("DEBUG: Backend: read callback: warning: backing buf was NOT in store!");
-        }
-        println!("DEBUG: Backend: read callback: free backing buf...");
-        backing_buf.free_unchecked();
-      });
-    }
+    Backend::_cleanup_request(buf);
     //let req = UvShutdown::new();
     //client.shutdown::<Backend>(req);
   }

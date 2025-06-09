@@ -2,6 +2,7 @@ from typing import Any, Union
 import asyncio
 from dataclasses import dataclass, asdict
 import json
+import struct
 
 @dataclass
 class JournalAsyncInterface:
@@ -49,18 +50,34 @@ class JournalAsyncInterface:
             return None
 
     async def get(self, item: Union[Any, dict]) -> tuple[str, Any]:
+        print(f"DEBUG: JournalAsyncInterface.get: ...")
         await self._lazy_init()
+        print(f"DEBUG: JournalAsyncInterface.get: lazy init: done")
         if not isinstance(item, dict):
             item = asdict(item)
         data = json.dumps(item).encode("utf-8")
         req_data = b"get\n" + self.sort.encode("utf-8") + b"\n" + data
+        print(f"DEBUG: JournalAsyncInterface.get: write...")
         self._conn_tx.write(req_data)
-        res_data = await self._conn_rx.read(4)
-        if res_data == b"ok \n":
+        print(f"DEBUG: JournalAsyncInterface.get: read...")
+        res_data = await self._conn_rx.readexactly(4)
+        print(f"DEBUG: JournalAsyncInterface.get: read len = {len(res_data)}")
+        if len(res_data) < 4:
+            print(f"DEBUG: JournalAsyncInterface.get: eof: len = {len(res_data)}")
+            return "eof", None
+        elif res_data == b"ok \n":
+            res_data = await self._conn_rx.readexactly(4)
+            res_len = struct.unpack("<I", res_data)[0]
             res_item = None
-            # TODO
-            if False:
-                res_item = json.loads(res_data.decode("utf-8"))
+            if res_len > 0:
+                res_data = await self._conn_rx.readexactly(res_len)
+                res_str = None
+                try:
+                    res_str = res_data.decode("utf-8")
+                    res_item = json.loads(res_str)
+                except Exception as e:
+                    print(f"DEBUG: JournalAsyncInterface.get: except = {e} s = {repr(res_str)}")
+                    res_item = None
                 # res_item |= item
             return "ok", res_item
         elif res_data == b"err\n":

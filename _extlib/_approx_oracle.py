@@ -751,7 +751,6 @@ class ApproxOracleAsyncInterface:
             item = ApproxOracleItem(**item)
         if item.model is None or _match_str(item.model, "default"):
             item.model = self.default_model
-        #if False:
         ret, ret_item = await self._journal.get(item)
         if ret == "ok":
             print(f"DEBUG: ApproxOracleAsyncInterface.get: journal.get: ok: ret item = {ret_item}")

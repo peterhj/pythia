@@ -12,7 +12,7 @@ use serde::de::{Deserializer};
 use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 use std::str::{FromStr};
 
-#[derive(Clone, Copy, Serialize, Default, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Default, Debug)]
 //#[derive(Clone, Copy, Serialize, Deserialize, Default, Debug)]
 //#[serde(untagged)]
 pub enum ApproxOracleModel {
@@ -172,6 +172,33 @@ impl JournalEntryExt for ApproxOracleItem {
   fn _sort(&self) -> JournalEntrySort_ {
     JournalEntrySort_::ApproxOracle
   }
+
+  fn _maybe_as_approx_oracle_item(&self) -> Option<&ApproxOracleItem> {
+    Some(self)
+  }
+}
+
+impl ApproxOracleItem {
+  pub fn _into_key_item(&self) -> ApproxOracleKeyItem {
+    ApproxOracleKeyItem{
+      key: self.key.clone(),
+      query: self.query.clone(),
+      ctr: self.ctr,
+      model: self.model,
+    }
+  }
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, FromPyObject, Debug)]
+pub struct ApproxOracleKeyItem {
+  pub key: Option<SafeStr>,
+  pub query: SafeStr,
+  // NB: tag should _not_ be part of key.
+  /*pub tag: Option<SafeStr>,*/
+  pub ctr: i64,
+  pub model: ApproxOracleModel,
+  // TODO: should sample be part of key or value?
+  /*pub sample: Option<ApproxOracleSampleItem>,*/
 }
 
 #[derive(Clone, Serialize, Deserialize, FromPyObject, Debug)]

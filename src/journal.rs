@@ -1,14 +1,14 @@
+use crate::algo::{BTreeMap};
 use crate::algo::base64::{Base64Format};
 use crate::algo::blake2s::{Blake2s};
 //use crate::algo::hex::{HexFormat};
-use crate::algo::json::{JsonValue};
+use crate::algo::json::{JsonFormat, JsonValue};
 use crate::clock::{Timestamp};
-use crate::oracle::{ApproxOracleItem};
+use crate::oracle::{ApproxOracleItem, ApproxOracleKeyItem};
 
 use byteorder::{LittleEndian as LE, ReadBytesExt, WriteBytesExt};
 //use once_cell::sync::{Lazy};
 use serde::{Serialize, Deserialize};
-use serde_json_fmt::{JsonFormat};
 
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Write, Seek, SeekFrom};
@@ -113,6 +113,7 @@ impl TestSort_ {
 
 pub trait JournalEntryExt {
   fn _sort(&self) -> JournalEntrySort_;
+  fn _maybe_as_approx_oracle_item(&self) -> Option<&ApproxOracleItem> where Self: Sized { None }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -157,7 +158,7 @@ pub struct JournalEntry_<I> {
   pub t:    Timestamp,
   pub sort: JournalEntrySort_,
   pub item: I,
-  pub hash: String,
+  pub ehash: String,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -166,11 +167,19 @@ pub struct JournalEntryNum {
   _idx: usize,
 }
 
+#[derive(Default)]
+pub struct JournalSortBackends_ {
+  approx_oracle_items: BTreeMap<ApproxOracleKeyItem, ApproxOracleItem>,
+}
+
 pub struct JournalBackend {
   widx_mem: Vec<u32>,
   //wlog_mem: Vec<()>,
   widx_file: File,
   wlog_file: File,
+  // TODO: sorted indices.
+  //sort_idx: BTreeMap<JournalEntrySort_, JournalSortIndex_>,
+  sorts: JournalSortBackends_,
 }
 
 impl JournalBackend {
@@ -312,6 +321,7 @@ impl JournalBackend {
       widx_mem,
       widx_file,
       wlog_file,
+      sorts: JournalSortBackends_::default(),
     };
     if this.widx_mem.len() <= 0 {
       this.append_item(&_Root);
@@ -340,17 +350,26 @@ impl JournalBackend {
     let sort = item._sort();
     let mut hval = Vec::with_capacity(HASH_SIZE);
     hval.resize(HASH_SIZE, 0);
-    let hash = Base64Format::default().to_string(&hval);
+    let ehash = Base64Format::default().to_string(&hval);
     let eres = JournalEntryResult{
       eid,
       t,
     };
+    match item._maybe_as_approx_oracle_item() {
+      None => {}
+      Some(item) => {
+        // TODO
+        let key_item = item.clone()._into_key_item();
+        /*let key_item = item.clone()._to_key_item();*/
+        self.sorts.approx_oracle_items.insert(key_item, item.clone());
+      }
+    }
     let entry = JournalEntry_{
       eid,
       t,
       sort,
       item,
-      hash,
+      ehash,
     };
     let json_fmt = JsonFormat::new()
         .ascii(true)
@@ -359,8 +378,7 @@ impl JournalBackend {
     let mut s = json_fmt.to_string(&entry).unwrap();
     println!("DEBUG: JournalBackend::append_item: s = {:?}", s);
     let slen = s.len();
-    //let hend = slen - (11 + HASH_SIZE * 2 + 2);
-    let hend = slen - (12 + 43 + 2);
+    let hend = slen - (12 + 44 + 2);
     println!("DEBUG: end = {:?}", s.get(hend .. ).unwrap());
     println!("DEBUG: len = {}", s.get(hend .. ).unwrap().len());
     println!("DEBUG: hlen = {}", hend);
@@ -368,7 +386,7 @@ impl JournalBackend {
     {
       let b = s.as_bytes();
       assert!(b.starts_with(b"{"));
-      assert!(b[hend .. ].starts_with(b", \"hash\": \""));
+      assert!(b[hend .. ].starts_with(b", \"ehash\": \""));
       assert!(b.ends_with(b"\"}"));
       h.hash_bytes(&b[1 .. hend]);
     }
@@ -376,10 +394,23 @@ impl JournalBackend {
       let mut s = s.as_mut_str();
       let mut b = s.as_bytes_mut();
       let hash = Base64Format::default().to_string(&h.finalize());
-      (&mut b[hend + 11 .. slen - 2]).copy_from_slice(hash.as_bytes());
+      (&mut b[hend + 12 .. slen - 2]).copy_from_slice(hash.as_bytes());
     }
     self._append(s);
     eres
+  }
+
+  //pub fn lookup_item(&self) -> () {}
+  //pub fn lookup_item<I: JournalEntryExt + Deserialize>(&self, key_item: &I) -> Option<()> {}
+  pub fn _lookup_approx_oracle_item(&self, key_item: &ApproxOracleKeyItem) -> Option<ApproxOracleItem> {
+    match self.sorts.approx_oracle_items.get(key_item) {
+      None => {
+        None
+      }
+      Some(item) => {
+        Some(item.clone())
+      }
+    }
   }
 }
 
@@ -410,7 +441,7 @@ impl JournalExt for DevelJournal_ {
     let sort = item._sort();
     let mut hval = Vec::with_capacity(HASH_SIZE);
     hval.resize(HASH_SIZE, 0);
-    let hash = Base64Format::default().to_string(&hval);
+    let ehash = Base64Format::default().to_string(&hval);
     let eres = JournalEntryResult{
       eid,
       t,
@@ -420,7 +451,7 @@ impl JournalExt for DevelJournal_ {
       t,
       sort,
       item,
-      hash,
+      ehash,
     };
     let json_fmt = JsonFormat::new()
         .ascii(true)
@@ -433,7 +464,7 @@ impl JournalExt for DevelJournal_ {
     {
       let b = s.as_bytes();
       assert!(b.starts_with(b"{"));
-      assert!(b[hend .. ].starts_with(b", \"hash\": \""));
+      assert!(b[hend .. ].starts_with(b", \"ehash\": \""));
       assert!(b.ends_with(b"\"}"));
       h.hash_bytes(&b[1 .. hend]);
     }
