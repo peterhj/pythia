@@ -39,10 +39,16 @@ class JournalAsyncInterface:
         if not isinstance(item, dict):
             item = asdict(item)
         data = json.dumps(item).encode("utf-8")
-        req_data = b"put\n" + self.sort.encode("utf-8") + b"\n" + data
+        req_payload = self.sort.encode("utf-8") + b"\n" + data
+        req_payload_len_enc = struct.pack("<I", len(req_payload))
+        req_data = b"put\n" + req_payload_len_enc + req_payload
+        print(f"DEBUG: JournalAsyncInterface.put: write...")
         self._conn_tx.write(req_data)
-        res_data = await self._conn_rx.read(4)
+        print(f"DEBUG: JournalAsyncInterface.put: read...")
+        res_data = await self._conn_rx.readexactly(4)
+        print(f"DEBUG: JournalAsyncInterface.put: read len = {len(res_data)}")
         if res_data == b"ok \n":
+            _res_len_data = await self._conn_rx.readexactly(4)
             return "ok"
         elif res_data == b"err\n":
             return "err"
@@ -56,7 +62,9 @@ class JournalAsyncInterface:
         if not isinstance(item, dict):
             item = asdict(item)
         data = json.dumps(item).encode("utf-8")
-        req_data = b"get\n" + self.sort.encode("utf-8") + b"\n" + data
+        req_payload = self.sort.encode("utf-8") + b"\n" + data
+        req_payload_len_enc = struct.pack("<I", len(req_payload))
+        req_data = b"get\n" + req_payload_len_enc + req_payload
         print(f"DEBUG: JournalAsyncInterface.get: write...")
         self._conn_tx.write(req_data)
         print(f"DEBUG: JournalAsyncInterface.get: read...")

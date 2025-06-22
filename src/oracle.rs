@@ -179,7 +179,16 @@ impl JournalEntryExt for ApproxOracleItem {
 }
 
 impl ApproxOracleItem {
-  pub fn _into_key_item(&self) -> ApproxOracleKeyItem {
+  pub fn _into_key_item(self) -> ApproxOracleKeyItem {
+    ApproxOracleKeyItem{
+      key: self.key,
+      query: self.query,
+      ctr: self.ctr,
+      model: self.model,
+    }
+  }
+
+  pub fn _to_key_item(&self) -> ApproxOracleKeyItem {
     ApproxOracleKeyItem{
       key: self.key.clone(),
       query: self.query.clone(),

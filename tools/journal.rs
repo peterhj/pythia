@@ -1,5 +1,5 @@
+extern crate libuv_ffi;
 extern crate pythia;
-extern crate uv;
 
 use pythia::algo::json::{JsonFormat, deserialize_json_value};
 use pythia::journal::{
@@ -10,9 +10,9 @@ use pythia::journal::{
   ApproxOracleSort_,
   TestSort_,
 };
-use uv::*;
-use uv::bindings::*;
-use uv::extras::*;
+use libuv_ffi::*;
+use libuv_ffi::bindings::*;
+use libuv_ffi::extras::*;
 
 use std::cell::{RefCell};
 use std::collections::{HashMap, HashSet};
@@ -239,7 +239,7 @@ impl Backend {
                 println!("DEBUG: Backend: read callback: get: lookup item = {:?}", item);
                 return BACKEND.with(|backend| {
                   let mut inner = backend.inner.borrow_mut();
-                  let key_item = item._into_key_item();
+                  let key_item = item._to_key_item();
                   match inner._lookup_approx_oracle_item(&key_item) {
                     None => {
                       println!("DEBUG: Backend: read callback: get: lookup result = None");

@@ -31,10 +31,10 @@ def _load_api_token(key, domain):
 
 DEEPSEEK_API_KEY    = _load_api_token("DEEPSEEK",   "deepseek.com")
 GEMINI_API_KEY      = _load_api_token("GEMINI",     "aistudio.google.com")
-HYPERBOLIC_API_KEY  = _load_api_token("HYPERBOLIC", "hyperbolic.xyz")
-OPENROUTER_API_KEY  = _load_api_token("OPENROUTER", "openrouter.ai")
-TOGETHER_API_KEY    = _load_api_token("TOGETHER",   "together.xyz")
 XAI_API_KEY         = _load_api_token("XAI",        "x.ai")
+OPENROUTER_API_KEY  = _load_api_token("OPENROUTER", "openrouter.ai")
+HYPERBOLIC_API_KEY  = _load_api_token("HYPERBOLIC", "hyperbolic.xyz")
+TOGETHER_API_KEY    = _load_api_token("TOGETHER",   "together.xyz")
 
 def _match_str(query: str, pat: str) -> bool:
     return query == pat or query == f"\"{pat}\""
@@ -79,8 +79,8 @@ class ApproxOracleEndpoint:
             return cls.deepseek_v3_chat_20250324()
         elif _match_str(model, "gemini-2.5-flash-preview-20250520"):
             return cls.gemini_2_5_flash_preview_20250520()
-        elif _match_str(model, "gemini-2.5-flash-preview-20250520"):
-            return cls.gemini_2_5_flash_preview_20250520()
+        elif _match_str(model, "gemini-2.5-flash-preview-20250417"):
+            return cls.gemini_2_5_flash_preview_20250417()
         elif _match_str(model, "xai-grok-3-mini-20250520"):
             return cls.xai_grok_3_mini()
         elif _match_str(model, "xai-grok-3-20250520"):
@@ -136,6 +136,72 @@ class ApproxOracleEndpoint:
             endpoint_max_new_tokens = 65536,
             endpoint_throttle_rps = 2,
             # endpoint_throttle_rps = 2.5,
+        )
+
+    @classmethod
+    def gemini_2_5_flash_preview_20250417(cls) -> Any:
+        return cls.gemini(
+            model = "gemini-2.5-flash-preview-20250417",
+            endpoint_model = "models/gemini-2.5-flash-preview-04-17",
+            endpoint_max_new_tokens = 65536,
+            endpoint_throttle_rps = 2,
+            # endpoint_throttle_rps = 2.5,
+        )
+
+    @classmethod
+    def xai(cls, **kwargs) -> Any:
+        return cls(
+            endpoint_api_url = "https://api.x.ai",
+            endpoint_api_token = XAI_API_KEY,
+            endpoint_api_protocol = "openai",
+            **kwargs,
+        )
+
+    @classmethod
+    def xai_grok_3_mini(cls) -> Any:
+        return cls.xai(
+            model = "xai-grok-3-mini-20250520",
+            endpoint_model = "grok-3-mini",
+            endpoint_max_new_tokens = 131072,
+            endpoint_extra_params = {
+                "reasoning_effort": "high",
+            },
+            #endpoint_throttle_rps = 3,
+            endpoint_throttle_rps = 5,
+            #endpoint_throttle_rps = 10,
+            #endpoint_throttle_rps = 64,
+        )
+
+    @classmethod
+    def xai_grok_3_mini_beta(cls) -> Any:
+        return cls.xai(
+            model = "xai-grok-3-mini-beta-20250418",
+            endpoint_model = "grok-3-mini-beta",
+            endpoint_max_new_tokens = 131072,
+            endpoint_extra_params = {
+                "reasoning_effort": "high",
+            },
+            endpoint_throttle_rps = 3,
+            #endpoint_throttle_rps = 5,
+            #endpoint_throttle_rps = 10,
+        )
+
+    @classmethod
+    def xai_grok_3(cls) -> Any:
+        return cls.xai(
+            model = "xai-grok-3-20250520",
+            endpoint_model = "grok-3",
+            endpoint_max_new_tokens = 131072,
+            endpoint_throttle_rps = 64,
+        )
+
+    @classmethod
+    def xai_grok_3_beta(cls) -> Any:
+        return cls.xai(
+            model = "xai-grok-3-beta-20250418",
+            endpoint_model = "grok-3-beta",
+            endpoint_max_new_tokens = 131072,
+            endpoint_throttle_rps = 10,
         )
 
     @classmethod
@@ -283,62 +349,6 @@ class ApproxOracleEndpoint:
             model = "qwen-2.5-vl-72b-instruct-together",
             endpoint_model = "Qwen/Qwen2.5-VL-72B-Instruct",
             endpoint_max_new_tokens = 16384,
-        )
-
-    @classmethod
-    def xai(cls, **kwargs) -> Any:
-        return cls(
-            endpoint_api_url = "https://api.x.ai",
-            endpoint_api_token = XAI_API_KEY,
-            endpoint_api_protocol = "openai",
-            **kwargs,
-        )
-
-    @classmethod
-    def xai_grok_3_mini(cls) -> Any:
-        return cls.xai(
-            model = "xai-grok-3-mini-20250520",
-            endpoint_model = "grok-3-mini",
-            endpoint_max_new_tokens = 131072,
-            endpoint_extra_params = {
-                "reasoning_effort": "high",
-            },
-            #endpoint_throttle_rps = 3,
-            endpoint_throttle_rps = 5,
-            #endpoint_throttle_rps = 10,
-            #endpoint_throttle_rps = 64,
-        )
-
-    @classmethod
-    def xai_grok_3_mini_beta(cls) -> Any:
-        return cls.xai(
-            model = "xai-grok-3-mini-beta-20250418",
-            endpoint_model = "grok-3-mini-beta",
-            endpoint_max_new_tokens = 131072,
-            endpoint_extra_params = {
-                "reasoning_effort": "high",
-            },
-            endpoint_throttle_rps = 3,
-            #endpoint_throttle_rps = 5,
-            #endpoint_throttle_rps = 10,
-        )
-
-    @classmethod
-    def xai_grok_3(cls) -> Any:
-        return cls.xai(
-            model = "xai-grok-3-20250520",
-            endpoint_model = "grok-3",
-            endpoint_max_new_tokens = 131072,
-            endpoint_throttle_rps = 64,
-        )
-
-    @classmethod
-    def xai_grok_3_beta(cls) -> Any:
-        return cls.xai(
-            model = "xai-grok-3-beta-20250418",
-            endpoint_model = "grok-3-beta",
-            endpoint_max_new_tokens = 131072,
-            endpoint_throttle_rps = 10,
         )
 
     def __post_init__(self) -> None:
@@ -751,9 +761,10 @@ class ApproxOracleAsyncInterface:
             item = ApproxOracleItem(**item)
         if item.model is None or _match_str(item.model, "default"):
             item.model = self.default_model
+        print(f"DEBUG: ApproxOracleAsyncInterface.get: journal get...")
         ret, ret_item = await self._journal.get(item)
         if ret == "ok":
-            print(f"DEBUG: ApproxOracleAsyncInterface.get: journal.get: ok: ret item = {ret_item}")
+            print(f"DEBUG: ApproxOracleAsyncInterface.get: journal get: ok: ret item = {ret_item}")
             if ret_item is not None:
                 item = ret_item
                 if isinstance(item, dict):
@@ -761,7 +772,7 @@ class ApproxOracleAsyncInterface:
                 if item.value is not None:
                     return item
         else:
-            print(f"DEBUG: ApproxOracleAsyncInterface.get: journal.get: other: {repr(ret)}")
+            print(f"DEBUG: ApproxOracleAsyncInterface.get: journal get: other: {repr(ret)}")
         endpoint = ApproxOracleEndpoint.from_model(item.model)
         work_item = _ApproxOracleWorkItem(item)
         def _query_work_item():
@@ -798,7 +809,9 @@ class ApproxOracleAsyncInterface:
         w = loop.run_in_executor(self.worker._poolexec, _query_work_item)
         work_item = await w
         item = work_item._finalize()
-        await self._journal.put(item)
+        print(f"DEBUG: ApproxOracleAsyncInterface.get: journal put...")
+        put_ret = await self._journal.put(item)
+        print(f"DEBUG: ApproxOracleAsyncInterface.get: journal put: ret = {repr(put_ret)}")
         return item
 
     #def get_sync(self, item: Union[ApproxOracleItem, dict]):

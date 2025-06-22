@@ -33,6 +33,7 @@ default = ["pyo3"]
 #pyo3 = ["dep:pyo3-build-config", "dep:pyo3"]
 #pyo3 = ["dep:pyo3", "dep:pyo3-ffi"]
 pyo3 = ["dep:pyo3", "dep:pyo3-ffi", "_algo/pyo3"]
+#pyo3 = ["dep:pyo3", "dep:pyo3-async-runtimes", "dep:pyo3-ffi", "_algo/pyo3"]
 rayon = []
 #rayon = ["dep:rayon"]
 
@@ -44,6 +45,8 @@ _algo = { path = "_algo" }
 _data = { path = "_data" }
 _extmod = { path = "_extmod" }
 _util = { path = "_util" }
+async-std = { version = "^1.13" }
+#async-std = { version = "^1.13", default-features = false, features = ["std", "async-global-executor", "async-io", "futures-lite"] }
 bitflags = { version = "^2.8" }
 byteorder = { version = "^1.5" }
 chardetng = { version = "^0.1" }
@@ -52,9 +55,12 @@ diffy = { version = "^0.4" }
 getrandom = { version = "^0.2" }
 gunzip = { version = "^0.1" }
 libc = { version = "^0.2" }
+libuv_ffi = { version = "0.1.0-devel" }
+markdown = { version = "^1.0" }
 once_cell = { version = "^1" }
 paste = { version = "^1.0" }
 pyo3 = { version = "^0.23", features = ["auto-initialize", "serde"], optional = true }
+#pyo3-async-runtimes = { version = "^0.23", optional = true }
 pyo3-ffi = { version = "^0.23", optional = true }
 #rayon = { version = "^1.10" }
 regex = { version = "^1.10" }
@@ -66,7 +72,6 @@ syn = { version = "^2.0", features = ["full", "extra-traits"] }
 term_colors = { version = "^2" }
 textwrap = { version = "^0.16", default-features = false }
 time = { version = "^0.1" }
-uv = { version = "0.1.0-devel" }
 walkdir = { version = "^2.5" }
 
 [dev-dependencies]
@@ -84,6 +89,10 @@ path = "tools/interp.rs"
 [[bin]]
 name = "pythia_journal"
 path = "tools/journal.rs"
+
+[[bin]]
+name = "pythia_journal2"
+path = "tools/journal2.rs"
 
 [[bin]]
 name = "boot-build"
@@ -120,6 +129,10 @@ name = "boot-aikido"
 path = "tools/boot-aikido.rs"
 
 [[bin]]
+name = "boot-aikido-src"
+path = "tools/boot-aikido-src.rs"
+
+[[bin]]
 name = "boot-extract"
 path = "tools/boot-extract.rs"
 
@@ -141,34 +154,62 @@ path = "tools/boot-arxiv-metadata.rs"
 
 [patch.crates-io]
 aho-corasick = { path = "dep/aho-corasick" }
+async-channel = { path = "../async-channel-2" }
+async-executor = { path = "../async-executor" }
+async-global-executor = { path = "../async-global-executor-2" }
+async-io = { path = "../async-io" }
+async-lock = { path = "../async-lock" }
+async-std = { path = "../async-std" }
+async-task = { path = "../async-task" }
+atomic-waker = { path = "../atomic-waker" }
 autocfg = { path = "dep/autocfg" }
 bitflags = { path = "dep/bitflags" }
+blocking = { path = "../blocking" }
 branches = { path = "dep/branches" }
 byteorder = { path = "dep/byteorder" }
 cfg-if = { path = "dep/cfg-if" }
 chardetng = { path = "dep/chardetng" }
+concurrent-queue = { path = "../concurrent-queue" }
 crc32fast = { path = "dep/crc32fast" }
 #crossbeam-deque = { path = "dep/crossbeam/crossbeam-deque" }
-#crossbeam-utils = { path = "dep/crossbeam/crossbeam-utils" }
+crossbeam-utils = { path = "../crossbeam/crossbeam-utils" }
 diffy = { path = "dep/diffy" }
 #either = { path = "dep/either" }
 encoding_rs = { path = "dep/encoding_rs" }
+errno = { path = "../errno" }
+event-listener = { path = "../event-listener-3" }
+event-listener-strategy = { path = "../event-listener-strategy-0.3" }
+fastrand = { path = "../fastrand" }
+futures = { path = "../futures-0.3/futures" }
+futures-channel = { path = "../futures-0.3/futures-channel" }
+futures-core = { path = "../futures-0.3/futures-core" }
+futures-io = { path = "../futures-0.3/futures-io" }
+futures-lite = { path = "../futures-lite-2" }
 fxhash2 = { path = "dep/fxhash2" }
 getrandom = { path = "dep/getrandom" }
 gunzip = { path = "dep/gunzip" }
 heck = { path = "dep/heck" }
 indoc = { path = "dep/indoc" }
 itoa = { path = "dep/itoa" }
-libc = { path = "dep/libc" }
+libc = { path = "dep/libc-0.2" }
+libuv_ffi = { path = "dep/libuv_ffi" }
+linux-raw-sys = { path = "../linux-raw-sys" }
+markdown = { path = "../markdown" }
 memchr = { path = "dep/memchr" }
 memoffset = { path = "dep/memoffset" }
 once_cell = { path = "dep/once_cell" }
 os_socketaddr = { path = "dep/os_socketaddr" }
+parking = { path = "../parking" }
 parking_lot = { path = "dep/parking_lot" }
 paste = { path = "dep/paste" }
+pin-project-lite = { path = "../pin-project-lite" }
+pin-utils = { path = "../pin-utils" }
+piper = { path = "../piper" }
+polling = { path = "../polling" }
 portable-atomic = { path = "dep/portable-atomic" }
 proc-macro2 = { path = "dep/proc-macro2" }
 pyo3 = { path = "dep/pyo3" }
+pyo3-async-runtimes = { path = "../pyo3-async-runtimes" }
 pyo3-build-config = { path = "dep/pyo3/pyo3-build-config" }
 pyo3-ffi = { path = "dep/pyo3/pyo3-ffi" }
 quote = { path = "dep/quote" }
@@ -176,6 +217,7 @@ quote = { path = "dep/quote" }
 rclite = { path = "dep/rclite" }
 regex = { path = "dep/regex" }
 regex-syntax = { path = "dep/regex/regex-syntax" }
+rustix = { path = "../rustix" }
 ryu = { path = "dep/ryu" }
 same-file = { path = "../same-file" }
 scopeguard = { path = "dep/scopeguard" }
@@ -183,6 +225,7 @@ serde = { path = "dep/serde/serde" }
 serde_json = { path = "dep/serde_json" }
 serde_json_fmt = { path = "dep/serde_json_fmt" }
 signal_hook = { path = "dep/signal_hook" }
+slab = { path = "../slab" }
 smallvec = { path = "dep/smallvec" }
 smol_str = { path = "dep/smol_str" }
 syn = { path = "dep/syn" }
@@ -190,8 +233,9 @@ target-lexicon = { path = "dep/target-lexicon" }
 term_colors = { path = "dep/term_colors" }
 textwrap = { path = "dep/textwrap" }
 time = { path = "dep/time-0.1" }
+tracing = { path = "../tracing-0.1/tracing" }
 triomphe = { path = "dep/triomphe" }
+unicode-id = { path = "../unicode-id" }
 unicode-ident = { path = "dep/unicode-ident" }
 unindent = { path = "dep/indoc/unindent" }
-uv = { path = "dep/uv" }
 walkdir = { path = "../walkdir" }

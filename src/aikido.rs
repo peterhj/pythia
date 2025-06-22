@@ -494,18 +494,18 @@ impl Store {
     }
   }
 
-  pub fn debug_dump(&self) {
-    println!("DEBUG: Store::debug_dump: snapshot count = {}", self.snapshots.len());
-    println!("DEBUG: Store::debug_dump: frame count    = {}", self.frames.len());
+  pub fn debug_print_digest(&self) {
+    println!("DEBUG: Store::debug_print_digest: snapshot count = {}", self.snapshots.len());
+    println!("DEBUG: Store::debug_print_digest: frame count    = {}", self.frames.len());
   }
 
-  pub fn _save(&self) {
+  pub fn _save_debug_log(&self) {
     let manifest_dir = PathBuf::from(crate::build::MANIFEST_DIR);
     let mut save_dir = manifest_dir.clone();
     save_dir.push(".aikido");
     let _ = create_dir(&save_dir).ok();
     let mut snapshot_path = save_dir.clone();
-    snapshot_path.push("_log.jsonl");
+    snapshot_path.push("_debug_log.jsonl");
     let log_file = OpenOptions::new()
       .create(true)
       .append(true)
@@ -721,6 +721,7 @@ impl Frame {
   }
 
   pub fn import(&self, import_data: Object, store: &mut Store) -> Frame {
+    println!("DEBUG: Frame::import: ...");
     let timestamp = Timestamp::fresh();
     let frame_id = store.fresh_frame();
     let metadata = SnapshotMetadata {
@@ -732,7 +733,9 @@ impl Frame {
     let mut hashdata = self.hashdata.clone();
     let _ = replace(hashdata.mut_data(), import_data);
     hashdata.rehash();
-    Frame::_new(metadata, hashdata, store)
+    let frame = Frame::_new(metadata, hashdata, store);
+    println!("DEBUG: Frame::import: done");
+    frame
   }
 
   pub fn fresh(&self, store: &mut Store) -> Frame {

@@ -22,6 +22,8 @@ version = "0.1.0-devel"
 dependencies = [
  "_algo",
  "_util",
+ "regex",
+ "serde",
  "walkdir",
 ]
 
@@ -52,12 +54,111 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-channel"
+version = "2.1.0"
+dependencies = [
+ "concurrent-queue",
+ "event-listener",
+ "event-listener-strategy",
+ "futures-core",
+ "pin-project-lite",
+]
+
+[[package]]
+name = "async-executor"
+version = "1.13.2"
+dependencies = [
+ "async-task",
+ "concurrent-queue",
+ "fastrand",
+ "futures-lite",
+ "pin-project-lite",
+ "slab",
+]
+
+[[package]]
+name = "async-global-executor"
+version = "2.4.1"
+dependencies = [
+ "async-channel",
+ "async-executor",
+ "async-io",
+ "async-lock",
+ "blocking",
+ "futures-lite",
+ "once_cell",
+]
+
+[[package]]
+name = "async-io"
+version = "2.4.1"
+dependencies = [
+ "async-lock",
+ "cfg-if",
+ "concurrent-queue",
+ "futures-io",
+ "futures-lite",
+ "parking",
+ "polling",
+ "rustix",
+ "slab",
+ "tracing",
+]
+
+[[package]]
+name = "async-lock"
+version = "3.0.1"
+dependencies = [
+ "event-listener",
+ "event-listener-strategy",
+ "pin-project-lite",
+]
+
+[[package]]
+name = "async-std"
+version = "1.13.1"
+dependencies = [
+ "async-channel",
+ "async-global-executor",
+ "async-io",
+ "async-lock",
+ "crossbeam-utils",
+ "futures-core",
+ "futures-io",
+ "futures-lite",
+ "memchr",
+ "once_cell",
+ "pin-project-lite",
+ "pin-utils",
+ "slab",
+]
+
+[[package]]
+name = "async-task"
+version = "4.7.1"
+
+[[package]]
+name = "atomic-waker"
+version = "1.1.2"
+
+[[package]]
 name = "autocfg"
 version = "1.3.0"
 
 [[package]]
 name = "bitflags"
 version = "2.8.0"
+
+[[package]]
+name = "blocking"
+version = "1.6.1"
+dependencies = [
+ "async-channel",
+ "async-task",
+ "futures-io",
+ "futures-lite",
+ "piper",
+]
 
 [[package]]
 name = "branches"
@@ -81,11 +182,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "concurrent-queue"
+version = "2.5.0"
+dependencies = [
+ "crossbeam-utils",
+]
+
+[[package]]
 name = "crc32fast"
 version = "1.4.2"
 dependencies = [
  "cfg-if",
 ]
+
+[[package]]
+name = "crossbeam-utils"
+version = "0.8.20"
 
 [[package]]
 name = "diffy"
@@ -99,6 +211,53 @@ name = "encoding_rs"
 version = "0.8.35"
 dependencies = [
  "cfg-if",
+]
+
+[[package]]
+name = "errno"
+version = "0.3.13"
+dependencies = [
+ "libc",
+]
+
+[[package]]
+name = "event-listener"
+version = "3.1.0"
+dependencies = [
+ "concurrent-queue",
+ "parking",
+ "pin-project-lite",
+]
+
+[[package]]
+name = "event-listener-strategy"
+version = "0.3.0"
+dependencies = [
+ "event-listener",
+ "pin-project-lite",
+]
+
+[[package]]
+name = "fastrand"
+version = "2.3.0"
+
+[[package]]
+name = "futures-core"
+version = "0.3.31"
+
+[[package]]
+name = "futures-io"
+version = "0.3.31"
+
+[[package]]
+name = "futures-lite"
+version = "2.6.0"
+dependencies = [
+ "fastrand",
+ "futures-core",
+ "futures-io",
+ "parking",
+ "pin-project-lite",
 ]
 
 [[package]]
@@ -134,7 +293,21 @@ version = "1.0.11"
 
 [[package]]
 name = "libc"
-version = "0.2.155"
+version = "0.2.174"
+
+[[package]]
+name = "libuv_ffi"
+version = "0.1.0-devel"
+dependencies = [
+ "libc",
+ "once_cell",
+ "os_socketaddr",
+ "parking_lot",
+]
+
+[[package]]
+name = "linux-raw-sys"
+version = "0.9.4"
 
 [[package]]
 name = "lock_api"
@@ -142,6 +315,13 @@ version = "0.4.12"
 dependencies = [
  "autocfg",
  "scopeguard",
+]
+
+[[package]]
+name = "markdown"
+version = "1.0.0"
+dependencies = [
+ "unicode-id",
 ]
 
 [[package]]
@@ -167,6 +347,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "parking"
+version = "2.2.1"
+
+[[package]]
 name = "parking_lot"
 version = "0.12.3"
 dependencies = [
@@ -186,6 +370,32 @@ dependencies = [
 [[package]]
 name = "paste"
 version = "1.0.15"
+
+[[package]]
+name = "pin-project-lite"
+version = "0.2.16"
+
+[[package]]
+name = "pin-utils"
+version = "0.1.0"
+
+[[package]]
+name = "piper"
+version = "0.2.4"
+dependencies = [
+ "atomic-waker",
+ "fastrand",
+ "futures-io",
+]
+
+[[package]]
+name = "polling"
+version = "3.8.0"
+dependencies = [
+ "cfg-if",
+ "rustix",
+ "tracing",
+]
 
 [[package]]
 name = "portable-atomic"
@@ -260,6 +470,7 @@ dependencies = [
  "_data",
  "_extmod",
  "_util",
+ "async-std",
  "bitflags",
  "byteorder",
  "chardetng",
@@ -267,6 +478,8 @@ dependencies = [
  "getrandom",
  "gunzip",
  "libc",
+ "libuv_ffi",
+ "markdown",
  "once_cell",
  "paste",
  "pyo3",
@@ -280,7 +493,6 @@ dependencies = [
  "term_colors",
  "textwrap",
  "time",
- "uv",
  "walkdir",
 ]
 
@@ -320,6 +532,16 @@ dependencies = [
 [[package]]
 name = "regex-syntax"
 version = "0.8.5"
+
+[[package]]
+name = "rustix"
+version = "1.0.7"
+dependencies = [
+ "bitflags",
+ "errno",
+ "libc",
+ "linux-raw-sys",
+]
 
 [[package]]
 name = "ryu"
@@ -383,6 +605,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "slab"
+version = "0.4.10"
+
+[[package]]
 name = "smallvec"
 version = "1.11.2"
 
@@ -425,11 +651,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "tracing"
+version = "0.1.41"
+dependencies = [
+ "pin-project-lite",
+ "tracing-core",
+]
+
+[[package]]
+name = "tracing-core"
+version = "0.1.34"
+
+[[package]]
 name = "triomphe"
 version = "0.1.14"
 dependencies = [
  "serde",
 ]
+
+[[package]]
+name = "unicode-id"
+version = "0.3.5"
 
 [[package]]
 name = "unicode-ident"
@@ -440,18 +682,20 @@ name = "unindent"
 version = "0.2.3"
 
 [[package]]
-name = "uv"
-version = "0.1.0-devel"
-dependencies = [
- "libc",
- "once_cell",
- "os_socketaddr",
- "parking_lot",
-]
-
-[[package]]
 name = "walkdir"
 version = "2.5.0"
 dependencies = [
  "same-file",
 ]
+
+[[patch.unused]]
+name = "futures"
+version = "0.3.31"
+
+[[patch.unused]]
+name = "futures-channel"
+version = "0.3.31"
+
+[[patch.unused]]
+name = "pyo3-async-runtimes"
+version = "0.23.0"

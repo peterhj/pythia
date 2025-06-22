@@ -185,6 +185,7 @@ pub struct JournalBackend {
 impl JournalBackend {
   pub fn cold_start() -> JournalBackend {
     let t0 = Timestamp::fresh();
+    println!("DEBUG: JournalBackend::cold_start: ...");
     let root_path = PathBuf::from(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/data/_journal"
@@ -215,6 +216,7 @@ impl JournalBackend {
     };
     let mut widx_mem = Vec::new();
     let mut truncate = false;
+    let mut sorts = JournalSortBackends_::default();
     loop {
       match (File::open(&widx_path), File::open(&wlog_path)) {
         (Ok(widx_file), Ok(wlog_file)) => {
@@ -252,7 +254,7 @@ impl JournalBackend {
             } else {
               widx_mem[widx_mem.len()-1]
             };
-            let _data = match wlog_lines.next() {
+            let entry_s = match wlog_lines.next() {
               None |
               Some(Err(_)) => {
                 truncate = true;
@@ -267,6 +269,39 @@ impl JournalBackend {
                 }
               }
             };
+            let mut mat = false;
+            let entry_v = JsonValue::from_str(&entry_s).unwrap();
+            //println!("DEBUG: JournalBackend::cold_start: entry value = {}", &entry_v);
+            let item_v = match entry_v {
+              JsonValue::Object(mut entry_v) => {
+                match entry_v.remove("item") {
+                  Some(item_v) => {
+                    item_v
+                  }
+                  None => panic!("bug")
+                }
+              }
+              _ => panic!("bug")
+            };
+            if wpos == 0 {
+              if item_v.is_null() {
+                mat = true;
+              }
+            }
+            if !mat {
+              match serde_json::from_value::<ApproxOracleItem>(item_v) {
+                Ok(item) => {
+                  let key_item = item._to_key_item();
+                  sorts.approx_oracle_items.insert(key_item, item);
+                  mat = true;
+                }
+                Err(_) => {}
+              }
+            }
+            // TODO: other sorts.
+            if !mat {
+              panic!("bug: unmatched entry: {}", entry_s);
+            }
             widx_mem.push(woff);
           }
         }
@@ -321,11 +356,13 @@ impl JournalBackend {
       widx_mem,
       widx_file,
       wlog_file,
-      sorts: JournalSortBackends_::default(),
+      sorts,
     };
     if this.widx_mem.len() <= 0 {
       this.append_item(&_Root);
     }
+    let t1 = Timestamp::fresh();
+    println!("DEBUG: JournalBackend::cold_start: elapsed = {}", t1 - t0);
     this
   }
 
@@ -359,7 +396,7 @@ impl JournalBackend {
       None => {}
       Some(item) => {
         // TODO
-        let key_item = item.clone()._into_key_item();
+        let key_item = item._to_key_item();
         /*let key_item = item.clone()._to_key_item();*/
         self.sorts.approx_oracle_items.insert(key_item, item.clone());
       }

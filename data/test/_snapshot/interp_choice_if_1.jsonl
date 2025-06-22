@@ -2669,7 +2669,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]}
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -2831,7 +2831,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]}
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -2992,7 +2992,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]}
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -3153,7 +3153,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]}
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -3315,7 +3315,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]}
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -3477,7 +3477,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]}
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -3640,7 +3640,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]}
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -3803,7 +3803,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]}
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -3967,7 +3967,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]}
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -4130,7 +4130,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]}
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -4293,7 +4293,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]}
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -4457,7 +4457,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]}
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -4620,7 +4620,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)"
       },
       "Val": {
@@ -4784,7 +4784,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)"
       },
       "Val": {
@@ -4947,7 +4947,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)"
       },
       "Val": {
@@ -5110,7 +5110,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)"
       },
       "Val": {
@@ -5274,7 +5274,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)"
       },
       "Val": {
@@ -5439,7 +5439,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)"
       },
       "Val": {
@@ -5604,7 +5604,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)"
       },
       "Val": {
@@ -5769,7 +5769,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)"
       },
       "Val": {
@@ -5935,7 +5935,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)"
       },
       "Val": {
@@ -6100,7 +6100,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(114.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"}
       },
@@ -6266,7 +6266,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(114.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"}
       },
@@ -6433,7 +6433,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(114.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"}
       },
@@ -6599,7 +6599,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(114.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"},
         "SNum(115.0)": "LitTerm_(Int=2463504702155006471)"
@@ -6767,7 +6767,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(114.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"},
         "SNum(115.0)": "LitTerm_(Int=2463504702155006471)"
@@ -6934,11 +6934,11 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(114.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"},
         "SNum(115.0)": "LitTerm_(Int=2463504702155006471)",
-        "SNum(117.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(114.0)", "ENum_inst": "SNum(114.0)"}, {"ENum_cls": "SNum(115.0)", "ENum_inst": "SNum(115.0)"}]}
+        "SNum(117.0)": {"__type__": "TupleTerm_", "buf": ["ENum(114.0:=114.0)", "ENum(115.0:=115.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -7102,11 +7102,11 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(114.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"},
         "SNum(115.0)": "LitTerm_(Int=2463504702155006471)",
-        "SNum(117.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(114.0)", "ENum_inst": "SNum(114.0)"}, {"ENum_cls": "SNum(115.0)", "ENum_inst": "SNum(115.0)"}]}
+        "SNum(117.0)": {"__type__": "TupleTerm_", "buf": ["ENum(114.0:=114.0)", "ENum(115.0:=115.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -7271,11 +7271,11 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(114.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"},
         "SNum(115.0)": "LitTerm_(Int=2463504702155006471)",
-        "SNum(117.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(114.0)", "ENum_inst": "SNum(114.0)"}, {"ENum_cls": "SNum(115.0)", "ENum_inst": "SNum(115.0)"}]}
+        "SNum(117.0)": {"__type__": "TupleTerm_", "buf": ["ENum(114.0:=114.0)", "ENum(115.0:=115.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -7440,11 +7440,11 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(114.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"},
         "SNum(115.0)": "LitTerm_(Int=2463504702155006471)",
-        "SNum(117.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(114.0)", "ENum_inst": "SNum(114.0)"}, {"ENum_cls": "SNum(115.0)", "ENum_inst": "SNum(115.0)"}]}
+        "SNum(117.0)": {"__type__": "TupleTerm_", "buf": ["ENum(114.0:=114.0)", "ENum(115.0:=115.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -7609,11 +7609,11 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(114.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"},
         "SNum(115.0)": "LitTerm_(Int=2463504702155006471)",
-        "SNum(117.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(114.0)", "ENum_inst": "SNum(114.0)"}, {"ENum_cls": "SNum(115.0)", "ENum_inst": "SNum(115.0)"}]}
+        "SNum(117.0)": {"__type__": "TupleTerm_", "buf": ["ENum(114.0:=114.0)", "ENum(115.0:=115.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -7779,11 +7779,11 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(114.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"},
         "SNum(115.0)": "LitTerm_(Int=2463504702155006471)",
-        "SNum(117.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(114.0)", "ENum_inst": "SNum(114.0)"}, {"ENum_cls": "SNum(115.0)", "ENum_inst": "SNum(115.0)"}]}
+        "SNum(117.0)": {"__type__": "TupleTerm_", "buf": ["ENum(114.0:=114.0)", "ENum(115.0:=115.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -7948,11 +7948,11 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(114.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"},
         "SNum(115.0)": "LitTerm_(Int=2463504702155006471)",
-        "SNum(117.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(114.0)", "ENum_inst": "SNum(114.0)"}, {"ENum_cls": "SNum(115.0)", "ENum_inst": "SNum(115.0)"}]},
+        "SNum(117.0)": {"__type__": "TupleTerm_", "buf": ["ENum(114.0:=114.0)", "ENum(115.0:=115.0)"]},
         "SNum(118.0)": {"__type__": "IdentTerm_", "id": "IdentNum(3.0)", "raw_id": "failure"}
       },
       "Val": {
@@ -8118,11 +8118,11 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(114.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"},
         "SNum(115.0)": "LitTerm_(Int=2463504702155006471)",
-        "SNum(117.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(114.0)", "ENum_inst": "SNum(114.0)"}, {"ENum_cls": "SNum(115.0)", "ENum_inst": "SNum(115.0)"}]},
+        "SNum(117.0)": {"__type__": "TupleTerm_", "buf": ["ENum(114.0:=114.0)", "ENum(115.0:=115.0)"]},
         "SNum(118.0)": {"__type__": "IdentTerm_", "id": "IdentNum(3.0)", "raw_id": "failure"}
       },
       "Val": {
@@ -8287,7 +8287,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]}
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -8449,7 +8449,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]}
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -8610,7 +8610,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]}
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -8771,7 +8771,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]}
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -8933,7 +8933,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]}
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -9095,7 +9095,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]}
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -9258,7 +9258,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]}
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -9421,7 +9421,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]}
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -9585,7 +9585,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]}
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -9748,7 +9748,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]}
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -9911,7 +9911,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]}
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -10075,7 +10075,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]}
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -10238,7 +10238,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)"
       },
       "Val": {
@@ -10403,7 +10403,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)"
       },
       "Val": {
@@ -10567,7 +10567,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)"
       },
       "Val": {
@@ -10731,7 +10731,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)"
       },
       "Val": {
@@ -10896,7 +10896,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)"
       },
       "Val": {
@@ -11061,7 +11061,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)"
       },
       "Val": {
@@ -11227,7 +11227,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)"
       },
       "Val": {
@@ -11392,7 +11392,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)"
       },
       "Val": {
@@ -11557,7 +11557,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)"
       },
       "Val": {
@@ -11723,7 +11723,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)"
       },
       "Val": {
@@ -11888,7 +11888,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(115.0)": "LitTerm_(Int=1)"
       },
@@ -12054,7 +12054,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(115.0)": "LitTerm_(Int=1)"
       },
@@ -12219,7 +12219,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(115.0)": "LitTerm_(Int=1)"
       },
@@ -12384,7 +12384,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(115.0)": "LitTerm_(Int=1)"
       },
@@ -12550,7 +12550,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(115.0)": "LitTerm_(Int=1)"
       },
@@ -12717,7 +12717,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(115.0)": "LitTerm_(Int=1)"
       },
@@ -12884,7 +12884,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(115.0)": "LitTerm_(Int=1)"
       },
@@ -13051,7 +13051,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(115.0)": "LitTerm_(Int=1)"
       },
@@ -13219,7 +13219,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(115.0)": "LitTerm_(Int=1)"
       },
@@ -13386,7 +13386,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(115.0)": "LitTerm_(Int=1)",
         "SNum(116.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"}
@@ -13554,7 +13554,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(115.0)": "LitTerm_(Int=1)",
         "SNum(116.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"}
@@ -13723,7 +13723,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(115.0)": "LitTerm_(Int=1)",
         "SNum(116.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"}
@@ -13891,7 +13891,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(115.0)": "LitTerm_(Int=1)",
         "SNum(116.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"},
@@ -14061,7 +14061,7 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(115.0)": "LitTerm_(Int=1)",
         "SNum(116.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"},
@@ -14230,12 +14230,12 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(115.0)": "LitTerm_(Int=1)",
         "SNum(116.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"},
         "SNum(117.0)": "LitTerm_(Int=2463786177131717127)",
-        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(116.0)", "ENum_inst": "SNum(116.0)"}, {"ENum_cls": "SNum(117.0)", "ENum_inst": "SNum(117.0)"}]}
+        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": ["ENum(116.0:=116.0)", "ENum(117.0:=117.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -14400,12 +14400,12 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(115.0)": "LitTerm_(Int=1)",
         "SNum(116.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"},
         "SNum(117.0)": "LitTerm_(Int=2463786177131717127)",
-        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(116.0)", "ENum_inst": "SNum(116.0)"}, {"ENum_cls": "SNum(117.0)", "ENum_inst": "SNum(117.0)"}]}
+        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": ["ENum(116.0:=116.0)", "ENum(117.0:=117.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -14571,12 +14571,12 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(115.0)": "LitTerm_(Int=1)",
         "SNum(116.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"},
         "SNum(117.0)": "LitTerm_(Int=2463786177131717127)",
-        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(116.0)", "ENum_inst": "SNum(116.0)"}, {"ENum_cls": "SNum(117.0)", "ENum_inst": "SNum(117.0)"}]}
+        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": ["ENum(116.0:=116.0)", "ENum(117.0:=117.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -14742,12 +14742,12 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(115.0)": "LitTerm_(Int=1)",
         "SNum(116.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"},
         "SNum(117.0)": "LitTerm_(Int=2463786177131717127)",
-        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(116.0)", "ENum_inst": "SNum(116.0)"}, {"ENum_cls": "SNum(117.0)", "ENum_inst": "SNum(117.0)"}]}
+        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": ["ENum(116.0:=116.0)", "ENum(117.0:=117.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -14912,12 +14912,12 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(115.0)": "LitTerm_(Int=1)",
         "SNum(116.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"},
         "SNum(117.0)": "LitTerm_(Int=2463786177131717127)",
-        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(116.0)", "ENum_inst": "SNum(116.0)"}, {"ENum_cls": "SNum(117.0)", "ENum_inst": "SNum(117.0)"}]}
+        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": ["ENum(116.0:=116.0)", "ENum(117.0:=117.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -15082,12 +15082,12 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(115.0)": "LitTerm_(Int=1)",
         "SNum(116.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"},
         "SNum(117.0)": "LitTerm_(Int=2463786177131717127)",
-        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(116.0)", "ENum_inst": "SNum(116.0)"}, {"ENum_cls": "SNum(117.0)", "ENum_inst": "SNum(117.0)"}]}
+        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": ["ENum(116.0:=116.0)", "ENum(117.0:=117.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -15253,12 +15253,12 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(115.0)": "LitTerm_(Int=1)",
         "SNum(116.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"},
         "SNum(117.0)": "LitTerm_(Int=2463786177131717127)",
-        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(116.0)", "ENum_inst": "SNum(116.0)"}, {"ENum_cls": "SNum(117.0)", "ENum_inst": "SNum(117.0)"}]}
+        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": ["ENum(116.0:=116.0)", "ENum(117.0:=117.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -15424,12 +15424,12 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(115.0)": "LitTerm_(Int=1)",
         "SNum(116.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"},
         "SNum(117.0)": "LitTerm_(Int=2463786177131717127)",
-        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(116.0)", "ENum_inst": "SNum(116.0)"}, {"ENum_cls": "SNum(117.0)", "ENum_inst": "SNum(117.0)"}]}
+        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": ["ENum(116.0:=116.0)", "ENum(117.0:=117.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -15595,12 +15595,12 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(115.0)": "LitTerm_(Int=1)",
         "SNum(116.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"},
         "SNum(117.0)": "LitTerm_(Int=2463786177131717127)",
-        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(116.0)", "ENum_inst": "SNum(116.0)"}, {"ENum_cls": "SNum(117.0)", "ENum_inst": "SNum(117.0)"}]}
+        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": ["ENum(116.0:=116.0)", "ENum(117.0:=117.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -15767,12 +15767,12 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(115.0)": "LitTerm_(Int=1)",
         "SNum(116.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"},
         "SNum(117.0)": "LitTerm_(Int=2463786177131717127)",
-        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(116.0)", "ENum_inst": "SNum(116.0)"}, {"ENum_cls": "SNum(117.0)", "ENum_inst": "SNum(117.0)"}]}
+        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": ["ENum(116.0:=116.0)", "ENum(117.0:=117.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -15938,12 +15938,12 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(115.0)": "LitTerm_(Int=1)",
         "SNum(116.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"},
         "SNum(117.0)": "LitTerm_(Int=2463786177131717127)",
-        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(116.0)", "ENum_inst": "SNum(116.0)"}, {"ENum_cls": "SNum(117.0)", "ENum_inst": "SNum(117.0)"}]}
+        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": ["ENum(116.0:=116.0)", "ENum(117.0:=117.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -16109,12 +16109,12 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(115.0)": "LitTerm_(Int=1)",
         "SNum(116.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"},
         "SNum(117.0)": "LitTerm_(Int=2463786177131717127)",
-        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(116.0)", "ENum_inst": "SNum(116.0)"}, {"ENum_cls": "SNum(117.0)", "ENum_inst": "SNum(117.0)"}]}
+        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": ["ENum(116.0:=116.0)", "ENum(117.0:=117.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -16281,12 +16281,12 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(115.0)": "LitTerm_(Int=1)",
         "SNum(116.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"},
         "SNum(117.0)": "LitTerm_(Int=2463786177131717127)",
-        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(116.0)", "ENum_inst": "SNum(116.0)"}, {"ENum_cls": "SNum(117.0)", "ENum_inst": "SNum(117.0)"}]}
+        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": ["ENum(116.0:=116.0)", "ENum(117.0:=117.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -16452,12 +16452,12 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(115.0)": "LitTerm_(Int=1)",
         "SNum(116.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"},
         "SNum(117.0)": "LitTerm_(Int=2463786177131717127)",
-        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(116.0)", "ENum_inst": "SNum(116.0)"}, {"ENum_cls": "SNum(117.0)", "ENum_inst": "SNum(117.0)"}]},
+        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": ["ENum(116.0:=116.0)", "ENum(117.0:=117.0)"]},
         "SNum(120.0)": "LitTerm_(Int=3539956246506381832)"
       },
       "Val": {
@@ -16625,12 +16625,12 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(115.0)": "LitTerm_(Int=1)",
         "SNum(116.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"},
         "SNum(117.0)": "LitTerm_(Int=2463786177131717127)",
-        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(116.0)", "ENum_inst": "SNum(116.0)"}, {"ENum_cls": "SNum(117.0)", "ENum_inst": "SNum(117.0)"}]},
+        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": ["ENum(116.0:=116.0)", "ENum(117.0:=117.0)"]},
         "SNum(120.0)": "LitTerm_(Int=3539956246506381832)"
       },
       "Val": {
@@ -16797,14 +16797,14 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(115.0)": "LitTerm_(Int=1)",
         "SNum(116.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"},
         "SNum(117.0)": "LitTerm_(Int=2463786177131717127)",
-        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(116.0)", "ENum_inst": "SNum(116.0)"}, {"ENum_cls": "SNum(117.0)", "ENum_inst": "SNum(117.0)"}]},
+        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": ["ENum(116.0:=116.0)", "ENum(117.0:=117.0)"]},
         "SNum(120.0)": "LitTerm_(Int=3539956246506381832)",
-        "SNum(122.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(116.0)", "ENum_inst": "SNum(116.0)"}, {"ENum_cls": "SNum(120.0)", "ENum_inst": "SNum(120.0)"}]}
+        "SNum(122.0)": {"__type__": "TupleTerm_", "buf": ["ENum(116.0:=116.0)", "ENum(120.0:=120.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -16970,14 +16970,14 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(115.0)": "LitTerm_(Int=1)",
         "SNum(116.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"},
         "SNum(117.0)": "LitTerm_(Int=2463786177131717127)",
-        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(116.0)", "ENum_inst": "SNum(116.0)"}, {"ENum_cls": "SNum(117.0)", "ENum_inst": "SNum(117.0)"}]},
+        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": ["ENum(116.0:=116.0)", "ENum(117.0:=117.0)"]},
         "SNum(120.0)": "LitTerm_(Int=3539956246506381832)",
-        "SNum(122.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(116.0)", "ENum_inst": "SNum(116.0)"}, {"ENum_cls": "SNum(120.0)", "ENum_inst": "SNum(120.0)"}]}
+        "SNum(122.0)": {"__type__": "TupleTerm_", "buf": ["ENum(116.0:=116.0)", "ENum(120.0:=120.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -17142,14 +17142,14 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(115.0)": "LitTerm_(Int=1)",
         "SNum(116.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"},
         "SNum(117.0)": "LitTerm_(Int=2463786177131717127)",
-        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(116.0)", "ENum_inst": "SNum(116.0)"}, {"ENum_cls": "SNum(117.0)", "ENum_inst": "SNum(117.0)"}]},
+        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": ["ENum(116.0:=116.0)", "ENum(117.0:=117.0)"]},
         "SNum(120.0)": "LitTerm_(Int=3539956246506381832)",
-        "SNum(122.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(116.0)", "ENum_inst": "SNum(116.0)"}, {"ENum_cls": "SNum(120.0)", "ENum_inst": "SNum(120.0)"}]}
+        "SNum(122.0)": {"__type__": "TupleTerm_", "buf": ["ENum(116.0:=116.0)", "ENum(120.0:=120.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -17314,14 +17314,14 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(115.0)": "LitTerm_(Int=1)",
         "SNum(116.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"},
         "SNum(117.0)": "LitTerm_(Int=2463786177131717127)",
-        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(116.0)", "ENum_inst": "SNum(116.0)"}, {"ENum_cls": "SNum(117.0)", "ENum_inst": "SNum(117.0)"}]},
+        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": ["ENum(116.0:=116.0)", "ENum(117.0:=117.0)"]},
         "SNum(120.0)": "LitTerm_(Int=3539956246506381832)",
-        "SNum(122.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(116.0)", "ENum_inst": "SNum(116.0)"}, {"ENum_cls": "SNum(120.0)", "ENum_inst": "SNum(120.0)"}]}
+        "SNum(122.0)": {"__type__": "TupleTerm_", "buf": ["ENum(116.0:=116.0)", "ENum(120.0:=120.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -17485,14 +17485,14 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(115.0)": "LitTerm_(Int=1)",
         "SNum(116.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"},
         "SNum(117.0)": "LitTerm_(Int=2463786177131717127)",
-        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(116.0)", "ENum_inst": "SNum(116.0)"}, {"ENum_cls": "SNum(117.0)", "ENum_inst": "SNum(117.0)"}]},
+        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": ["ENum(116.0:=116.0)", "ENum(117.0:=117.0)"]},
         "SNum(120.0)": "LitTerm_(Int=3539956246506381832)",
-        "SNum(122.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(116.0)", "ENum_inst": "SNum(116.0)"}, {"ENum_cls": "SNum(120.0)", "ENum_inst": "SNum(120.0)"}]}
+        "SNum(122.0)": {"__type__": "TupleTerm_", "buf": ["ENum(116.0:=116.0)", "ENum(120.0:=120.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -17656,14 +17656,14 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(115.0)": "LitTerm_(Int=1)",
         "SNum(116.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"},
         "SNum(117.0)": "LitTerm_(Int=2463786177131717127)",
-        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(116.0)", "ENum_inst": "SNum(116.0)"}, {"ENum_cls": "SNum(117.0)", "ENum_inst": "SNum(117.0)"}]},
+        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": ["ENum(116.0:=116.0)", "ENum(117.0:=117.0)"]},
         "SNum(120.0)": "LitTerm_(Int=3539956246506381832)",
-        "SNum(122.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(116.0)", "ENum_inst": "SNum(116.0)"}, {"ENum_cls": "SNum(120.0)", "ENum_inst": "SNum(120.0)"}]}
+        "SNum(122.0)": {"__type__": "TupleTerm_", "buf": ["ENum(116.0:=116.0)", "ENum(120.0:=120.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},
@@ -17826,14 +17826,14 @@
         "SNum(107.0)": {"__type__": "IdentTerm_", "id": "IdentNum(20.0)", "raw_id": "k"},
         "SNum(108.0)": {"__type__": "IdentTerm_", "id": "IdentNum(1.0)", "raw_id": "choice"},
         "SNum(109.0)": "LitTerm_(Int=2)",
-        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(108.0)", "ENum_inst": "SNum(108.0)"}, {"ENum_cls": "SNum(109.0)", "ENum_inst": "SNum(109.0)"}]},
+        "SNum(111.0)": {"__type__": "TupleTerm_", "buf": ["ENum(108.0:=108.0)", "ENum(109.0:=109.0)"]},
         "SNum(113.0)": "LitTerm_(Int=0)",
         "SNum(115.0)": "LitTerm_(Int=1)",
         "SNum(116.0)": {"__type__": "IdentTerm_", "id": "IdentNum(9.0)", "raw_id": "print"},
         "SNum(117.0)": "LitTerm_(Int=2463786177131717127)",
-        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(116.0)", "ENum_inst": "SNum(116.0)"}, {"ENum_cls": "SNum(117.0)", "ENum_inst": "SNum(117.0)"}]},
+        "SNum(119.0)": {"__type__": "TupleTerm_", "buf": ["ENum(116.0:=116.0)", "ENum(117.0:=117.0)"]},
         "SNum(120.0)": "LitTerm_(Int=3539956246506381832)",
-        "SNum(122.0)": {"__type__": "TupleTerm_", "buf": [{"ENum_cls": "SNum(116.0)", "ENum_inst": "SNum(116.0)"}, {"ENum_cls": "SNum(120.0)", "ENum_inst": "SNum(120.0)"}]}
+        "SNum(122.0)": {"__type__": "TupleTerm_", "buf": ["ENum(116.0:=116.0)", "ENum(120.0:=120.0)"]}
       },
       "Val": {
         "SNum(110.0)": {"Int": 2},

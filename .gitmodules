@@ -14,7 +14,7 @@
 	path = dep/itoa
 	url = https://github.com/peterhj/itoa
 [submodule "dep/libc"]
-	path = dep/libc
+	path = dep/libc-0.2
 	url = https://github.com/peterhj/libc
 [submodule "dep/memchr"]
 	path = dep/memchr
@@ -131,5 +131,5 @@
 	path = dep/triomphe
 	url = https://github.com/peterhj/triomphe
 [submodule "dep/uv"]
-	path = dep/uv
+	path = dep/libuv_ffi
 	url = https://github.com/peterhj/uv

@@ -9,9 +9,9 @@ def main():
         for char_idx, c in enumerate(line):
             x = ord(c)
             w = None
-            if x >= 127:
+            if x > 127:
                 w = "non-ascii"
-            elif x < 32 and x not in (9, 0xa, 0xd):
+            elif (x < 32 and x not in (9, 0xa, 0xd)) or x == 127:
                 w = "control"
             if w:
                 if warn > 10:
