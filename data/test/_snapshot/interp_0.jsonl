@@ -1,4 +1,4 @@
-{"_event": "pre_init"}
+{"_event": "pre-init"}
 {
   "clkctr": {"rctr": 0},
   "ctr": {"rctr": 12},

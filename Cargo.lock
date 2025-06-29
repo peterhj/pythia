@@ -695,7 +695,3 @@ version = "0.3.31"
 [[patch.unused]]
 name = "futures-channel"
 version = "0.3.31"
-
-[[patch.unused]]
-name = "pyo3-async-runtimes"
-version = "0.23.0"

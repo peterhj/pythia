@@ -100,6 +100,9 @@
 [submodule "dep/indoc"]
 	path = dep/indoc
 	url = https://github.com/peterhj/indoc
+[submodule "dep/markdown"]
+	path = dep/markdown
+	url = https://github.com/peterhj/markdown
 [submodule "dep/memoffset"]
 	path = dep/memoffset
 	url = https://github.com/peterhj/memoffset
@@ -130,6 +133,87 @@
 [submodule "dep/triomphe"]
 	path = dep/triomphe
 	url = https://github.com/peterhj/triomphe
-[submodule "dep/uv"]
+[submodule "dep/unicode-id"]
+	path = dep/unicode-id
+	url = https://github.com/peterhj/unicode-id
+[submodule "dep/libuv_ffi"]
 	path = dep/libuv_ffi
-	url = https://github.com/peterhj/uv
+	url = https://github.com/peterhj/libuv_ffi
+[submodule "dep/async-std"]
+	path = dep/async-std
+	url = https://github.com/peterhj/async-std
+[submodule "dep/async-channel-2"]
+	path = dep/async-channel-2
+	url = https://github.com/peterhj/async-channel-2
+[submodule "dep/async-executor"]
+	path = dep/async-executor
+	url = https://github.com/peterhj/async-executor
+[submodule "dep/async-global-executor-2"]
+	path = dep/async-global-executor-2
+	url = https://github.com/peterhj/async-global-executor-2
+[submodule "dep/async-io"]
+	path = dep/async-io
+	url = https://github.com/peterhj/async-io
+[submodule "dep/async-lock"]
+	path = dep/async-lock
+	url = https://github.com/peterhj/async-lock
+[submodule "dep/async-task"]
+	path = dep/async-task
+	url = https://github.com/peterhj/async-task
+[submodule "dep/atomic-waker"]
+	path = dep/atomic-waker
+	url = https://github.com/peterhj/atomic-waker
+[submodule "dep/blocking"]
+	path = dep/blocking
+	url = https://github.com/peterhj/blocking
+[submodule "dep/concurrent-queue"]
+	path = dep/concurrent-queue
+	url = https://github.com/peterhj/concurrent-queue
+[submodule "dep/crossbeam"]
+	path = dep/crossbeam
+	url = https://github.com/peterhj/crossbeam
+[submodule "dep/errno"]
+	path = dep/errno
+	url = https://github.com/peterhj/errno
+[submodule "dep/event-listener-3"]
+	path = dep/event-listener-3
+	url = https://github.com/peterhj/event-listener-3
+[submodule "dep/event-listener-strategy-0.3"]
+	path = dep/event-listener-strategy-0.3
+	url = https://github.com/peterhj/event-listener-strategy-0.3
+[submodule "dep/fastrand"]
+	path = dep/fastrand
+	url = https://github.com/peterhj/fastrand
+[submodule "dep/futures-0.3"]
+	path = dep/futures-0.3
+	url = https://github.com/peterhj/futures-0.3
+[submodule "dep/futures-lite-2"]
+	path = dep/futures-lite-2
+	url = https://github.com/peterhj/futures-lite-2
+[submodule "dep/linux-raw-sys"]
+	path = dep/linux-raw-sys
+	url = https://github.com/peterhj/linux-raw-sys
+[submodule "dep/parking"]
+	path = dep/parking
+	url = https://github.com/peterhj/parking
+[submodule "dep/pin-project-lite"]
+	path = dep/pin-project-lite
+	url = https://github.com/peterhj/pin-project-lite
+[submodule "dep/pin-utils"]
+	path = dep/pin-utils
+	url = https://github.com/peterhj/pin-utils
+[submodule "dep/piper"]
+	path = dep/piper
+	url = https://github.com/peterhj/piper
+[submodule "dep/polling"]
+	path = dep/polling
+	url = https://github.com/peterhj/polling
+[submodule "dep/rustix"]
+	path = dep/rustix
+	url = https://github.com/peterhj/rustix
+[submodule "dep/slab"]
+	path = dep/slab
+	url = https://github.com/peterhj/slab
+[submodule "dep/tracing-0.1"]
+	path = dep/tracing-0.1
+	url = https://github.com/peterhj/tracing-0.1
