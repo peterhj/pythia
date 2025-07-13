@@ -31,6 +31,7 @@ def _load_api_token(key, domain):
 
 DEEPSEEK_API_KEY    = _load_api_token("DEEPSEEK",   "deepseek.com")
 GEMINI_API_KEY      = _load_api_token("GEMINI",     "aistudio.google.com")
+OPENAI_API_KEY      = _load_api_token("OPENAI",     "openai.com")
 XAI_API_KEY         = _load_api_token("XAI",        "x.ai")
 OPENROUTER_API_KEY  = _load_api_token("OPENROUTER", "openrouter.ai")
 HYPERBOLIC_API_KEY  = _load_api_token("HYPERBOLIC", "hyperbolic.xyz")
@@ -146,6 +147,37 @@ class ApproxOracleEndpoint:
             endpoint_max_new_tokens = 65536,
             endpoint_throttle_rps = 2,
             # endpoint_throttle_rps = 2.5,
+        )
+
+    @classmethod
+    def openai(cls, **kwargs) -> Any:
+        return cls(
+            endpoint_api_url = "https://api.openai.com",
+            endpoint_api_token = OPENAI_API_TOKEN,
+            endpoint_api_protocol = "openai",
+            **kwargs,
+        )
+
+    @classmethod
+    def o3_20250416(cls) -> Any:
+        return cls.openai(
+            model = "o3-20250416",
+            endpoint_model = "o3",
+            endpoint_max_new_tokens = 100000,
+            endpoint_extra_params = {
+                "reasoning_effort": "high",
+            },
+        )
+
+    @classmethod
+    def o4_mini_20250416(cls) -> Any:
+        return cls.openai(
+            model = "o4-mini-20250416",
+            endpoint_model = "o4-mini",
+            endpoint_max_new_tokens = 100000,
+            endpoint_extra_params = {
+                "reasoning_effort": "high",
+            },
         )
 
     @classmethod
@@ -835,7 +867,10 @@ def test_main_async():
         default_model="deepseek-v3-chat-20250324",
         #default_model="deepseek-r1-20250120",
     )
-    query = """How would I use `asyncio.gather` with both a `concurrent.futures.ThreadPoolExecutor` and an asyncio loop? Please provide a full toy example that involves making a POST request (using `urllib.request`) to "http://api.example.com/"."""
+    # query = """How would I use `asyncio.gather` with both a `concurrent.futures.ThreadPoolExecutor` and an asyncio loop? Please provide a full toy example that involves making a POST request (using `urllib.request`) to "http://api.example.com/"."""
+    # query = "What are the distinctions between serializability and snapshot isolation?"
+    query = "What are the distinctions in semantics between serializability and snapshot isolation?"
+    # query = "What are the semantics of multi-version concurrency control?"
     result = asyncio.run(iface.get(ApproxOracleItem(
         #key=0,
         query=query,
