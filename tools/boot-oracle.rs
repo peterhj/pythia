@@ -12,7 +12,7 @@ fn main() {
   let item = aoi.poll_test();
   println!("DEBUG: item = {:?}", item);
   // TODO
-  let req = ApproxOracleRequest{key: 0, query: "Hi!".into(), .. Default::default()};
+  let req = ApproxOracleRequest{key: None, query: vec!["Hi!".into()], .. Default::default()};
   aoi.put(req);
   let item = aoi.poll();
   println!("DEBUG: item = {:?}", item);

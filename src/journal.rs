@@ -14,9 +14,13 @@ use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Write, Seek, SeekFrom};
 use std::net::{TcpStream};
 use std::path::{PathBuf};
-use std::str::{FromStr};
+use std::str::{FromStr, from_utf8};
 
 pub const HASH_SIZE: usize = 32;
+
+const fn ceil_base64(len: usize) -> usize {
+  ((len + 2) / 3) * 4
+}
 
 //pub static _STORE: Lazy<DevelJournal_> = Lazy::new(|| DevelJournal_::cold_start());
 
@@ -272,11 +276,16 @@ impl JournalBackend {
             let mut mat = false;
             let entry_v = JsonValue::from_str(&entry_s).unwrap();
             //println!("DEBUG: JournalBackend::cold_start: entry value = {}", &entry_v);
-            let item_v = match entry_v {
+            let (entry_v, sort_v, item_v) = match entry_v {
               JsonValue::Object(mut entry_v) => {
-                match entry_v.remove("item") {
-                  Some(item_v) => {
-                    item_v
+                match entry_v.remove("sort") {
+                  Some(sort_v) => {
+                    match entry_v.remove("item") {
+                      Some(item_v) => {
+                        (entry_v, sort_v, item_v)
+                      }
+                      None => panic!("bug")
+                    }
                   }
                   None => panic!("bug")
                 }
@@ -287,9 +296,11 @@ impl JournalBackend {
               if item_v.is_null() {
                 mat = true;
               }
+            } else if sort_v == "boot-test" {
+              mat = true;
             }
             if !mat {
-              match serde_json::from_value::<ApproxOracleItem>(item_v) {
+              match serde_json::from_value::<ApproxOracleItem>(item_v.clone()) {
                 Ok(item) => {
                   let key_item = item._to_key_item();
                   sorts.approx_oracle_items.insert(key_item, item);
@@ -300,7 +311,9 @@ impl JournalBackend {
             }
             // TODO: other sorts.
             if !mat {
-              panic!("bug: unmatched entry: {}", entry_s);
+              println!("DEBUG: unmatched entry: {}", entry_s);
+              println!("DEBUG:           itemv: {:?}", item_v);
+              panic!("bug");
             }
             widx_mem.push(woff);
           }
@@ -496,11 +509,17 @@ impl JournalExt for DevelJournal_ {
         .comma(", ").unwrap();
     let mut s = json_fmt.to_string(&entry).unwrap();
     let slen = s.len();
-    let hend = slen - (11 + HASH_SIZE * 2 + 2);
+    let hend = slen - (12 + ceil_base64(HASH_SIZE) + 2);
     let mut h = Blake2s::new_hash();
     {
       let b = s.as_bytes();
       assert!(b.starts_with(b"{"));
+      if !b[hend .. ].starts_with(b", \"ehash\": \"") {
+        println!("DEBUG: JournalExt_::append: HASH_SIZE = {:?}", HASH_SIZE);
+        println!("DEBUG: JournalExt_::append: hend = {:?}", hend);
+        println!("DEBUG: JournalExt_::append: b[hend ..] = {:?}", from_utf8(&b[hend .. ]).unwrap());
+        println!("DEBUG: JournalExt_::append: b[..] = {:?}", from_utf8(&b[..]).unwrap());
+      }
       assert!(b[hend .. ].starts_with(b", \"ehash\": \""));
       assert!(b.ends_with(b"\"}"));
       h.hash_bytes(&b[1 .. hend]);
@@ -509,7 +528,7 @@ impl JournalExt for DevelJournal_ {
       let mut s = s.as_mut_str();
       let mut b = s.as_bytes_mut();
       let hash = Base64Format::default().to_string(&h.finalize());
-      (&mut b[hend + 11 .. slen - 2]).copy_from_slice(hash.as_bytes());
+      (&mut b[hend + 12 .. slen - 2]).copy_from_slice(hash.as_bytes());
     }
     self.backend._append(s);
     eres

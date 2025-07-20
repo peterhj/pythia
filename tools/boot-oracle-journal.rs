@@ -24,7 +24,7 @@ fn main() {
   //let model = ApproxOracleModel::DeepSeek_R1_20250120;
   let model = ApproxOracleModel::DeepSeek_V3_Chat_20250324;
   //let req = ApproxOracleRequest{key: 0, query: "Hi!".into()};
-  let req = ApproxOracleRequest{key: 0, query: "I'm interested in learning about the Test Anything Protocol (TAP).".into(), model};
+  let req = ApproxOracleRequest{key: None, query: vec!["I'm interested in learning about the Test Anything Protocol (TAP).".into()], model};
   oraclei.put(req);
   let item = oraclei.poll().unwrap();
   println!("DEBUG: item = {:?}", item);

@@ -578,9 +578,15 @@ class ApproxOracleGetItem:
     ctr: int = 0
 
 @dataclass
+class ApproxOracleQueryTurn:
+    role: str = None
+    content: str = None
+
+@dataclass
 class ApproxOracleItem:
     key: str = None
-    query: str = None
+    # query: str = None
+    query: list[ApproxOracleQueryTurn] = None
     tag: str = None
     model: str = None
     ctr: int = 0
@@ -640,15 +646,9 @@ def _query(work_item, key: Any = None):
     #print(f"DEBUG: _query: pre work item  = {work_item}")
     endpoint = ApproxOracleEndpoint.from_model(work_item.item.model)
     #print(f"DEBUG: _query: endpoint.model = {endpoint.model}")
-    messages = [
-        {
-            "role": "user",
-            "content": work_item.item.query,
-        }
-    ]
     work_item.res = _ApproxOracleResponseItem()
     endpoint.query(
-        messages=messages,
+        messages=work_item.item.query,
         res=work_item.res,
         key=key,
     )
@@ -759,7 +759,19 @@ class ApproxOracleInterface:
             )
             print(f"DEBUG: ApproxOracleInterface.poll: item = {item}")
             return item
-        return work_item._finalize()
+        print(f"DEBUG: ApproxOracleInterface.poll: work item   = {work_item}")
+        result_item = work_item._finalize()
+        prev_query = result_item.query
+        query = []
+        for t in prev_query:
+            if isinstance(t, dict):
+                turn = ApproxOracleQueryTurn(**t)
+            else:
+                turn = t
+            query.append(turn)
+        result_item.query = query
+        print(f"DEBUG: ApproxOracleInterface.poll: result item = {result_item}")
+        return result_item
 
     def poll_test(self, timeout=None) -> ApproxOracleTestItem:
         return ApproxOracleTestItem(

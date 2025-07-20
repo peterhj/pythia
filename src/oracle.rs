@@ -100,10 +100,26 @@ impl FromStr for ApproxOracleModel {
   }
 }
 
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, FromPyObject, IntoPyObject, Debug)]
+pub struct ApproxOracleQueryTurn {
+  pub role: SafeStr,
+  pub content: SafeStr,
+}
+
+impl<'s> From<&'s str> for ApproxOracleQueryTurn {
+  fn from(s: &'s str) -> ApproxOracleQueryTurn {
+    ApproxOracleQueryTurn{
+      role: "user".into(),
+      content: s.into(),
+    }
+  }
+}
+
 #[derive(Clone, Serialize, Deserialize, Default, Debug)]
 pub struct ApproxOracleRequest {
-  pub key: i64,
-  pub query: SafeStr,
+  pub key: Option<i64>,
+  //pub query: SafeStr,
+  pub query: Vec<ApproxOracleQueryTurn>,
   pub model: ApproxOracleModel,
 }
 
@@ -120,8 +136,9 @@ impl ApproxOracleRequest {
 
 #[derive(Clone, Serialize, Deserialize, IntoPyObject, Debug)]
 pub struct ApproxOracleRequestIntoPy {
-  pub key: i64,
-  pub query: SafeStr,
+  pub key: Option<i64>,
+  //pub query: SafeStr,
+  pub query: Vec<ApproxOracleQueryTurn>,
   pub model: SafeStr,
 }
 
@@ -158,7 +175,8 @@ pub struct ApproxOracleItem<K=Option<SafeStr>> {
   // TODO: optional key incompat w/ kqmap (below).
   pub key: K,
   //pub key: Option<K>,
-  pub query: SafeStr,
+  //pub query: SafeStr,
+  pub query: Vec<ApproxOracleQueryTurn>,
   pub tag: Option<SafeStr>,
   pub ctr: i64,
   pub model: ApproxOracleModel,
@@ -201,7 +219,8 @@ impl ApproxOracleItem {
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, FromPyObject, Debug)]
 pub struct ApproxOracleKeyItem {
   pub key: Option<SafeStr>,
-  pub query: SafeStr,
+  //pub query: SafeStr,
+  pub query: Vec<ApproxOracleQueryTurn>,
   // NB: tag should _not_ be part of key.
   /*pub tag: Option<SafeStr>,*/
   pub ctr: i64,
@@ -321,7 +340,7 @@ impl ApproxOracleInterface {
   }
 }
 
-pub struct ApproxOracleIndex {
+/*pub struct ApproxOracleIndex {
   iface: ApproxOracleInterface,
   // FIXME: probably want a better data structure.
   kqmap: BTreeMap<(Option<SafeStr>, SafeStr), (i64, ApproxOracleItem)>,
@@ -362,4 +381,4 @@ impl ApproxOracleIndex {
       }
     }
   }
-}
+}*/
