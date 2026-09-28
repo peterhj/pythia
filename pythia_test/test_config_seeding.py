@@ -31,7 +31,7 @@ from pythia.interaction.messages import MessagesEndpoint, MessagesModel, Message
 from pythia.interaction.responses import CodexResponsesModel, StreamingResponsesEndpoint
 
 
-def arguments(api="codex", model="gpt-6-astra", **overrides):
+def arguments(api="codex", model="codex-gpt-6-astra", **overrides):
     args = cli._build_parser().parse_args([])
     args.model_api, args.model = api, model
     for key, value in overrides.items():
@@ -83,7 +83,7 @@ class CaptureHost:
 class ConfigSeedingTests(unittest.TestCase):
     def test_catalog_seeds_current_and_initial_without_constructing_a_model(self):
         for api, model, budget in (
-            ("codex", "gpt-6-astra", None),
+            ("codex", "codex-gpt-6-astra", None),
             ("messages", "claude-fable-5.1", 128_000),
             ("messages", "claude-fable-5-1-max", 128_000),
         ):
@@ -101,7 +101,7 @@ class ConfigSeedingTests(unittest.TestCase):
 
     def test_unknown_or_wrong_profile_never_inherits_codex_limits(self):
         for api, model in (
-            ("chat-completions", "gpt-6-astra"), ("responses", "gpt-6-astra"),
+            ("chat-completions", "codex-gpt-6-astra"), ("responses", "codex-gpt-6-astra"),
             ("codex", "unknown"), ("codex", "muse-spark-1.3"),
         ):
             with self.subTest(api=api, model=model):
@@ -112,7 +112,7 @@ class ConfigSeedingTests(unittest.TestCase):
 
     def test_python_generic_responses_binding_does_not_inherit_codex_limits(self):
         model = codex_model(responses_endpoint(
-            api_url="https://api.openai.com/v1", model="gpt-6-astra", bearer_token="FAKE",
+            api_url="https://api.openai.com/v1", model="codex-gpt-6-astra", bearer_token="FAKE",
         ))
         config = InteractionConfig.from_model(model)
         self.assertEqual(config.snapshot(), InteractionConfigSnapshot())
@@ -241,7 +241,7 @@ class ResolvedRequestTests(unittest.TestCase):
         self.assertEqual(payload["context_management"]["edits"], [{"type": "compact_20260112"}])
 
     def test_default_responses_does_not_turn_output_ceiling_into_budget(self):
-        model = codex_model(model="gpt-6-astra", auth=CodexAuth("FAKE"))
+        model = codex_model(model="codex-gpt-6-astra", auth=CodexAuth("FAKE"))
         config = InteractionConfig.from_namespace(arguments())
         payload, _ = model._build_request_payload(previous_context(), (), config.snapshot().sampling_params())
         for key in ("max_output_tokens", "auto_compact_tokens", "max_context_tokens", "enable_auto_compaction"):
@@ -349,7 +349,7 @@ class AutoSeedingTests(unittest.TestCase):
             path = Path(directory) / "input.json"
             path.write_text(json.dumps({
                 "version": 1,
-                "defaults": {"model_api": "codex", "model": "gpt-6-astra", "auto_compact_tokens": 600_000},
+                "defaults": {"model_api": "codex", "model": "codex-gpt-6-astra", "auto_compact_tokens": 600_000},
                 "contexts": {
                     "2": {"model_api": "messages", "model": "claude-fable-5.1",
                           "auto_compact_tokens": None, "max_context_tokens": None},
@@ -377,7 +377,7 @@ class AutoSeedingTests(unittest.TestCase):
     def test_saved_config_rejects_missing_current_keys(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "saved.json"
-            raw = resolve_config(overrides={"model_api": "codex", "model": "gpt-6-astra"})
+            raw = resolve_config(overrides={"model_api": "codex", "model": "codex-gpt-6-astra"})
             for settings in raw.values():
                 del settings["auto_compact_tokens"], settings["max_context_tokens"]
             document = {"version": 1, "contexts": {str(i): s for i, s in raw.items()}}

@@ -48,27 +48,34 @@ class LoginServiceTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.path = Path(temporary.name) / "auth.json"
 
-    def _callback(self, query, *, state=None, error=None):
+    def _callback(self, query, *, state=None, params=None, host=None):
+        """Send one browser-style callback to the advertised address; return (status, body)."""
         redirect = urlsplit(query["redirect_uri"][0])
-        params = {"state": query["state"][0] if state is None else state}
-        params.update({"error": error} if error else {"code": "FAKE_CODE_SECRET"})
-        connection = HTTPConnection("127.0.0.1", redirect.port, timeout=2)
+        pairs = [("state", query["state"][0] if state is None else state)]
+        if params is None:
+            params = {"code": "FAKE_CODE_SECRET"}
+        pairs.extend(params.items() if isinstance(params, dict) else params)
+        connection = HTTPConnection(redirect.hostname, redirect.port, timeout=2)
         try:
-            connection.request("GET", redirect.path + "?" + urlencode(params))
+            connection.request("GET", redirect.path + "?" + urlencode(pairs),
+                               headers={} if host is None else {"Host": host})
             response = connection.getresponse()
-            body = response.read()
-            self.assertNotIn(b"FAKE_CODE_SECRET", body)
-            return response.status
+            body = response.read().decode()
+            # Browser text is application-authored: no code, token, or provider value.
+            self.assertNotIn("SECRET", body)
+            return response.status, body
         finally:
             connection.close()
 
-    def _run(self, *, complete=True, denial=False, cancel_exchange=False, tokens=None,
-             expected_account=None, fail_save=False, timeout_seconds=2,
-             request_timeout_seconds=None):
+    def _run(self, *, complete=True, callback_params=None, callback_status=200,
+             cancel_exchange=False, tokens=None, expected_account=None, fail_save=False,
+             timeout_seconds=2, request_timeout_seconds=None):
         notices = queue.Queue()
         cancel = threading.Event()
         exchange_entered, exchange_release = threading.Event(), threading.Event()
-        request_values = []
+        # Recorded on self so failure cases can inspect them after login raises.
+        self.exchange_requests = request_values = []
+        self.callback_response = None
         responses = []
 
         def opener(request, *, timeout):
@@ -102,16 +109,20 @@ class LoginServiceTests(unittest.TestCase):
             try:
                 notice = notices.get(timeout=2)
                 query = parse_qs(urlsplit(notice.splitlines()[-1]).query)
+                redirect_port = urlsplit(query["redirect_uri"][0]).port
+                self.assertEqual(query["redirect_uri"],
+                                 [f"http://127.0.0.1:{redirect_port}/auth/callback"])
                 self.assertEqual(query["code_challenge_method"], ["S256"])
                 self.assertEqual(query["response_type"], ["code"])
                 if complete:
-                    self.assertEqual(self._callback(query, state="wrong"), 400)
+                    self.assertEqual(self._callback(query, state="wrong")[0], 400)
                     if fail_save:
                         patch = mock.patch.object(codex_login.os, "replace", side_effect=OSError("FAKE_ACCESS_SECRET"))
                     else:
                         patch = mock.patch.object(codex_login.os, "replace", wraps=os.replace)
                     with patch:
-                        self.assertEqual(self._callback(query, error="denied-secret" if denial else None), 200)
+                        self.callback_response = self._callback(query, params=callback_params)
+                        self.assertEqual(self.callback_response[0], callback_status)
                         if cancel_exchange:
                             self.assertTrue(exchange_entered.wait(2))
                             cancel.set()
@@ -209,7 +220,7 @@ class LoginServiceTests(unittest.TestCase):
 
     def test_denial_cancel_timeout_account_mismatch_and_save_failure_preserve_old_file(self):
         cases = (
-            ({"denial": True}, "declined"),
+            ({"callback_params": {"error": "access_denied"}}, "declined"),
             ({"complete": False}, "cancelled"),
             ({"complete": False, "timeout_seconds": 0.3}, "timed out"),
             ({"cancel_exchange": True}, "cancelled"),
@@ -240,6 +251,102 @@ class LoginServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(AccountServiceError, "cancelled"):
             codex_login.login(self.path, notify=notify, cancel=cancel)
         self.assertFalse(self.path.exists())
+
+    def test_provider_errors_and_unusable_codes_end_login_without_reflection_or_exchange(self):
+        declined = "Sign-in was declined. Return to the terminal."
+        failed = "Sign-in failed. Return to the terminal for details."
+        cases = (
+            ({"error": "access_denied",
+              "error_description": "FAKE_DESCRIPTION_SECRET: missing_codex_entitlement"},
+             200, "Codex is not enabled for this workspace",
+             "Codex is not enabled for your workspace. Contact your workspace "
+             "administrator, then return to the terminal."),
+            ({"error": "access_denied", "error_description": "FAKE_DESCRIPTION_SECRET"},
+             200, "declined by the provider", declined),
+            ({"error": "server_error", "error_description": "FAKE_DESCRIPTION_SECRET"},
+             200, "OAuth error server_error", failed),
+            ({"error": "FAKE ERROR SECRET"}, 200, "unrecognized error", failed),
+            ({"error": "\x1b[2JFAKE_ERROR_SECRET"}, 200, "unrecognized error", failed),
+            ([("error", "access_denied"), ("error", "access_denied")],
+             200, "unrecognized error", failed),
+            ({"error_description": "FAKE_DESCRIPTION_SECRET"}, 400, "authorization code", failed),
+            ({"code": "FAKE CODE SECRET"}, 400, "authorization code", failed),
+        )
+        for params, status, message, page in cases:
+            with self.subTest(params=params):
+                original = '{"tokens":{"access_token":"old"}}'
+                self.path.write_text(original)
+                # The harness waits at most 3 s, so a 30 s budget proves the callback ends login.
+                with self.assertRaisesRegex(AccountServiceError, message) as error:
+                    self._run(callback_params=params, callback_status=status, timeout_seconds=30)
+                self.assertNotIn("SECRET", str(error.exception))
+                self.assertEqual(self.callback_response, (status, page))
+                self.assertEqual(self.exchange_requests, [])
+                self.assertEqual(self.path.read_text(), original)
+
+    def test_callback_host_must_match_the_advertised_loopback_address(self):
+        notices = queue.Queue()
+        cancel = threading.Event()
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(codex_login.login, self.path, notify=notices.put, cancel=cancel,
+                                 callback_port=0, timeout_seconds=30,
+                                 opener=lambda request, *, timeout: Response(_tokens()))
+            try:
+                query = parse_qs(urlsplit(notices.get(timeout=2).splitlines()[-1]).query)
+                port = urlsplit(query["redirect_uri"][0]).port
+                for host in (f"localhost:{port}", f"[::1]:{port}", "127.0.0.1",
+                             f"attacker.example:{port}"):
+                    with self.subTest(host=host):
+                        # A valid state under another Host must neither answer nor end the flow.
+                        self.assertEqual(self._callback(query, host=host),
+                                         (400, "Invalid login callback."))
+                self.assertFalse(future.done())
+                self.assertEqual(self._callback(query)[0], 200)
+                future.result(timeout=3)
+            finally:
+                cancel.set()
+        self.assertEqual(load_codex_auth(auth_file=self.path),
+                         CodexAuth("FAKE_ACCESS_SECRET", "account-one"))
+
+
+class CallbackFailureTests(unittest.TestCase):
+    state = "S" * 43
+    declined = ("Login was declined by the provider.",
+                "Sign-in was declined. Return to the terminal.")
+    unrecognized = ("Login failed: the provider returned an unrecognized error.",
+                    "Sign-in failed. Return to the terminal for details.")
+
+    def _failure(self, *pairs):
+        # Parse exactly as the callback handler does.
+        params = parse_qs(urlencode(pairs), max_num_fields=16)
+        return codex_login._callback_failure(params, self.state)
+
+    def test_entitlement_marker_is_recognized_only_for_access_denied(self):
+        terminal, page = self._failure(("error", "access_denied"),
+                                       ("error_description", "Account MISSING_CODEX_ENTITLEMENT"))
+        self.assertIn("Codex is not enabled for this workspace", terminal)
+        self.assertIn("Contact your workspace administrator", page)
+        self.assertNotIn("MISSING", terminal + page)
+        self.assertEqual(
+            self._failure(("error", "server_error"),
+                          ("error_description", "missing_codex_entitlement"))[0],
+            "Login failed: the provider returned OAuth error server_error.")
+        self.assertEqual(
+            self._failure(("error", "access_denied"),
+                          ("error_description", "missing_codex_entitlement"),
+                          ("error_description", "missing_codex_entitlement")),
+            self.declined)
+
+    def test_only_one_bounded_identifier_without_the_state_is_echoed(self):
+        self.assertEqual(self._failure(("error", "access_denied")), self.declined)
+        self.assertEqual(self._failure(("error", "a" * 64))[0],
+                         f"Login failed: the provider returned OAuth error {'a' * 64}.")
+        for value in ("a" * 65, "access denied", "server_error\n", "\x1b[31mserver_error",
+                      "caf\u00e9", self.state, f"echo_{self.state}"):
+            with self.subTest(value=value):
+                self.assertEqual(self._failure(("error", value)), self.unrecognized)
+        self.assertEqual(self._failure(("error", "access_denied"), ("error", "server_error")),
+                         self.unrecognized)
 
 
 class QuotaServiceTests(unittest.TestCase):

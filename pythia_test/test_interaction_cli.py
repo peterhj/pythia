@@ -188,7 +188,7 @@ for module in (cli, demo):
     def test_parser_matches_shared_demo_defaults_and_overrides(self):
         for argv in (
             [],
-            ["--endpoint-api", "codex", "--model", "gpt-6-astra", "--resume",
+            ["--endpoint-api", "codex", "--model", "codex-gpt-6-astra", "--resume",
              "--prompt", "/quit\nA literal query", "--instructions", "",
              "--max-samples", "3", "--max-output-tokens", "77", "--cwd", "work",
              "--save", "chosen.jsonl", "--enable-auto-compaction=False",

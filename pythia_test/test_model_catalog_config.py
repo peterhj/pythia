@@ -137,9 +137,9 @@ request_params.nested = {
         self.assertEqual(params["nested"]["inner"], (True, None, "value"))
 
     def test_granular_override_preserves_other_fields_and_builtin_object(self):
-        original = model_catalog.get_model_spec("codex", "gpt-6-astra")
+        original = model_catalog.get_model_spec("codex", "codex-gpt-6-astra")
         registry = catalog("""
-[model.gpt-6-astra]
+[model.codex-gpt-6-astra]
 override = true
 limits.auto_compact_context_tokens = 700000
 responses.text_verbosity = medium
@@ -152,8 +152,8 @@ responses.text_verbosity = medium
         self.assertEqual(changed.responses.reasoning_summary, original.responses.reasoning_summary)
         self.assertEqual(changed.limits.max_context_tokens, original.limits.max_context_tokens)
         self.assertEqual(original.limits.auto_compact_context_tokens, 872000)
-        self.assertIs(registry.get_model_spec("codex", "gpt-6-astra-max"),
-                      model_catalog.get_model_spec("codex", "gpt-6-astra-max"))
+        self.assertIs(registry.get_model_spec("codex", "codex-gpt-6-astra-max"),
+                      model_catalog.get_model_spec("codex", "codex-gpt-6-astra-max"))
 
     def test_override_request_values_are_atomic_and_map_can_be_cleared(self):
         base = catalog()
@@ -207,10 +207,10 @@ limits.auto_compact_context_tokens = null
             MESSAGE.replace("60000", "49999"),
             MESSAGE + 'request_params.system = "replacement instructions"\n',
             CODEX + 'request_params.reasoning = {"effort": "low"}\n',
-            '[model.gpt-6-astra]\noverride = true\nendpoint.api = null\n',
+            '[model.codex-gpt-6-astra]\noverride = true\nendpoint.api = null\n',
             '[model.missing]\noverride = true\n',
             '[model.claude-fable-5.1]\noverride = true\n',
-            LOCAL.replace("local-max", "gpt-6-astra").replace("chat-completions", "codex"),
+            LOCAL.replace("local-max", "codex-gpt-6-astra").replace("chat-completions", "codex"),
         )
         for text in bad:
             with self.subTest(text=text), self.assertRaises(ValueError):
@@ -255,13 +255,13 @@ limits.auto_compact_context_tokens = null
         self.assertEqual(dict(thinking), {"type": "enabled", "budget_tokens": 1024})
         self.assertEqual(registry.bind(name="code-env").request_params["service_tier"], "flex")
         self.assertEqual(registry.bind("responses", "generic").request_params["truncation"], "auto")
-        patched = catalog('''[model.gpt-6-astra]
+        patched = catalog('''[model.codex-gpt-6-astra]
 override = true
 endpoint.api = codex
 request_params.service_tier = "priority"
 ''')
-        self.assertEqual(patched.bind("codex", "gpt-6-astra").request_params["service_tier"], "priority")
-        self.assertFalse(BUILTIN_MODEL_CATALOG.bind("codex", "gpt-6-astra").request_params)
+        self.assertEqual(patched.bind("codex", "codex-gpt-6-astra").request_params["service_tier"], "priority")
+        self.assertFalse(BUILTIN_MODEL_CATALOG.bind("codex", "codex-gpt-6-astra").request_params)
 
     def test_request_params_protect_the_fields_each_api_adapter_owns(self):
         responses_owned = ("tool_choice", "store", "include", "reasoning", "text",
@@ -305,18 +305,18 @@ request_params.service_tier = "priority"
             binding.spec.request_params["reasoning_effort"] = "low"
 
     def test_explicit_api_isolation_and_bare_name_ambiguity(self):
-        registry = catalog(LOCAL.replace("local-max", "gpt-6-astra"))
+        registry = catalog(LOCAL.replace("local-max", "codex-gpt-6-astra"))
         with self.assertRaisesRegex(ValueError, "Ambiguous"):
-            registry.bind(name="gpt-6-astra")
-        self.assertEqual(registry.bind("codex", "gpt-6-astra").endpoint.model, "gpt-6-astra")
-        self.assertEqual(registry.bind("chat-completions", "gpt-6-astra").endpoint.model, "served-local")
-        isolated = registry.bind("messages", "gpt-6-astra")
+            registry.bind(name="codex-gpt-6-astra")
+        self.assertEqual(registry.bind("codex", "codex-gpt-6-astra").endpoint.model, "gpt-6-astra")
+        self.assertEqual(registry.bind("chat-completions", "codex-gpt-6-astra").endpoint.model, "served-local")
+        isolated = registry.bind("messages", "codex-gpt-6-astra")
         self.assertIsNone(isolated.spec)
         self.assertFalse(isolated.request_params)
         with self.assertRaises(ValueError):
-            catalog('[model.gpt-6-astra]\noverride = true\nsource = patch\n', base=registry)
-        patched = catalog('[model.gpt-6-astra]\noverride = true\nendpoint.api = codex\nsource = patch\n', base=registry)
-        self.assertEqual(patched.get_model_spec("codex", "gpt-6-astra").source, "patch")
+            catalog('[model.codex-gpt-6-astra]\noverride = true\nsource = patch\n', base=registry)
+        patched = catalog('[model.codex-gpt-6-astra]\noverride = true\nendpoint.api = codex\nsource = patch\n', base=registry)
+        self.assertEqual(patched.get_model_spec("codex", "codex-gpt-6-astra").source, "patch")
 
     def test_discovery_is_explicit_bounded_and_missing_default_is_optional(self):
         with tempfile.TemporaryDirectory() as directory, mock.patch.object(Path, "home", return_value=Path(directory)):
@@ -493,7 +493,7 @@ class BoundRequestTests(unittest.TestCase):
             prompt_caching=MessagesPromptCaching(),
         ))
         codex = CodexResponsesModel(endpoint=StreamingResponsesEndpoint(
-            binding=BUILTIN_MODEL_CATALOG.bind("codex", "gpt-6-astra-max", endpoint_auth="supplied"),
+            binding=BUILTIN_MODEL_CATALOG.bind("codex", "codex-gpt-6-astra-max", endpoint_auth="supplied"),
             bearer_token="token",
         ))
         codex_payload, _ = codex._build_request_payload(full, (tool,), SamplingParams(max_output_tokens=5))
@@ -581,7 +581,7 @@ class BoundRequestTests(unittest.TestCase):
 
     def test_api_inference_does_not_send_ambient_codex_login_to_a_proxy(self):
         args = cli._build_parser().parse_args([
-            "--model", "gpt-6-astra",
+            "--model", "codex-gpt-6-astra",
             "--endpoint-url", "http://localhost:8000/v1/chat/completions",
         ])
         with mock.patch.object(responses, "load_codex_auth", side_effect=AssertionError("credential read")):
@@ -592,17 +592,17 @@ class BoundRequestTests(unittest.TestCase):
 
 class AutoCatalogTests(unittest.TestCase):
     def test_context_api_can_disambiguate_a_common_model_without_repeating_it(self):
-        registry = catalog(LOCAL.replace("local-max", "gpt-6-astra"))
+        registry = catalog(LOCAL.replace("local-max", "codex-gpt-6-astra"))
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "contexts.json"
             path.write_text(json.dumps({"version": 1,
-                "defaults": {"model": "gpt-6-astra"},
+                "defaults": {"model": "codex-gpt-6-astra"},
                 "contexts": {"1": {"model_api": "codex"},
                              "2": {"model_api": "chat-completions"},
                              "-1": {"model_api": "codex"}},
             }))
             settings = resolve_config(path, catalog=registry)
-            self.assertEqual(settings[1]["model"], "gpt-6-astra")
+            self.assertEqual(settings[1]["model"], "codex-gpt-6-astra")
             self.assertEqual(namespace(settings[1], registry).model_binding.endpoint.model, "gpt-6-astra")
             self.assertEqual(namespace(settings[2], registry).model_binding.endpoint.model, "served-local")
 
@@ -655,7 +655,7 @@ class AutoCatalogTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "contexts.json"
             path.write_text(json.dumps({"version": 1, "contexts": {"2": {"model": "code-env"}}}))
-            settings = resolve_config(path, {"model_api": "codex", "model": "gpt-6-astra",
+            settings = resolve_config(path, {"model_api": "codex", "model": "codex-gpt-6-astra",
                                             "codex_home": directory}, catalog=registry)
             self.assertIsNone(settings[2]["codex_home"])
             self.assertEqual(settings[1]["codex_home"], directory)
@@ -833,7 +833,7 @@ class CatalogEntrypointTests(unittest.TestCase):
 class DebugModelBindingTests(unittest.TestCase):
     def test_snapshot_is_readable_and_omits_credential_paths(self):
         binding = catalog().bind(name="local-max")
-        codex = BUILTIN_MODEL_CATALOG.bind("codex", "gpt-6-astra")
+        codex = BUILTIN_MODEL_CATALOG.bind("codex", "codex-gpt-6-astra")
         codex = replace(
             codex,
             endpoint=replace(codex.endpoint, auth_file="/secret/auth.json"),

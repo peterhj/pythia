@@ -9,6 +9,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import tempfile
 import time
@@ -24,6 +25,10 @@ from .timeouts import DEFAULT_LOGIN_TIMEOUT_SECONDS, DEFAULT_REQUEST_TIMEOUT_SEC
 
 _ISSUER = "https://auth.openai.com"
 _CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
+# Bound, advertised in redirect_uri, and required as the callback Host (RFC 8252 section 8.3).
+_CALLBACK_HOST = "127.0.0.1"
+_OAUTH_ERROR_CODE = re.compile(r"[A-Za-z0-9_-]{1,64}")
+_CALLBACK_FAILED_TEXT = "Sign-in failed. Return to the terminal for details."
 
 
 def _token(payload, key):
@@ -51,6 +56,31 @@ def _account_id(id_token):
         return account
     except Exception:
         raise AccountServiceError("Login response did not identify a Codex account.") from None
+
+
+def _callback_failure(params, state):
+    """Return fixed (terminal, browser) text for a provider error callback.
+
+    Only a validated OAuth error identifier is echoed. The description is consulted
+    for the known entitlement marker but is never displayed or recorded.
+    """
+    errors = params.get("error", [])
+    descriptions = params.get("error_description", [])
+    code = errors[0] if len(errors) == 1 else None
+    if code is not None and (not _OAUTH_ERROR_CODE.fullmatch(code) or state in code):
+        code = None
+    description = descriptions[0] if len(descriptions) == 1 else ""
+    if code == "access_denied" and "missing_codex_entitlement" in description.lower():
+        return ("Codex is not enabled for this workspace. Ask your workspace administrator "
+                "for access, then run /login again.",
+                "Codex is not enabled for your workspace. Contact your workspace "
+                "administrator, then return to the terminal.")
+    if code == "access_denied":
+        return ("Login was declined by the provider.",
+                "Sign-in was declined. Return to the terminal.")
+    if code is not None:
+        return f"Login failed: the provider returned OAuth error {code}.", _CALLBACK_FAILED_TEXT
+    return "Login failed: the provider returned an unrecognized error.", _CALLBACK_FAILED_TEXT
 
 
 def _save_credentials(path: Path, tokens: dict) -> None:
@@ -102,33 +132,38 @@ def login(
     state, verifier = secrets.token_urlsafe(32), secrets.token_urlsafe(64)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
     code = None
-    denied = False
+    failure = None
 
     class Callback(BaseHTTPRequestHandler):
         def log_message(self, *args):
             pass
 
         def do_GET(self):
-            nonlocal code, denied
+            nonlocal code, failure
             status, message = 400, "Invalid login callback."
             try:
                 parsed = urlsplit(self.path)
                 params = parse_qs(parsed.query, max_num_fields=16)
-                host = self.headers.get("Host")
-                valid_host = host in {f"localhost:{server.server_port}", f"127.0.0.1:{server.server_port}"}
                 candidate = params.get("state", [])
-                if (len(self.path) <= 8192 and valid_host and parsed.path == "/auth/callback"
+                if (len(self.path) <= 8192 and self.headers.get("Host") == callback_host
+                        and parsed.path == "/auth/callback"
                         and len(candidate) == 1
                         and secrets.compare_digest(candidate[0].encode(), state.encode())):
                     values = params.get("code", [])
-                    if code is not None or denied:
+                    if code is not None or failure is not None:
                         status, message = 409, "Callback already received."
                     elif "error" in params:
-                        denied = True
-                        status, message = 200, "Sign-in was declined. Return to the terminal."
+                        failure, message = _callback_failure(params, state)
+                        status = 200
                     elif len(values) == 1 and values[0] and not any(c.isspace() for c in values[0]):
                         code = values[0]
                         status, message = 200, "Callback received. Check sign-in status in the terminal."
+                    else:
+                        # The provider answered this flow without a usable code; say so now
+                        # instead of reporting a timeout at the deadline.
+                        failure = ("Login failed: the provider callback did not include a usable "
+                                   "authorization code.")
+                        message = _CALLBACK_FAILED_TEXT
             except Exception:
                 pass
             try:
@@ -153,11 +188,12 @@ def login(
             pass
 
     try:
-        server = Server(("127.0.0.1", callback_port), Callback)
+        server = Server((_CALLBACK_HOST, callback_port), Callback)
     except OSError:
         raise AccountServiceError("Could not open the loopback login listener (port may be in use).") from None
     deadline = time.monotonic() + timeout_seconds
-    redirect_uri = f"http://localhost:{server.server_port}/auth/callback"
+    callback_host = f"{_CALLBACK_HOST}:{server.server_port}"
+    redirect_uri = f"http://{callback_host}/auth/callback"
     try:
         query = {
             "response_type": "code", "client_id": _CLIENT_ID, "redirect_uri": redirect_uri,
@@ -171,14 +207,14 @@ def login(
         notify(f"Open this URL to sign in (waiting up to {int(timeout_seconds)}s):\n"
                f"{_ISSUER}/oauth/authorize?{urlencode(query)}")
         server.timeout = 0.1
-        while code is None and not denied and not cancel.is_set() and time.monotonic() < deadline:
+        while code is None and failure is None and not cancel.is_set() and time.monotonic() < deadline:
             server.handle_request()
     finally:
         server.server_close()
     if cancel.is_set():
         raise AccountServiceError("Login cancelled.")
-    if denied:
-        raise AccountServiceError("Login was declined by the provider.")
+    if failure is not None:
+        raise AccountServiceError(failure)
     if code is None:
         raise AccountServiceError("Login timed out.")
     data = urlencode({"grant_type": "authorization_code", "client_id": _CLIENT_ID,

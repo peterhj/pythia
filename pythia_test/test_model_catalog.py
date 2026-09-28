@@ -42,12 +42,18 @@ from pythia.interaction.model_config import supports_account_services
 
 
 _CODEX_PRESETS = (
-    ("gpt-5.6-sol", "gpt-5.6-sol", {}, None, "chatgpt"),
-    ("gpt-5.6-sol-medium", "gpt-5.6-sol", {"effort": "medium"}, None, "chatgpt"),
-    ("gpt-5.6-sol-max", "gpt-5.6-sol", {"effort": "max"}, None, "chatgpt"),
-    ("gpt-6-astra", "gpt-6-astra", {"summary": "auto"}, "low", "chatgpt"),
-    ("gpt-6-astra-medium", "gpt-6-astra", {"effort": "medium", "summary": "auto"}, "low", "chatgpt"),
-    ("gpt-6-astra-max", "gpt-6-astra", {"effort": "max", "summary": "auto"}, "low", "chatgpt"),
+    ("codex-gpt-5.6-sol", "gpt-5.6-sol", {}, None, "chatgpt"),
+    ("codex-gpt-5.6-sol-medium", "gpt-5.6-sol", {"effort": "medium"}, None, "chatgpt"),
+    ("codex-gpt-5.6-sol-max", "gpt-5.6-sol", {"effort": "max"}, None, "chatgpt"),
+    ("codex-gpt-6-astra", "gpt-6-astra", {"summary": "auto"}, "low", "chatgpt"),
+    ("codex-gpt-6-astra-medium", "gpt-6-astra", {"effort": "medium", "summary": "auto"}, "low", "chatgpt"),
+    ("codex-gpt-6-astra-max", "gpt-6-astra", {"effort": "max", "summary": "auto"}, "low", "chatgpt"),
+    ("codex-gpt-6-sol", "gpt-6-sol", {"summary": "auto"}, "low", "chatgpt"),
+    ("codex-gpt-6-sol-medium", "gpt-6-sol", {"effort": "medium", "summary": "auto"}, "low", "chatgpt"),
+    ("codex-gpt-6-sol-max", "gpt-6-sol", {"effort": "max", "summary": "auto"}, "low", "chatgpt"),
+    ("codex-gpt-6-luna", "gpt-6-luna", {"summary": "auto"}, "low", "chatgpt"),
+    ("codex-gpt-6-luna-medium", "gpt-6-luna", {"effort": "medium", "summary": "auto"}, "low", "chatgpt"),
+    ("codex-gpt-6-luna-max", "gpt-6-luna", {"effort": "max", "summary": "auto"}, "low", "chatgpt"),
     ("muse-spark-1.3", "muse-spark-1.3-contributor", {}, None, "meta"),
     ("muse-spark-1.3-xhigh", "muse-spark-1.3-contributor", {"effort": "xhigh"}, None, "meta"),
 )
@@ -135,9 +141,9 @@ class ModelCatalogTests(unittest.TestCase):
             ),
         )
 
-        self.assertEqual(len(list_model_specs()), 10)
-        for base_name, preset_name in (("gpt-5.6-sol", "gpt-5.6-sol-medium"),
-                                       ("gpt-6-astra", "gpt-6-astra-max"),
+        self.assertEqual(len(list_model_specs()), 18)
+        for base_name, preset_name in (("codex-gpt-5.6-sol", "codex-gpt-5.6-sol-medium"),
+                                       ("codex-gpt-6-astra", "codex-gpt-6-astra-max"),
                                        ("muse-spark-1.3", "muse-spark-1.3-xhigh")):
             base = get_model_spec("codex", base_name)
             preset = get_model_spec("codex", preset_name)
@@ -146,7 +152,7 @@ class ModelCatalogTests(unittest.TestCase):
             self.assertIs(base.endpoint, preset.endpoint)
             self.assertNotEqual(base.responses, preset.responses)
         with self.assertRaises(ValueError):
-            get_model_spec("codex-responses", "gpt-6-astra")
+            get_model_spec("codex-responses", "codex-gpt-6-astra")
 
     def test_fable_max_uses_output_effort(self):
         context = InteractionContext((Message("user", "Hello."),))
@@ -184,12 +190,14 @@ class ModelCatalogTests(unittest.TestCase):
             for spec in list_model_specs():
                 for name in (spec.name, *spec.aliases):
                     self.assertIsNone(get_model_spec(profile, name))
-        for name in (None, "", "unknown", "GPT-6-ASTRA", "gpt-6-astra-low",
-                     "gpt-5.6-sol-high", "muse-spark-1.3-max"):
+        # Bare wire model IDs are not catalog selectors.
+        for name in (None, "", "unknown", "CODEX-GPT-6-ASTRA", "codex-gpt-6-astra-low",
+                     "codex-gpt-5.6-sol-high", "muse-spark-1.3-max",
+                     "gpt-5.6-sol", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna"):
             with self.subTest(name=name):
                 self.assertIsNone(get_model_spec("codex", name))
         for name in ("claude-fable-5.2", "claude-fable-5-1-20260901",
-                     "claude-fable-5-1-high", "gpt-6-astra"):
+                     "claude-fable-5-1-high", "codex-gpt-6-astra"):
             self.assertIsNone(get_model_spec("messages", name))
         self.assertIsNone(get_model_spec("codex", "claude-fable-5.1"))
 
@@ -253,7 +261,7 @@ class ModelCatalogTests(unittest.TestCase):
                 replace(spec, **fields)
         with self.assertRaises((TypeError, ValueError)):
             replace(
-                get_model_spec("codex", "gpt-6-astra"),
+                get_model_spec("codex", "codex-gpt-6-astra"),
                 messages=MessagesDefaults(
                     output_effort="max",
                 ),
@@ -278,12 +286,12 @@ class ModelCatalogTests(unittest.TestCase):
                            "urllib.request.urlopen"):
                 stack.enter_context(mock.patch(target, side_effect=AssertionError("unexpected effect")))
             module_spec.loader.exec_module(module)
-            self.assertEqual(len(module.list_model_specs()), 10)
+            self.assertEqual(len(module.list_model_specs()), 18)
             self.assertEqual(
                 module.get_model_spec("codex", "muse-spark-1.3").endpoint.auth,
                 "env:META_API_KEY",
             )
-            self.assertIsNone(module.get_model_spec("responses", "gpt-6-astra"))
+            self.assertIsNone(module.get_model_spec("responses", "codex-gpt-6-astra"))
 
     def test_cli_and_demo_help_list_catalog_presets_and_aliases(self):
         for frontend in (cli, demo):
@@ -293,7 +301,7 @@ class ModelCatalogTests(unittest.TestCase):
                 for name in (spec.name, *spec.aliases):
                     self.assertIn(name, model_help)
             self.assertIn("META_API_KEY", model_help)
-            self.assertNotIn("gpt-6-astra-low", model_help)
+            self.assertNotIn("codex-gpt-6-astra-low", model_help)
             self.assertNotIn("muse-spark-1.3-max", model_help)
             self.assertEqual(parser.parse_args(["--model", "future-model"]).model, "future-model")
 
@@ -355,25 +363,25 @@ class CatalogAuthParityTests(unittest.TestCase):
     def test_account_services_require_actual_trusted_route_not_just_model_identity(self):
         parser = cli._build_parser()
         official = parser.parse_args([
-            "--endpoint-api", "codex", "--model", "gpt-6-astra",
+            "--endpoint-api", "codex", "--model", "codex-gpt-6-astra",
         ])
         self.assertTrue(supports_account_services(official))
 
         custom = parser.parse_args([
-            "--endpoint-api", "codex", "--model", "gpt-6-astra",
+            "--endpoint-api", "codex", "--model", "codex-gpt-6-astra",
             "--endpoint-url", "https://proxy.example.test/responses",
             "--endpoint-auth", "none",
         ])
         self.assertFalse(supports_account_services(custom))
 
         wrong_auth = parser.parse_args([
-            "--endpoint-api", "codex", "--model", "gpt-6-astra",
+            "--endpoint-api", "codex", "--model", "codex-gpt-6-astra",
             "--endpoint-auth", "env:OTHER_TOKEN",
         ])
         self.assertFalse(supports_account_services(wrong_auth))
 
         messages_args = parser.parse_args([
-            "--endpoint-api", "messages", "--model", "gpt-6-astra",
+            "--endpoint-api", "messages", "--model", "codex-gpt-6-astra",
         ])
         self.assertFalse(supports_account_services(messages_args))
 

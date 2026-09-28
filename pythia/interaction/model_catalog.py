@@ -328,7 +328,7 @@ _CODEX_LIMITS = ModelLimits(
     max_output_tokens=128_000,
 )
 _SOL = ModelSpec(
-    name="gpt-5.6-sol", endpoint=replace(_CHATGPT, model="gpt-5.6-sol"),
+    name="codex-gpt-5.6-sol", endpoint=replace(_CHATGPT, model="gpt-5.6-sol"),
     limits=_CODEX_LIMITS, responses=ResponsesDefaults(),
     source=(
         "codex-latest-20260904/codex-rs/models-manager/models.json; "
@@ -336,10 +336,24 @@ _SOL = ModelSpec(
     ),
 )
 _ASTRA = replace(
-    _SOL, name="gpt-6-astra",
+    _SOL, name="codex-gpt-6-astra",
     endpoint=replace(_SOL.endpoint, model="gpt-6-astra"),
     # Pythia deliberately requests summaries; the bundled catalog default is none.
     responses=ResponsesDefaults(reasoning_summary="auto", text_verbosity="low"),
+)
+# GPT-6 siblings match Astra's catalog capacities and summary/verbosity support,
+# so they share its limits and request policy.
+_GPT6_SOL = replace(
+    _ASTRA, name="codex-gpt-6-sol",
+    endpoint=replace(_ASTRA.endpoint, model="gpt-6-sol"),
+    source=(
+        "codex-latest-20260927/codex-rs/models-manager/models.json; "
+        "Pythia auto-compaction/max-context policy override"
+    ),
+)
+_GPT6_LUNA = replace(
+    _GPT6_SOL, name="codex-gpt-6-luna",
+    endpoint=replace(_GPT6_SOL.endpoint, model="gpt-6-luna"),
 )
 _SPARK = ModelSpec(
     name="muse-spark-1.3",
@@ -401,11 +415,17 @@ def _with_messages_effort(
 
 _MODEL_SPECS = (
     _SOL,
-    _with_effort(_SOL, "gpt-5.6-sol-medium", "medium"),
-    _with_effort(_SOL, "gpt-5.6-sol-max", "max"),
+    _with_effort(_SOL, "codex-gpt-5.6-sol-medium", "medium"),
+    _with_effort(_SOL, "codex-gpt-5.6-sol-max", "max"),
     _ASTRA,
-    _with_effort(_ASTRA, "gpt-6-astra-medium", "medium"),
-    _with_effort(_ASTRA, "gpt-6-astra-max", "max"),
+    _with_effort(_ASTRA, "codex-gpt-6-astra-medium", "medium"),
+    _with_effort(_ASTRA, "codex-gpt-6-astra-max", "max"),
+    _GPT6_SOL,
+    _with_effort(_GPT6_SOL, "codex-gpt-6-sol-medium", "medium"),
+    _with_effort(_GPT6_SOL, "codex-gpt-6-sol-max", "max"),
+    _GPT6_LUNA,
+    _with_effort(_GPT6_LUNA, "codex-gpt-6-luna-medium", "medium"),
+    _with_effort(_GPT6_LUNA, "codex-gpt-6-luna-max", "max"),
     _SPARK,
     _with_effort(_SPARK, "muse-spark-1.3-xhigh", "xhigh"),
     _FABLE,

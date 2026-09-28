@@ -135,13 +135,13 @@ class DemoArgumentBaselineTests(unittest.TestCase):
         args = demo._build_parser().parse_args([
             "--experimental-user-message-injection",
             "--endpoint-api", "codex",
-            "--model", "gpt-5.6-sol-medium",
+            "--model", "codex-gpt-5.6-sol-medium",
         ])
         self.assertEqual(vars(args), {
             **DEMO_ARGUMENT_DEFAULTS,
             "experimental_user_message_injection": True,
             "model_api": "codex",
-            "model": "gpt-5.6-sol-medium",
+            "model": "codex-gpt-5.6-sol-medium",
         })
 
     def test_explicit_arguments_preserve_empty_instructions_and_query_text(self):
@@ -149,7 +149,7 @@ class DemoArgumentBaselineTests(unittest.TestCase):
         args = demo._build_parser().parse_args(
             [
                 "--endpoint-api", "codex",
-                "--model", "gpt-6-astra",
+                "--model", "codex-gpt-6-astra",
                 "--endpoint-url", "https://proxy.example.test/codex/responses",
                 "--endpoint-auth", "codex-login",
                 "--endpoint-auth-file", "auth.json",
@@ -168,7 +168,7 @@ class DemoArgumentBaselineTests(unittest.TestCase):
             {
                 **DEMO_ARGUMENT_DEFAULTS,
                 "model_api": "codex",
-                "model": "gpt-6-astra",
+                "model": "codex-gpt-6-astra",
                 "endpoint_url": "https://proxy.example.test/codex/responses",
                 "endpoint_auth": "codex-login",
                 "codex_auth_file": "auth.json",

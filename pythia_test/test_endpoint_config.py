@@ -58,7 +58,7 @@ class EndpointSpecTests(unittest.TestCase):
                 replace(endpoint, **changes)
 
     def test_model_definition_has_one_endpoint(self):
-        original = BUILTIN_MODEL_CATALOG.get_model_spec("codex", "gpt-6-astra")
+        original = BUILTIN_MODEL_CATALOG.get_model_spec("codex", "codex-gpt-6-astra")
         changed = replace(
             original,
             endpoint=replace(original.endpoint, model="renamed"),
@@ -157,7 +157,7 @@ class EndpointRuntimeTests(unittest.TestCase):
 
     def test_prepared_raw_mutations_cannot_override_actual_url_model_or_login_file(self):
         with tempfile.TemporaryDirectory() as directory:
-            args = prepared("--model", "gpt-6-astra", "--endpoint-auth-home", directory)
+            args = prepared("--model", "codex-gpt-6-astra", "--endpoint-auth-home", directory)
             endpoint = args.model_binding.endpoint
             args.endpoint_url = "https://another.example.test/infer"
             args.endpoint_model = "other-wire"
@@ -177,7 +177,7 @@ class EndpointRuntimeTests(unittest.TestCase):
                 binding=binding,
                 api_url="http://different.example.test",
             )
-        binding = BUILTIN_MODEL_CATALOG.bind("codex", "gpt-6-astra")
+        binding = BUILTIN_MODEL_CATALOG.bind("codex", "codex-gpt-6-astra")
         with self.assertRaises(TypeError):
             responses.CodexResponsesModel(
                 binding=binding,

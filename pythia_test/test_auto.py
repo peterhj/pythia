@@ -1484,12 +1484,12 @@ class EntryPointTests(unittest.TestCase):
                 settings = root / "auto.json"
                 settings.write_text(json.dumps({
                     "version": 1,
-                    "defaults": {"model_api": "codex", "model": "gpt-6-astra-max",
+                    "defaults": {"model_api": "codex", "model": "codex-gpt-6-astra-max",
                                  "endpoint_url": f"http://127.0.0.1:{gateway.server_port}/responses",
                                  "endpoint_auth": "codex-login",
                                  "codex_auth_file": str(auth), "request_timeout_seconds": 3,
                                  "cwd": tmp},
-                    "contexts": {"2": {"model": "gpt-5.6-sol-max"}},
+                    "contexts": {"2": {"model": "codex-gpt-5.6-sol-max"}},
                 }))
                 result = subprocess.run([
                     sys.executable, "-m", "pythia.interaction.auto", "--context-config", str(settings),

@@ -370,14 +370,20 @@ class CodexResponsesConstructionTests(unittest.TestCase):
 
     def test_context_token_metadata_respects_model_and_provider_routes(self):
         cases = (
-            ("gpt-5.6-sol", (872_000, 1_000_000, 128_000)),
-            ("gpt-5.6-sol-medium", (872_000, 1_000_000, 128_000)),
-            ("gpt-5.6-sol-max", (872_000, 1_000_000, 128_000)),
-            ("gpt-6-astra", (872_000, 1_000_000, 128_000)),
-            ("gpt-6-astra-medium", (872_000, 1_000_000, 128_000)),
-            ("gpt-6-astra-max", (872_000, 1_000_000, 128_000)),
+            ("codex-gpt-5.6-sol", (872_000, 1_000_000, 128_000)),
+            ("codex-gpt-5.6-sol-medium", (872_000, 1_000_000, 128_000)),
+            ("codex-gpt-5.6-sol-max", (872_000, 1_000_000, 128_000)),
+            ("codex-gpt-6-astra", (872_000, 1_000_000, 128_000)),
+            ("codex-gpt-6-astra-medium", (872_000, 1_000_000, 128_000)),
+            ("codex-gpt-6-astra-max", (872_000, 1_000_000, 128_000)),
+            ("codex-gpt-6-sol", (872_000, 1_000_000, 128_000)),
+            ("codex-gpt-6-sol-medium", (872_000, 1_000_000, 128_000)),
+            ("codex-gpt-6-sol-max", (872_000, 1_000_000, 128_000)),
+            ("codex-gpt-6-luna", (872_000, 1_000_000, 128_000)),
+            ("codex-gpt-6-luna-medium", (872_000, 1_000_000, 128_000)),
+            ("codex-gpt-6-luna-max", (872_000, 1_000_000, 128_000)),
             ("muse-spark-1.3", (None, None, None)),
-            ("gpt-5.6-sol-high", (None, None, None)),
+            ("codex-gpt-5.6-sol-high", (None, None, None)),
             ("unknown-model", (None, None, None)),
         )
         for api_provider in ("codex", "api"):
@@ -499,7 +505,7 @@ class CodexResponsesModelTests(unittest.TestCase):
                 opener = _ScriptedOpener(_FakeSSEResponse(_message_event(0, "OK"), _completed_event()))
                 model = codex_model(responses_endpoint(
                     api_url=CODEX_RESPONSES_API_URL,
-                    model="gpt-6-astra-max", bearer_token="test-token", api_provider=provider,
+                    model="codex-gpt-6-astra-max", bearer_token="test-token", api_provider=provider,
                 ), opener=opener)
                 self.assertEqual(model.sample(context).last_assistant_text, "OK")
                 encoded = _request_payload(opener)["input"]
@@ -510,7 +516,7 @@ class CodexResponsesModelTests(unittest.TestCase):
 
     def test_codex_instruction_absence_and_empty_text_remain_distinct(self):
         model = codex_model(responses_endpoint(
-            api_url=CODEX_RESPONSES_API_URL, model="gpt-6-astra-max",
+            api_url=CODEX_RESPONSES_API_URL, model="codex-gpt-6-astra-max",
             bearer_token="test-token", api_provider="codex",
         ))
         for text in (None, "", " \t "):
@@ -1012,10 +1018,10 @@ class CodexResponsesModelTests(unittest.TestCase):
 
     def test_codex_reasoning_model_aliases_set_base_model_and_effort(self):
         cases = (
-            ("gpt-5.6-sol-medium", "gpt-5.6-sol", "medium"),
-            ("gpt-5.6-sol-max", "gpt-5.6-sol", "max"),
-            ("gpt-5.6-sol", "gpt-5.6-sol", None),
-            ("gpt-5.6-sol-high", "gpt-5.6-sol-high", None),
+            ("codex-gpt-5.6-sol-medium", "gpt-5.6-sol", "medium"),
+            ("codex-gpt-5.6-sol-max", "gpt-5.6-sol", "max"),
+            ("codex-gpt-5.6-sol", "gpt-5.6-sol", None),
+            ("codex-gpt-5.6-sol-high", "codex-gpt-5.6-sol-high", None),
         )
         for requested_model, expected_model, expected_effort in cases:
             with self.subTest(model=requested_model):
@@ -1053,9 +1059,9 @@ class CodexResponsesModelTests(unittest.TestCase):
 
     def test_astra_models_set_reasoning_and_low_verbosity(self):
         cases = (
-            ("gpt-6-astra", {"summary": "auto"}),
-            ("gpt-6-astra-medium", {"effort": "medium", "summary": "auto"}),
-            ("gpt-6-astra-max", {"effort": "max", "summary": "auto"}),
+            ("codex-gpt-6-astra", {"summary": "auto"}),
+            ("codex-gpt-6-astra-medium", {"effort": "medium", "summary": "auto"}),
+            ("codex-gpt-6-astra-max", {"effort": "max", "summary": "auto"}),
         )
         for requested_model, expected_reasoning in cases:
             with self.subTest(model=requested_model):
@@ -1089,10 +1095,10 @@ class CodexResponsesModelTests(unittest.TestCase):
 
     def test_reasoning_model_aliases_are_not_applied_to_generic_responses(self):
         for requested_model in (
-            "gpt-5.6-sol-max",
-            "gpt-6-astra",
-            "gpt-6-astra-medium",
-            "gpt-6-astra-max",
+            "codex-gpt-5.6-sol-max",
+            "codex-gpt-6-astra",
+            "codex-gpt-6-astra-medium",
+            "codex-gpt-6-astra-max",
         ):
             with self.subTest(model=requested_model):
                 opener = _ScriptedOpener(
@@ -1339,7 +1345,7 @@ class CodexResponsesModelTests(unittest.TestCase):
             ),
         )
         model = codex_model(
-            model="gpt-5.6-sol-medium",
+            model="codex-gpt-5.6-sol-medium",
             auth=CodexAuth(access_token="test-token"),
             opener=opener,
             # A second generated turn ID would exhaust the iterator.
@@ -2236,7 +2242,7 @@ class CodexResponsesModelTests(unittest.TestCase):
             with self.subTest(body=body):
                 opener = _ScriptedOpener(_http_error(400, body=json.dumps(body).encode()))
                 model = codex_model(responses_endpoint(
-                    api_url=CODEX_RESPONSES_API_URL, model="gpt-6-astra-max",
+                    api_url=CODEX_RESPONSES_API_URL, model="codex-gpt-6-astra-max",
                     bearer_token="test-token", api_provider="codex",
                 ), opener=opener)
                 with self.assertRaises(ModelTransportError) as raised:
@@ -2258,7 +2264,7 @@ class CodexResponsesModelTests(unittest.TestCase):
             with self.subTest(detail=detail):
                 opener = _ScriptedOpener(_http_error(400, body=json.dumps({"detail": detail}).encode()))
                 model = codex_model(responses_endpoint(
-                    api_url=CODEX_RESPONSES_API_URL, model="gpt-6-astra-max",
+                    api_url=CODEX_RESPONSES_API_URL, model="codex-gpt-6-astra-max",
                     bearer_token="test-token", api_provider="codex",
                 ), opener=opener)
                 with self.assertRaises(ModelTransportError) as raised:
