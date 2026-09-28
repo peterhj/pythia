@@ -335,13 +335,14 @@ class DemoStartupBaselineTests(unittest.TestCase):
             ),
         )
 
-    def test_encrypted_only_reasoning_is_visible_but_redacted_live_and_on_resume(
+    def _assert_reasoning_is_visible_but_redacted_live_and_on_resume(
         self,
+        reasoning,
+        secret,
     ):
-        ciphertext = "provider-ciphertext-must-not-be-displayed"
         sample = ModelSample(
             items=(
-                Reasoning(content="", encrypted_content=ciphertext),
+                reasoning,
                 Message(role="assistant", content="Done."),
             ),
         )
@@ -359,7 +360,7 @@ class DemoStartupBaselineTests(unittest.TestCase):
             display_text.count("[reasoning] ..."),
             1,
         )
-        self.assertNotIn(ciphertext, "\n".join(display_text))
+        self.assertNotIn(secret, "\n".join(display_text))
 
         status, replay_model, replayed = self._run_demo(
             ["--resume"],
@@ -375,7 +376,23 @@ class DemoStartupBaselineTests(unittest.TestCase):
             replayed_text.count("[reasoning] ..."),
             1,
         )
-        self.assertNotIn(ciphertext, "\n".join(replayed_text))
+        self.assertNotIn(secret, "\n".join(replayed_text))
+
+    def test_encrypted_only_reasoning_is_visible_but_redacted_live_and_on_resume(
+        self,
+    ):
+        ciphertext = "provider-ciphertext-must-not-be-displayed"
+        self._assert_reasoning_is_visible_but_redacted_live_and_on_resume(
+            Reasoning(content="", encrypted_content=ciphertext), ciphertext,
+        )
+
+    def test_signed_thinking_without_text_is_visible_but_redacted_live_and_on_resume(
+        self,
+    ):
+        signature = "thinking-signature-must-not-be-displayed"
+        self._assert_reasoning_is_visible_but_redacted_live_and_on_resume(
+            Reasoning(content="", content_signature=signature), signature,
+        )
 
     def test_fresh_start_replaces_launch_session_not_workspace_session(self):
         save_interaction_save(

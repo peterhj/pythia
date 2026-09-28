@@ -168,6 +168,32 @@ class InteractionItemRendererTests(unittest.TestCase):
             "model failure", "sample", "compaction", "context prefix",
         ))
 
+    def test_signed_thinking_without_text_renders_redacted_placeholder(self):
+        # Messages counterpart of encrypted-only Responses reasoning: the
+        # signature is replay data, so only the placeholder may be shown.
+        signature = "thinking-signature-must-not-be-displayed"
+        rendered = render_interaction_items(
+            (
+                Reasoning(content="", content_signature=signature),
+                Reasoning(content=" \n ", content_signature=signature),
+                Reasoning(content="visible thought", content_signature=signature),
+            )
+        )
+
+        self.assertEqual(
+            tuple(item.text for item in rendered),
+            (
+                "[reasoning] ...",
+                "[reasoning] ...",
+                "[reasoning] visible thought",
+            ),
+        )
+        self.assertEqual(
+            tuple(item.label for item in rendered),
+            ("reasoning",) * 3,
+        )
+        self.assertNotIn(signature, "\n".join(str(item) for item in rendered))
+
     def test_message_label_retains_the_full_role(self):
         rendered = render_interaction_items((Message("  custom] role  ", "body"),))
         self.assertEqual(rendered[0].label, "custom] role")

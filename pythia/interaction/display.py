@@ -523,11 +523,13 @@ def _render_reasoning(item: Reasoning) -> Tuple[str, ...]:
     fallback = item.content.strip()
     if fallback:
         return (f"[reasoning] {fallback}",)
-    # Responses providers can return a valid reasoning item containing only
-    # ``encrypted_content``.  The ciphertext is needed for provider replay but
-    # is not human-readable and must not be printed.  Still render a redacted
+    # Providers can return a valid reasoning item whose only payload is opaque:
+    # a Responses item containing only ``encrypted_content``, or a Messages
+    # thinking block with empty ``thinking`` text and only a ``signature``
+    # (``content_signature``).  That data is needed for provider replay but is
+    # not human-readable and must not be printed.  Still render a redacted
     # marker so the transcript does not silently lose the item's position.
-    if item.encrypted_content is not None:
+    if item.encrypted_content is not None or item.content_signature is not None:
         return ("[reasoning] ...",)
     return ()
 

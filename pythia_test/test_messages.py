@@ -492,6 +492,51 @@ class MessagesModelTests(unittest.TestCase):
         self.assertEqual(sample.usage.cached_input_tokens, 4)
         self.assertTrue(response.closed)
 
+    def test_signed_thinking_without_text_is_redacted_and_replayed(self):
+        # A thinking block may return empty text with only a signature. Show
+        # the same placeholder as encrypted-only Responses reasoning, and
+        # replay the block unchanged so the provider can verify it.
+        signature = "thinking-signature-must-not-be-displayed"
+        thinking = {"type": "thinking", "thinking": "", "signature": signature}
+        opener = _ScriptedOpener(
+            _FakeResponse({
+                "type": "message",
+                "role": "assistant",
+                "content": [thinking, {"type": "text", "text": "Done."}],
+                "stop_reason": "end_turn",
+            }),
+            _FakeResponse({
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "text", "text": "Again."}],
+                "stop_reason": "end_turn",
+            }),
+        )
+        model = MessagesModel(
+            _endpoint(api_url="http://localhost:8000", model="model"),
+            opener=opener,
+        )
+        context = InteractionContext((Message("user", "Inspect."),))
+
+        sample = model.sample(context)
+
+        self.assertEqual(sample.items, (
+            Reasoning(content="", content_signature=signature),
+            Message("assistant", "Done."),
+        ))
+        displayed = tuple(item.text for item in sample.display_items())
+        self.assertEqual(displayed[:2], ("[reasoning] ...", "[assistant] Done."))
+        self.assertNotIn(signature, "\n".join(displayed))
+
+        context.extend(sample.context_items())
+        context.append(Message("user", "Continue."))
+        model.sample(context)
+
+        self.assertEqual(_payload(opener)["messages"][1], {
+            "role": "assistant",
+            "content": [thinking, {"type": "text", "text": "Done."}],
+        })
+
     def test_injected_message_is_user_text_after_tool_result_block(self):
         tool = create_inject_user_message_tool()
         call = ToolCall(tool.spec.name, "inject-1", "{}")

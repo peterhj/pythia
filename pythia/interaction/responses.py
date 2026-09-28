@@ -67,7 +67,7 @@ from .model import ModelSample
 from .model import ModelTimeoutError
 from .model import ModelTransportError
 from .model import SamplingParams
-from .model import ResolvedSamplingParams
+from .model import _apply_request_params
 from .model import _timed_sample
 from .model_catalog import ModelSpec
 from .model_catalog import ModelBinding
@@ -458,9 +458,6 @@ def _apply_sampling_params(
 ) -> None:
     if sampling_params is None:
         return
-    if (isinstance(sampling_params, ResolvedSamplingParams)
-            and sampling_params.request_params):
-        raise ModelConfigurationError("request_params is unsupported for Responses")
     unsupported = []
     if sampling_params.temperature is not None:
         unsupported.append("temperature")
@@ -1776,6 +1773,7 @@ class CodexResponsesModel:
         if provider_state.session_id is not None:
             payload["prompt_cache_key"] = provider_state.session_id
         _apply_sampling_params(payload, sampling_params)
+        _apply_request_params(payload, self.binding, sampling_params)
         return payload, provider_state
 
     def _build_headers(

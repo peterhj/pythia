@@ -49,8 +49,8 @@ from .model import ModelSample
 from .model import ModelTimeoutError
 from .model import ModelTransportError
 from .model import SamplingParams
-from .model import ResolvedSamplingParams
-from .model_catalog import ModelBinding, thaw_json
+from .model import _apply_request_params
+from .model_catalog import ModelBinding
 from .model import TokenUsage
 from .model import _timed_sample
 from .timeouts import DEFAULT_REQUEST_TIMEOUT_SECONDS
@@ -631,10 +631,7 @@ class ChatCompletionsModel:
             payload["tools"] = encoded_tools
             payload["parallel_tool_calls"] = False
         _apply_sampling_params(payload, sampling_params)
-        params = (sampling_params.request_params
-                  if isinstance(sampling_params, ResolvedSamplingParams)
-                  else self.binding.request_params)
-        payload.update(thaw_json(params))
+        _apply_request_params(payload, self.binding, sampling_params)
         return payload
 
     @_timed_sample

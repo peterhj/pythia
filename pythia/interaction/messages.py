@@ -49,6 +49,7 @@ from .model import ModelTimeoutError
 from .model import ModelTransportError
 from .model import SamplingParams
 from .model import ResolvedSamplingParams
+from .model import _apply_request_params
 from .model import _timed_sample
 from .model_catalog import ModelBinding
 from .model_catalog import MESSAGES_MIN_COMPACTION_TRIGGER_TOKENS
@@ -846,8 +847,6 @@ class MessagesModel:
         system, messages = _encode_context(context.model_items())
         spec = self.binding.spec
         resolved = isinstance(sampling_params, ResolvedSamplingParams)
-        if resolved and sampling_params.request_params:
-            raise ModelConfigurationError("request_params is unsupported for Messages")
         output_budget = (
             sampling_params.max_output_tokens if resolved else self.endpoint.max_output_tokens
         )
@@ -913,6 +912,7 @@ class MessagesModel:
                 "edits": [compaction.request_edit()]
             }
         _apply_sampling_params(payload, sampling_params)
+        _apply_request_params(payload, self.binding, sampling_params)
         return payload
 
     @_timed_sample

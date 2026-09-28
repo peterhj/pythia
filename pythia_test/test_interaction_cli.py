@@ -655,8 +655,7 @@ class CLIControllerTests(_ControllerTestCase):
         self.assertEqual(texts.count("[assistant] first"), 1)
         self.assertEqual(texts.count("[assistant] second"), 1)
 
-    async def test_encrypted_only_reasoning_is_visible_but_redacted(self):
-        ciphertext = "provider-ciphertext-must-not-be-displayed"
+    async def _assert_reasoning_is_visible_but_redacted(self, reasoning, secret):
         terminal = _Terminal(
             lambda terminal, _editor, status: (
                 terminal.key("c-d") if status == "idle" else None
@@ -666,7 +665,7 @@ class CLIControllerTests(_ControllerTestCase):
             self.path,
             ModelSample(
                 items=(
-                    Reasoning(content="", encrypted_content=ciphertext),
+                    reasoning,
                     Message(role="assistant", content="done"),
                 ),
             ),
@@ -681,7 +680,19 @@ class CLIControllerTests(_ControllerTestCase):
             displayed.count("[reasoning] ..."),
             1,
         )
-        self.assertNotIn(ciphertext, "\n".join(displayed))
+        self.assertNotIn(secret, "\n".join(displayed))
+
+    async def test_encrypted_only_reasoning_is_visible_but_redacted(self):
+        ciphertext = "provider-ciphertext-must-not-be-displayed"
+        await self._assert_reasoning_is_visible_but_redacted(
+            Reasoning(content="", encrypted_content=ciphertext), ciphertext,
+        )
+
+    async def test_signed_thinking_without_text_is_visible_but_redacted(self):
+        signature = "thinking-signature-must-not-be-displayed"
+        await self._assert_reasoning_is_visible_but_redacted(
+            Reasoning(content="", content_signature=signature), signature,
+        )
 
     async def test_unknown_slash_command_is_not_a_query(self):
         step = 0

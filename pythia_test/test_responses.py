@@ -15,6 +15,7 @@ import urllib.error
 from pathlib import Path
 from unittest import mock
 
+from pythia.interaction import BUILTIN_MODEL_CATALOG
 from pythia.interaction import CODEX_RESPONSES_API_URL
 from pythia.interaction import ChatCompletionsModel
 from pythia.interaction import CodexAuth
@@ -737,6 +738,33 @@ class CodexResponsesModelTests(unittest.TestCase):
         request_text = json.dumps(_request_payload(opener)["input"])
         self.assertIn("old-user", request_text)
         self.assertIn("old local summary", request_text)
+
+    def test_request_params_extend_samples_and_remote_v2_compaction(self):
+        binding = BUILTIN_MODEL_CATALOG.bind(
+            "codex", "codex-test",
+            endpoint_url=CODEX_RESPONSES_API_URL + "/responses",
+            endpoint_auth="supplied",
+            request_params={"service_tier": "priority"},
+        )
+        opener = _ScriptedOpener(
+            _FakeSSEResponse(_message_event(0, "OK"), _completed_event()),
+            _FakeSSEResponse(_compaction_event(0), _completed_event()),
+        )
+        model = codex_model(
+            StreamingResponsesEndpoint(binding=binding, bearer_token="token"),
+            opener=opener,
+        )
+        self.assertTrue(model.supports_remote_compaction)
+        context = InteractionContext((Message("user", "hello"),))
+
+        self.assertEqual(model.sample(context).last_assistant_text, "OK")
+        ResponsesOpaqueCompactor(model).compact(context)
+
+        sampled, compacted = _request_payload(opener, 0), _request_payload(opener, 1)
+        for payload in (sampled, compacted):
+            self.assertEqual(payload["service_tier"], "priority")
+            self.assertIs(payload["store"], False)
+        self.assertEqual(compacted["input"][-1], {"type": "compaction_trigger"})
 
     def test_remote_v2_compaction_metadata_records_transport_recovery(self):
         response = _FakeSSEResponse(

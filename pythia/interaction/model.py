@@ -26,10 +26,12 @@ from .items import SampleMetadata
 from .items import _validate_elapsed_seconds
 from .usage import TokenUsage
 from .model_catalog import freeze_request_params
+from .model_catalog import thaw_json
 
 if TYPE_CHECKING:
     from .display import DisplayItem
     from .environment import ToolSpec
+    from .model_catalog import ModelBinding
 
 
 class ModelError(RuntimeError):
@@ -174,6 +176,38 @@ class ResolvedSamplingParams(SamplingParams):
         if not isinstance(self.enable_auto_compaction, bool):
             raise TypeError("resolved enable_auto_compaction must be a bool")
         object.__setattr__(self, "request_params", freeze_request_params(self.request_params))
+
+
+def _apply_request_params(
+    payload: dict,
+    binding: "ModelBinding",
+    sampling_params: Optional[SamplingParams],
+) -> None:
+    """Add one request's body extensions without replacing adapter fields.
+
+    Resolved frontend params carry the complete effective map, even when
+    empty. Other calls, including ``None`` and compaction requests, use the
+    binding's map. Resolved maps are validated without an API, so the names
+    reserved by this binding's API are checked here before sending.
+    """
+    if isinstance(sampling_params, ResolvedSamplingParams):
+        try:
+            params = freeze_request_params(
+                sampling_params.request_params, binding.api,
+            )
+        except ValueError as exc:
+            raise ModelConfigurationError(str(exc)) from None
+    else:
+        params = binding.request_params
+    extensions = thaw_json(params)
+    # Typed and structural fields stay authoritative; never override silently.
+    replaced = sorted(extensions.keys() & payload.keys())
+    if replaced:
+        raise ModelConfigurationError(
+            "request_params cannot replace adapter-owned request fields: "
+            + ", ".join(replaced)
+        )
+    payload.update(extensions)
 
 
 @dataclass(frozen=True)

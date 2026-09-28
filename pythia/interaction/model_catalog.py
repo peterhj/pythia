@@ -45,6 +45,20 @@ _RESERVED_REQUEST_PARAMS = frozenset((
     "api_url", "api_key", "api_key_env", "headers", "authorization",
     "bearer_token", "access_token", "account_id", "request_timeout_seconds",
 ))
+# Each API's adapter also owns these top-level fields, including those holding
+# typed catalog defaults (Messages output_config; Responses reasoning/text).
+# They are protected even when a particular request omits them.
+_RESPONSES_RESERVED_REQUEST_PARAMS = frozenset((
+    "tool_choice", "store", "include", "reasoning", "text", "prompt_cache_key",
+    # Stateless requests carry the complete context; no server-side history.
+    "previous_response_id", "conversation",
+))
+_PROFILE_RESERVED_REQUEST_PARAMS = MappingProxyType({
+    "chat-completions": _RESERVED_REQUEST_PARAMS,
+    "messages": _RESERVED_REQUEST_PARAMS | {"system", "output_config", "cache_control"},
+    "responses": _RESERVED_REQUEST_PARAMS | _RESPONSES_RESERVED_REQUEST_PARAMS,
+    "codex": _RESERVED_REQUEST_PARAMS | _RESPONSES_RESERVED_REQUEST_PARAMS,
+})
 MAX_REQUEST_PARAMS_BYTES = 65_536
 
 
@@ -93,13 +107,18 @@ def thaw_json(value):
 
 
 def freeze_request_params(value, profile=None):
+    """Validate and freeze request-body extensions.
+
+    Without a profile only names reserved for every API are checked; bindings
+    and adapters also reject the names owned by their API's adapter.
+    """
     if not isinstance(value, MappingABC):
         raise ValueError("request_params must be an object.")
-    if any(not isinstance(key, str) or not key or key.lower() in _RESERVED_REQUEST_PARAMS
+    reserved = (_RESERVED_REQUEST_PARAMS if profile is None
+                else _PROFILE_RESERVED_REQUEST_PARAMS[_normalize_profile(profile)])
+    if any(not isinstance(key, str) or not key or key.lower() in reserved
            or any(ord(char) < 32 for char in key) for key in value):
         raise ValueError("Invalid or adapter-owned request parameter.")
-    if profile is not None and _normalize_profile(profile) != "chat-completions" and value:
-        raise ValueError("request_params currently requires the Chat Completions API.")
     frozen = _freeze_json(value)
     try:
         encoded = json.dumps(thaw_json(frozen), ensure_ascii=False, allow_nan=False).encode("utf-8")
