@@ -329,16 +329,28 @@ _SPARK = ModelSpec(
     source="Existing Pythia Meta Responses integration presets; token capacities unknown",
 )
 _FABLE = ModelSpec(
-    name="claude-fable-5-1",
+    name="claude-fable-5.1",
     endpoint=replace(_ANTHROPIC, model="claude-fable-5-1"),
     limits=ModelLimits(
         auto_compact_context_tokens=872_000,
         max_context_tokens=1_000_000,
         max_output_tokens=128_000,
     ),
-    aliases=("claude-fable-5.1",),
     source=(
         "https://platform.claude.com/docs/en/models/fable-5-1/overview; "
+        "https://platform.claude.com/docs/en/build-with-claude/effort"
+    ),
+)
+_OPUS = ModelSpec(
+    name="claude-opus-5.5",
+    endpoint=replace(_ANTHROPIC, model="claude-opus-5-5"),
+    limits=ModelLimits(
+        auto_compact_context_tokens=872_000,
+        max_context_tokens=1_000_000,
+        max_output_tokens=128_000,
+    ),
+    source=(
+        "https://platform.claude.com/docs/en/models/opus-5-5/overview; "
         "https://platform.claude.com/docs/en/build-with-claude/effort"
     ),
 )
@@ -380,9 +392,14 @@ _MODEL_SPECS = (
     _FABLE,
     _with_messages_effort(
         _FABLE,
-        "claude-fable-5-1-max",
+        "claude-fable-5.1-max",
         "max",
-        aliases=("claude-fable-5.1-max",),
+    ),
+    _OPUS,
+    _with_messages_effort(
+        _OPUS,
+        "claude-opus-5.5-max",
+        "max",
     ),
 )
 
