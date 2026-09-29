@@ -82,10 +82,11 @@ class CaptureHost:
 
 class ConfigSeedingTests(unittest.TestCase):
     def test_catalog_seeds_current_and_initial_without_constructing_a_model(self):
-        for api, model, budget in (
-            ("codex", "codex-gpt-6-astra", None),
-            ("messages", "claude-fable-5.1", 128_000),
-            ("messages", "claude-fable-5.1-max", 128_000),
+        thinking = {"thinking": {"type": "adaptive"}}
+        for api, model, budget, request_params in (
+            ("codex", "codex-gpt-6-astra", None, {}),
+            ("messages", "claude-fable-5.1", 128_000, thinking),
+            ("messages", "claude-fable-5.1-max", 128_000, {**thinking, "output_config": {"effort": "max"}}),
         ):
             with self.subTest(api=api, model=model), mock.patch.object(
                 CodexResponsesModel, "__init__", side_effect=AssertionError("credentials"),
@@ -95,8 +96,9 @@ class ConfigSeedingTests(unittest.TestCase):
                 self.assertEqual(config.get("auto_compact_tokens"), 872_000)
                 self.assertEqual(config.get("max_context_tokens"), 1_000_000)
                 self.assertEqual(config.get("max_output_tokens"), budget)
+                # Catalog request params (thinking, effort) seed the effective map.
                 self.assertEqual(config.snapshot().sampling_params(), ResolvedSamplingParams(
-                    auto_compact_tokens=872_000, max_output_tokens=budget,
+                    auto_compact_tokens=872_000, max_output_tokens=budget, request_params=request_params,
                 ))
 
     def test_unknown_or_wrong_profile_never_inherits_codex_limits(self):

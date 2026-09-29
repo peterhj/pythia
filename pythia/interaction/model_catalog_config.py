@@ -12,16 +12,16 @@ from ._config_file import read_config_bytes
 from .model_catalog import BUILTIN_MODEL_CATALOG
 from .model_catalog import ModelCatalog, ModelLimits, ModelSpec
 from .model_catalog import EndpointSpec
-from .model_catalog import MessagesDefaults, ResponsesDefaults
+from .model_catalog import ResponsesDefaults
 from .model_catalog import _normalize_profile, parse_json_value
 
 
 MAX_CATALOG_BYTES = 1_048_576
 MAX_CATALOG_MODELS = 1024
-LATEST_MODEL_CATALOG_VERSION = 2
+# Version 3 replaced messages.output_effort with request_params.output_config.
+LATEST_MODEL_CATALOG_VERSION = 3
 _LIMIT_FIELDS = frozenset(("auto_compact_context_tokens", "max_context_tokens", "max_output_tokens"))
 _RESPONSES_FIELDS = frozenset(("reasoning_effort", "reasoning_summary", "text_verbosity"))
-_MESSAGES_FIELDS = frozenset(("output_effort",))
 _INTEGER = re.compile(r"^[+-]?[0-9]+$")
 
 
@@ -73,7 +73,6 @@ def _entry(section, values, base):
         endpoint["api"] = api
     limits = {} if original is None else dict(vars(original.limits))
     responses = {} if original is None or original.responses is None else dict(vars(original.responses))
-    messages = {} if original is None or original.messages is None else dict(vars(original.messages))
     params = {} if original is None else dict(original.request_params)
     if "request_params" in values and any(key.startswith("request_params.") for key in values):
         raise ValueError("Cannot combine whole-map and per-key request params.")
@@ -94,8 +93,6 @@ def _entry(section, values, base):
             limits[key[7:]] = None if value == "null" else int(value)
         elif key.startswith("responses.") and key[10:] in _RESPONSES_FIELDS:
             responses[key[10:]] = _text(value)
-        elif key.startswith("messages.") and key[9:] in _MESSAGES_FIELDS:
-            messages[key[9:]] = _text(value)
         elif key == "request_params":
             params = parse_json_value(value)
         elif key.startswith("request_params."):
@@ -115,8 +112,6 @@ def _entry(section, values, base):
     fields.update(endpoint=endpoint, limits=ModelLimits(**limits), request_params=params)
     if responses:
         fields["responses"] = ResponsesDefaults(**responses)
-    if messages:
-        fields["messages"] = MessagesDefaults(**messages)
     spec = (ModelSpec(name=name, **fields) if original is None
             else replace(original, **fields))
     return spec
@@ -146,8 +141,6 @@ def parse_model_catalog(text, *, base=BUILTIN_MODEL_CATALOG, source="user"):
                 raise ValueError()
             if "version" in catalog_fields:
                 version = parser.getint("catalog", "version")
-                if version != LATEST_MODEL_CATALOG_VERSION:
-                    raise ValueError()
             else:
                 version = LATEST_MODEL_CATALOG_VERSION
                 assumed_version = True
@@ -159,10 +152,21 @@ def parse_model_catalog(text, *, base=BUILTIN_MODEL_CATALOG, source="user"):
             raise ValueError()
     except (configparser.Error, ValueError):
         raise ValueError(f"Invalid model catalog header/INI syntax: {source}") from None
+    if version != LATEST_MODEL_CATALOG_VERSION:
+        raise ValueError(
+            f"Unsupported model catalog version {version} in {source}; "
+            f"expected version {LATEST_MODEL_CATALOG_VERSION}"
+        )
     specs = {(spec.endpoint.api, spec.name): spec for spec in base.specs}
     origins = dict(base.origins)
     seen = set()
     for section in sections:
+        # Name the replacement rather than failing as a generic unknown field.
+        if any(key.startswith("messages.") for key in parser[section]):
+            raise ValueError(
+                f"Invalid model catalog entry {section!r} in {source}: messages.* fields "
+                'were removed in catalog version 3; use request_params.output_config = {"effort": ...}'
+            )
         try:
             spec = _entry(section, parser[section], base)
             identity = (spec.endpoint.api, spec.name)

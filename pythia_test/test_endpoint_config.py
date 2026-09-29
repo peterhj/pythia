@@ -24,7 +24,7 @@ from pythia.interaction.model_config import build_model, prepare_namespace, supp
 
 
 V2 = '''[catalog]
-version = 2
+version = 3
 [model.local-max]
 endpoint.api = chat-completions
 endpoint.url = http://127.0.0.1:8000/custom/invoke/
@@ -83,7 +83,7 @@ route.auth_source = explicit
         spec = registry.get_model_spec("chat-completions", "local")
         self.assertEqual(spec.endpoint.auth, "none")
         changed = parse_model_catalog('''[catalog]
-version = 2
+version = 3
 [model.local-max]
 override = true
 limits.max_context_tokens = 200000
@@ -94,7 +94,7 @@ request_params.thinking = {"type": "disabled"}
         self.assertEqual(dict(changed.request_params["thinking"]), {"type": "disabled"})
 
     def test_mixed_and_incomplete_schemas_rejected(self):
-        for text in (V2.replace("version = 2", "version = 1"), V2 + "route.api = chat-completions\n",
+        for text in (V2.replace("version = 3", "version = 1"), V2 + "route.api = chat-completions\n",
                      V2 + "api_model = other\n", V2.replace("endpoint.auth = none\n", ""),
                      V2.replace("endpoint.model = wire-model", "endpoint.model = null")):
             with self.subTest(text=text), self.assertRaises(ValueError):
@@ -114,7 +114,7 @@ request_params.thinking = {"type": "disabled"}
             registry.bind(name="local", endpoint_url="https://other.test/infer")
         with self.assertRaises(ValueError):
             parse_model_catalog('''[catalog]
-version=2
+version=3
 [model.local-max]
 override=true
 endpoint.url=https://other.test/infer
@@ -186,7 +186,7 @@ class EndpointRuntimeTests(unittest.TestCase):
 
     def test_environment_requirement_does_not_depend_on_catalog_origin(self):
         changed = parse_model_catalog('''[catalog]
-version = 2
+version = 3
 [model.claude-fable-5.1]
 override = true
 source = metadata only

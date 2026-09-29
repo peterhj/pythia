@@ -33,7 +33,7 @@ from pythia.interaction.model_config import build_model, prepare_namespace, supp
 from pythia.interaction.model_catalog_config import MAX_CATALOG_BYTES
 
 
-HEADER = "[catalog]\nversion = 2\n"
+HEADER = "[catalog]\nversion = 3\n"
 LOCAL = """
 [model.local-max]
 endpoint.api = chat-completions
@@ -56,7 +56,7 @@ endpoint.auth = none
 limits.auto_compact_context_tokens = 60000
 limits.max_context_tokens = 80000
 limits.max_output_tokens = 8000
-messages.output_effort = high
+request_params.output_config = {"effort": "high"}
 """
 CODEX = """
 [model.code-env]
@@ -92,19 +92,19 @@ def no_credentials(key, default=None):
 class CatalogParserTests(unittest.TestCase):
     def test_missing_header_or_version_assumes_latest_and_warns_after_validation(self):
         for text in (
-            (HEADER + LOCAL).replace("version = 2\n", ""),
+            (HEADER + LOCAL).replace("version = 3\n", ""),
             LOCAL,
         ):
             with self.subTest(text=text), self.assertWarnsRegex(
                 UserWarning,
-                r"does not specify a version; assuming latest supported version 2",
+                r"does not specify a version; assuming latest supported version 3",
             ):
                 registry = parse_model_catalog(text, source="catalog.ini")
             self.assertEqual(
                 registry.get_model_spec("chat-completions", "local-max").name,
                 "local-max",
             )
-        self.assertEqual(LATEST_MODEL_CATALOG_VERSION, 2)
+        self.assertEqual(LATEST_MODEL_CATALOG_VERSION, 3)
 
         invalid = LOCAL + "unknown = value\n"
         with mock.patch("warnings.warn") as warn:
@@ -217,18 +217,24 @@ limits.auto_compact_context_tokens = null
                 catalog(text)
         with self.assertRaises(ValueError):  # Overrides name the canonical model, not an alias.
             catalog('[model.local-alias]\noverride = true\n', base=catalog())
+        with self.assertRaisesRegex(ValueError, r"'model\.worker' in user: messages\.\* fields were removed "
+                                                r"in catalog version 3; use request_params\.output_config"):
+            catalog(MESSAGE + "messages.output_effort = high\n")
 
     def test_duplicate_sections_keys_defaults_and_versions_rejected(self):
         for text in (
             HEADER + LOCAL + LOCAL,
             HEADER + LOCAL + 'request_params.reasoning_effort = "low"\n',
             HEADER + "[DEFAULT]\noverride = true\n" + LOCAL,
-            HEADER.replace("version = 2", "version = 1") + LOCAL,
-            HEADER.replace("version = 2", "version = 3") + LOCAL,
+            HEADER.replace("version = 3", "version = 1") + LOCAL,
+            HEADER.replace("version = 3", "version = 2") + LOCAL,
+            HEADER.replace("version = 3", "version = 4") + LOCAL,
             HEADER + "[other]\nx = 1\n", HEADER + "unknown = 1\n",
         ):
             with self.subTest(text=text), self.assertRaises(ValueError):
                 parse_model_catalog(text)
+        with self.assertRaisesRegex(ValueError, r"^Unsupported model catalog version 2 in user; expected version 3$"):
+            parse_model_catalog(HEADER.replace("version = 3", "version = 2") + LOCAL)
 
     def test_alias_collision_is_not_file_order_dependent(self):
         other = LOCAL.replace("[model.local-max]", "[model.other]")
@@ -269,7 +275,7 @@ request_params.service_tier = "priority"
         responses_owned = ("tool_choice", "store", "include", "reasoning", "text",
                            "prompt_cache_key", "previous_response_id", "conversation")
         owned = {
-            "messages": ("system", "output_config", "cache_control"),
+            "messages": ("system", "cache_control"),
             "codex": responses_owned,
             "responses": responses_owned,
         }
@@ -437,7 +443,7 @@ class BoundRequestTests(unittest.TestCase):
             self.assertEqual(payload["thinking"], {"type": "enabled", "budget_tokens": 1024})
             self.assertEqual(payload["top_k"], 5)
             self.assertEqual(payload["metadata"], {"user_id": "catalog-test"})
-            # Typed preferences and adapter-owned fields remain authoritative.
+            # Adapter-owned fields and other catalog request params are preserved.
             self.assertEqual(payload["model"], "served-messages")
             self.assertEqual(payload["max_tokens"], 8000)
             self.assertEqual(payload["output_config"], {"effort": "high"})
@@ -445,9 +451,18 @@ class BoundRequestTests(unittest.TestCase):
         payload["thinking"]["budget_tokens"] = 0
         self.assertEqual(model._build_request_payload(context(), (), None)["thinking"]["budget_tokens"], 1024)
         empty = model._build_request_payload(context(), (), ResolvedSamplingParams(max_output_tokens=10))
-        self.assertFalse({"thinking", "top_k", "metadata"} & empty.keys())
+        # An explicitly empty resolved map is complete: catalog effort goes with the other params.
+        self.assertFalse({"thinking", "top_k", "metadata", "output_config"} & empty.keys())
         with self.assertRaises(ValueError):
             args_for(registry, "--model", "worker", "--request-params", '{"system": "replacement"}')
+
+    def test_launch_request_params_override_builtin_messages_effort(self):
+        args = args_for(BUILTIN_MODEL_CATALOG, "--model", "claude-opus-5.5-max", "--endpoint-auth", "none",
+                        "--request-params", '{"output_config": {"effort": "low"}}')
+        cfg = InteractionConfig.from_namespace(args)
+        payload = build_model(args)._build_request_payload(context(), (), cfg.snapshot().sampling_params())
+        self.assertEqual(payload["output_config"], {"effort": "low"})
+        self.assertEqual(payload["thinking"], {"type": "adaptive"})  # Other preset params are kept.
 
     def test_user_codex_request_params_extend_every_request(self):
         registry = catalog(CODEX + 'request_params.service_tier = "flex"\n')
@@ -507,23 +522,27 @@ class BoundRequestTests(unittest.TestCase):
             "responses": codex_payload,
         }
         # Guard against a vacuous check: optional fields must be present.
-        self.assertLessEqual({"system", "output_config", "cache_control", "context_management"},
+        self.assertLessEqual({"system", "cache_control", "context_management"},
                              written["messages"].keys())
         self.assertLessEqual({"reasoning", "text", "prompt_cache_key", "max_output_tokens"},
                              codex_payload.keys())
+        # Catalog request params (the fixture's output_config) are extensions, not adapter fields;
+        # an adapter write to the same key would already have raised while building the payload.
+        extensions = {"messages": set(messages.binding.request_params)}
+        self.assertEqual(extensions["messages"], {"output_config"})
         for api, payload in written.items():
-            for key in payload:
+            for key in payload.keys() - extensions.get(api, set()):
                 with self.subTest(api=api, key=key), self.assertRaises(ValueError):
                     model_catalog.freeze_request_params({key: None}, api)
 
     def test_adapter_never_silently_replaces_an_unprotected_field(self):
         # Simulate an adapter field that was not added to the protected names.
         drifted = dict(model_catalog._PROFILE_RESERVED_REQUEST_PARAMS)
-        drifted["messages"] = drifted["messages"] - {"output_config"}
+        drifted["messages"] = drifted["messages"] - {"cache_control"}
         with mock.patch.object(model_catalog, "_PROFILE_RESERVED_REQUEST_PARAMS", drifted):
-            binding = catalog(MESSAGE + 'request_params.output_config = {"effort": "low"}\n').bind(name="worker")
-        model = MessagesModel(MessagesEndpoint(binding=binding))
-        with self.assertRaisesRegex(ModelConfigurationError, "replace adapter-owned request fields: output_config"):
+            binding = catalog(MESSAGE + 'request_params.cache_control = {"type": "ephemeral"}\n').bind(name="worker")
+        model = MessagesModel(MessagesEndpoint(binding=binding, prompt_caching=MessagesPromptCaching()))
+        with self.assertRaisesRegex(ModelConfigurationError, "replace adapter-owned request fields: cache_control"):
             model._build_request_payload(context(), (), None)
 
     def test_endpoint_location_alone_cannot_grant_account_or_compaction_services(self):
@@ -622,7 +641,8 @@ class AutoCatalogTests(unittest.TestCase):
             worker = InteractionConfig.from_namespace(worker_args)
             self.assertEqual(worker_args.model_api, "messages")
             self.assertEqual(worker.get("auto_compact_tokens"), 60000)
-            self.assertEqual(worker.get("request_params"), {})
+            # Exactly the worker's own catalog params; nothing leaks from the main context or LOCAL.
+            self.assertEqual(model_catalog.thaw_json(worker.get("request_params")), {"output_config": {"effort": "high"}})
             self.assertTrue(main.get("request_params")["custom"])
             self.assertIsNone(settings[2]["model_api"])
             self.assertIsNone(settings[2]["request_params"])
@@ -709,6 +729,15 @@ class CatalogEntrypointTests(unittest.TestCase):
                 self.assertEqual(result, 0)
                 self.assertIn("local-max", output.getvalue())
                 self.assertIn("served-local", output.getvalue())
+                # Each line ends with the preset's request settings, including user presets.
+                lines = output.getvalue().splitlines()
+                line = {name: next(line for line in lines if line.startswith(name))
+                        for name in ("local-max", "code-env", "claude-opus-5.5-max:")}
+                self.assertTrue(line["local-max"].endswith(
+                    ', thinking={"type":"enabled","budget_tokens":1000}, reasoning_effort="max"'), line)
+                self.assertTrue(line["code-env"].endswith(", effort=high"), line)
+                self.assertTrue(line["claude-opus-5.5-max:"].endswith(
+                    'source=builtin, thinking={"type":"adaptive"}, output_config={"effort":"max"}'), line)
 
     def test_cli_debug_binding_snapshot_is_opt_in(self):
         requests = []

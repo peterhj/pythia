@@ -45,10 +45,6 @@ def _debug_entry(binding):
             None if spec is None or spec.responses is None
             else vars(spec.responses)
         ),
-        "messages": (
-            None if spec is None or spec.messages is None
-            else vars(spec.messages)
-        ),
     }
 
 

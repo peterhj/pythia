@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import replace
+import json
 import os
 from pathlib import Path
 
@@ -115,8 +116,9 @@ def render_model_catalog(catalog):
     for spec in catalog.specs:
         aliases = f" (aliases: {', '.join(spec.aliases)})" if spec.aliases else ""
         origin = catalog.origins[(spec.endpoint.api, spec.name)]
+        settings = "".join(f", {setting}" for setting in _request_settings(spec))
         lines.append(f"{spec.name}{aliases}: api={spec.endpoint.api}, model={spec.endpoint.model}, "
-                     f"url={spec.endpoint.url}, auth={spec.endpoint.auth}, source={origin}")
+                     f"url={spec.endpoint.url}, auth={spec.endpoint.auth}, source={origin}{settings}")
     return "\n".join(lines)
 
 
@@ -251,29 +253,34 @@ def build_model(args: argparse.Namespace, *, catalog=None) -> Model:
     raise ValueError(f"unsupported model API: {args.model_api!r}")
 
 
+def _request_settings(spec) -> list:
+    """A preset's typed Responses defaults, then its request params as sent."""
+    settings = []
+    if spec.responses is not None:
+        for label, value in (
+            ("effort", spec.responses.reasoning_effort),
+            ("summary", spec.responses.reasoning_summary),
+            ("verbosity", spec.responses.text_verbosity),
+        ):
+            if value is not None:
+                settings.append(f"{label}={value}")
+    # Compact JSON, i.e. the value syntax of request_params.<key> and --request-params.
+    for key, value in spec.request_params.items():
+        settings.append(f"{key}={json.dumps(thaw_json(value), ensure_ascii=False, separators=(',', ':'))}")
+    return settings
+
+
 def _model_argument_help() -> str:
     entries = []
     for spec in list_model_specs():
-        details = [spec.endpoint.api]
-        if spec.responses is not None:
-            for label, value in (
-                ("effort", spec.responses.reasoning_effort),
-                ("summary", spec.responses.reasoning_summary),
-                ("verbosity", spec.responses.text_verbosity),
-            ):
-                if value is not None:
-                    details.append(f"{label}={value}")
-        if spec.messages is not None:
-            if spec.messages.output_effort is not None:
-                details.append(
-                    f"effort={spec.messages.output_effort}"
-                )
+        details = [spec.endpoint.api, *_request_settings(spec)]
         if spec.endpoint.environment_variable is not None:
             details.append(spec.endpoint.environment_variable)
         if spec.aliases:
             details.append("aliases: " + ", ".join(spec.aliases))
         entries.append(f"{spec.name} ({', '.join(details)})")
-    return "model name; uncatalogued names pass through. Catalog presets: " + "; ".join(entries)
+    text = "model name; uncatalogued names pass through. Catalog presets: " + "; ".join(entries)
+    return text.replace("%", "%%")  # argparse %-formats help strings
 
 
 def build_parser(description: str, *, allow_prompt_file: bool = False) -> argparse.ArgumentParser:

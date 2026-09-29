@@ -862,11 +862,6 @@ class MessagesModel:
         }
         if system:
             payload["system"] = system
-        defaults = None if spec is None else spec.messages
-        if defaults is not None and defaults.output_effort is not None:
-            payload["output_config"] = {
-                "effort": defaults.output_effort,
-            }
         encoded_tools = _encode_tools(tools)
         if encoded_tools:
             payload["tools"] = encoded_tools

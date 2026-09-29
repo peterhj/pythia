@@ -20,7 +20,6 @@ from pythia.interaction import CodexAuth
 from pythia.interaction import CodexResponsesModel
 from pythia.interaction import Init
 from pythia.interaction import Message
-from pythia.interaction import MessagesDefaults
 from pythia.interaction import MessagesEndpoint
 from pythia.interaction import MessagesModel
 from pythia.interaction import ModelConfigurationError
@@ -128,7 +127,7 @@ class ModelCatalogTests(unittest.TestCase):
         )
         self.assertEqual(fable.endpoint.auth, "env:ANTHROPIC_API_KEY")
         self.assertIsNone(fable.responses)
-        self.assertIsNone(fable.messages)
+        self.assertEqual(model_catalog.thaw_json(fable.request_params), {"thinking": {"type": "adaptive"}})
 
         fable_max = get_model_spec("messages", "claude-fable-5.1-max")
         self.assertIs(
@@ -139,12 +138,10 @@ class ModelCatalogTests(unittest.TestCase):
         self.assertEqual(fable_max.endpoint.model, "claude-fable-5-1")
         self.assertIs(fable_max.limits, fable.limits)
         self.assertIs(fable_max.endpoint, fable.endpoint)
-        self.assertEqual(
-            fable_max.messages,
-            MessagesDefaults(
-                output_effort="max",
-            ),
-        )
+        self.assertEqual(model_catalog.thaw_json(fable_max.request_params), {
+            "thinking": {"type": "adaptive"},
+            "output_config": {"effort": "max"},
+        })
 
         self.assertEqual(len(list_model_specs()), 20)
         for base_name, preset_name in (("codex-gpt-5.6-sol", "codex-gpt-5.6-sol-medium"),
@@ -178,7 +175,7 @@ class ModelCatalogTests(unittest.TestCase):
 
                 self.assertEqual(payload["model"], "claude-fable-5-1")
                 self.assertNotIn("reasoning", payload)
-                self.assertNotIn("thinking", payload)
+                self.assertEqual(payload["thinking"], {"type": "adaptive"})
                 if effort is None:
                     self.assertNotIn("output_config", payload)
                 else:
@@ -186,6 +183,22 @@ class ModelCatalogTests(unittest.TestCase):
                         payload["output_config"],
                         {"effort": effort},
                     )
+
+    def test_claude_presets_request_adaptive_thinking_and_max_presets_max_effort(self):
+        context = InteractionContext((Message("user", "Hello."),))
+        specs = list_model_specs("messages")
+        self.assertTrue(specs)
+        for spec in specs:
+            with self.subTest(name=spec.name):
+                payload = MessagesModel(messages_endpoint(
+                    api_url="https://api.anthropic.com", model=spec.name, api_key="FAKE",
+                ))._build_request_payload(context, (), None)
+                self.assertEqual(payload["model"], spec.endpoint.model)
+                self.assertEqual(payload["thinking"], {"type": "adaptive"})
+                if spec.name.endswith("-max"):
+                    self.assertEqual(payload["output_config"], {"effort": "max"})
+                else:
+                    self.assertNotIn("output_config", payload)
 
     def test_unknown_models_and_other_profiles_do_not_inherit_presets(self):
         for profile in ("responses", "chat-completions"):
@@ -263,20 +276,6 @@ class ModelCatalogTests(unittest.TestCase):
                        {"responses": ResponsesDefaults(reasoning_effort="max")}):
             with self.assertRaises((TypeError, ValueError)):
                 replace(spec, **fields)
-        with self.assertRaises((TypeError, ValueError)):
-            replace(
-                get_model_spec("codex", "codex-gpt-6-astra"),
-                messages=MessagesDefaults(
-                    output_effort="max",
-                ),
-            )
-        for fields in (
-            {"output_effort": ""},
-            {"output_effort": "max effort"},
-            {"output_effort": True},
-        ):
-            with self.assertRaises((TypeError, ValueError)):
-                MessagesDefaults(**fields)
         with self.assertRaises(ValueError):
             get_model_spec("unknown-profile", "model")
 
@@ -305,9 +304,23 @@ class ModelCatalogTests(unittest.TestCase):
                 for name in (spec.name, *spec.aliases):
                     self.assertIn(name, model_help)
             self.assertIn("META_API_KEY", model_help)
+            # Request settings: typed Responses defaults, then request params as sent.
+            self.assertIn("codex-gpt-6-astra-max (codex, effort=max, summary=auto, verbosity=low)", model_help)
+            self.assertIn('claude-opus-5.5-max (messages, thinking={"type":"adaptive"}, '
+                          'output_config={"effort":"max"}, ANTHROPIC_API_KEY)', model_help)
             self.assertNotIn("codex-gpt-6-astra-low", model_help)
             self.assertNotIn("muse-spark-1.3-max", model_help)
             self.assertEqual(parser.parse_args(["--model", "future-model"]).model, "future-model")
+
+    def test_help_escapes_percent_in_request_params(self):
+        # argparse %-formats help strings; an unescaped "%" would crash --help.
+        # A hyphen-free name: argparse may wrap lines at hyphens.
+        spec = replace(get_model_spec("messages", "claude-fable-5.1"), name="pct",
+                       request_params={"metadata": {"note": "100% literal"}})
+        with mock.patch.object(model_config, "list_model_specs", return_value=(spec,)):
+            text = cli._build_parser().format_help()
+        self.assertIn('pct (messages, metadata={"note":"100% literal"}, ANTHROPIC_API_KEY)',
+                      " ".join(text.split()))
 
 
 class CatalogAuthParityTests(unittest.TestCase):

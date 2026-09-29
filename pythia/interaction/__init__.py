@@ -85,7 +85,6 @@ from .model_catalog import META_RESPONSES_API_URL
 from .model_catalog import OPENAI_RESPONSES_API_URL
 from .model_catalog_config import LATEST_MODEL_CATALOG_VERSION
 from .model_catalog_config import load_model_catalog, parse_model_catalog
-from .model_catalog import MessagesDefaults
 from .model_catalog import ResponsesDefaults
 from .model_catalog import get_model_spec
 from .model_catalog import list_model_specs
@@ -149,7 +148,6 @@ __all__ = [
     "MESSAGES_COMPACTION_BETA",
     "META_RESPONSES_API_URL",
     "MessagesEndpoint",
-    "MessagesDefaults",
     "MessagesModel",
     "MessagesPromptCaching",
     "MessagesServerCompaction",

@@ -46,7 +46,7 @@ _RESERVED_REQUEST_PARAMS = frozenset((
     "bearer_token", "access_token", "account_id", "request_timeout_seconds",
 ))
 # Each API's adapter also owns these top-level fields, including those holding
-# typed catalog defaults (Messages output_config; Responses reasoning/text).
+# typed catalog defaults (Responses reasoning/text).
 # They are protected even when a particular request omits them.
 _RESPONSES_RESERVED_REQUEST_PARAMS = frozenset((
     "tool_choice", "store", "include", "reasoning", "text", "prompt_cache_key",
@@ -55,7 +55,7 @@ _RESPONSES_RESERVED_REQUEST_PARAMS = frozenset((
 ))
 _PROFILE_RESERVED_REQUEST_PARAMS = MappingProxyType({
     "chat-completions": _RESERVED_REQUEST_PARAMS,
-    "messages": _RESERVED_REQUEST_PARAMS | {"system", "output_config", "cache_control"},
+    "messages": _RESERVED_REQUEST_PARAMS | {"system", "cache_control"},
     "responses": _RESERVED_REQUEST_PARAMS | _RESPONSES_RESERVED_REQUEST_PARAMS,
     "codex": _RESERVED_REQUEST_PARAMS | _RESPONSES_RESERVED_REQUEST_PARAMS,
 })
@@ -242,17 +242,6 @@ class ResponsesDefaults:
 
 
 @dataclass(frozen=True)
-class MessagesDefaults:
-    """Pythia Messages request preferences, not native model defaults."""
-
-    output_effort: Optional[str] = None
-
-    def __post_init__(self) -> None:
-        if self.output_effort is not None:
-            _require_identifier(self.output_effort, "output_effort")
-
-
-@dataclass(frozen=True)
 class ModelSpec:
     """A named policy and its single authoritative endpoint."""
 
@@ -262,7 +251,6 @@ class ModelSpec:
     responses: Optional[ResponsesDefaults] = None
     aliases: Tuple[str, ...] = ()
     source: Optional[str] = None
-    messages: Optional[MessagesDefaults] = None
     request_params: Mapping = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -280,13 +268,6 @@ class ModelSpec:
                 raise TypeError("responses must be ResponsesDefaults or None")
             if self.endpoint.api not in {"codex", "responses"}:
                 raise ValueError("Responses defaults require a Responses endpoint API")
-        if self.messages is not None:
-            if not isinstance(self.messages, MessagesDefaults):
-                raise TypeError("messages must be MessagesDefaults or None")
-            if self.endpoint.api != "messages":
-                raise ValueError(
-                    "Messages defaults require the Messages endpoint API"
-                )
         if isinstance(self.aliases, (str, bytes)):
             raise TypeError("aliases must be an iterable of strings")
         aliases = tuple(self.aliases)
@@ -373,6 +354,7 @@ _FABLE = ModelSpec(
         "https://platform.claude.com/docs/en/models/fable-5-1/overview; "
         "https://platform.claude.com/docs/en/build-with-claude/effort"
     ),
+    request_params={"thinking": {"type": "adaptive"}},
 )
 _OPUS = ModelSpec(
     name="claude-opus-5.5",
@@ -386,6 +368,7 @@ _OPUS = ModelSpec(
         "https://platform.claude.com/docs/en/models/opus-5-5/overview; "
         "https://platform.claude.com/docs/en/build-with-claude/effort"
     ),
+    request_params={"thinking": {"type": "adaptive"}},
 )
 _SONNET = ModelSpec(
     name="claude-sonnet-5.5",
@@ -399,6 +382,7 @@ _SONNET = ModelSpec(
         "https://platform.claude.com/docs/en/models/sonnet-5-5/overview; "
         "https://platform.claude.com/docs/en/build-with-claude/effort"
     ),
+    request_params={"thinking": {"type": "adaptive"}},
 )
 
 
@@ -420,9 +404,8 @@ def _with_messages_effort(
         base,
         name=name,
         aliases=aliases,
-        messages=MessagesDefaults(
-            output_effort=effort,
-        ),
+        # Keep the base's request params (e.g. thinking) and add Anthropic's effort field.
+        request_params={**base.request_params, "output_config": {"effort": effort}},
     )
 
 
@@ -688,7 +671,6 @@ __all__ = [
     "BUILTIN_MODEL_CATALOG",
     "EndpointSpec",
     "ModelSpec",
-    "MessagesDefaults",
     "ResponsesDefaults",
     "get_model_spec",
     "list_model_specs",
