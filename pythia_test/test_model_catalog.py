@@ -141,7 +141,7 @@ class ModelCatalogTests(unittest.TestCase):
             ),
         )
 
-        self.assertEqual(len(list_model_specs()), 18)
+        self.assertEqual(len(list_model_specs()), 20)
         for base_name, preset_name in (("codex-gpt-5.6-sol", "codex-gpt-5.6-sol-medium"),
                                        ("codex-gpt-6-astra", "codex-gpt-6-astra-max"),
                                        ("muse-spark-1.3", "muse-spark-1.3-xhigh")):
@@ -286,7 +286,7 @@ class ModelCatalogTests(unittest.TestCase):
                            "urllib.request.urlopen"):
                 stack.enter_context(mock.patch(target, side_effect=AssertionError("unexpected effect")))
             module_spec.loader.exec_module(module)
-            self.assertEqual(len(module.list_model_specs()), 18)
+            self.assertEqual(len(module.list_model_specs()), 20)
             self.assertEqual(
                 module.get_model_spec("codex", "muse-spark-1.3").endpoint.auth,
                 "env:META_API_KEY",

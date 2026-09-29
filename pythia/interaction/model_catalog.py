@@ -387,6 +387,19 @@ _OPUS = ModelSpec(
         "https://platform.claude.com/docs/en/build-with-claude/effort"
     ),
 )
+_SONNET = ModelSpec(
+    name="claude-sonnet-5.5",
+    endpoint=replace(_ANTHROPIC, model="claude-sonnet-5-5"),
+    limits=ModelLimits(
+        auto_compact_context_tokens=872_000,
+        max_context_tokens=1_000_000,
+        max_output_tokens=128_000,
+    ),
+    source=(
+        "https://platform.claude.com/docs/en/models/sonnet-5-5/overview; "
+        "https://platform.claude.com/docs/en/build-with-claude/effort"
+    ),
+)
 
 
 def _with_effort(base: ModelSpec, name: str, effort: str) -> ModelSpec:
@@ -438,6 +451,12 @@ _MODEL_SPECS = (
     _with_messages_effort(
         _OPUS,
         "claude-opus-5.5-max",
+        "max",
+    ),
+    _SONNET,
+    _with_messages_effort(
+        _SONNET,
+        "claude-sonnet-5.5-max",
         "max",
     ),
 )
