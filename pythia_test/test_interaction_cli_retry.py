@@ -11,7 +11,7 @@ from pythia.interaction import (
     CompactionResult, ContextPrefix, Environment, Init, InteractionContext,
     Message, ModelAuthenticationError, ModelFailure, ModelResponseError,
     ModelSample, ModelSampleBoundary, ModelTimeoutError, OpaqueCompaction,
-    Reasoning, ResolvedSamplingParams, SaveError, Tool, ToolCall, ToolOutcome,
+    Reasoning, SampleParams, SaveError, Tool, ToolCall, ToolOutcome,
     ToolResult, ToolSpec, TurnSummary, UserInteractionBoundary, UserToolCall,
     cli, load_interaction_save, save_interaction_save,
 )
@@ -177,7 +177,7 @@ class RetryControllerTests(_ControllerTestCase):
         login.assert_called_once()
         build.assert_called_once()  # /login activation only; retry reuses it.
         self.assertEqual(len(model.calls), 2)
-        self.assertEqual(model.calls[1][2], ResolvedSamplingParams(max_output_tokens=17))
+        self.assertEqual(model.calls[1][2], SampleParams(max_output_tokens=17, enable_auto_compaction=True))
         self.assertEqual(model.calls[1][1], ())
         self.assertIn(Message("user", "summary"), model.calls[1][0].model_items())
         self.assertEqual([i.call.name for i in load_interaction_save(self.path) if isinstance(i, UserToolCall)],

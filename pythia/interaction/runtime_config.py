@@ -17,9 +17,8 @@ from typing import Mapping
 
 from .messages import MESSAGES_MIN_COMPACTION_TRIGGER_TOKENS
 from .messages import resolve_messages_max_output_tokens
-from .model import ResolvedSamplingParams
-from .model import SamplingParams
-from .model_catalog import binding_from_namespace, freeze_request_params, thaw_json
+from .model import SampleParams
+from .model_catalog import binding_from_namespace, freeze_extra_sample_params, thaw_json
 
 
 ConfigValue = Union[bool, int, None, Mapping]
@@ -30,7 +29,7 @@ CONFIG_KEYS = (
     "enable_auto_compaction",
     "auto_compact_tokens",
     "max_context_tokens",
-    "request_params",
+    "extra_sample_params",
 )
 _BOOLEAN_KEYS = frozenset(("enable_workspace", "enable_auto_compaction"))
 _OPTIONAL_POSITIVE_INTEGER_KEYS = frozenset((
@@ -56,9 +55,9 @@ def _require_key(key: object) -> str:
 
 def validate_config_value(key: str, value: object) -> ConfigValue:
     key = _require_key(key)
-    if key == "request_params":
+    if key == "extra_sample_params":
         try:
-            return freeze_request_params(value)
+            return freeze_extra_sample_params(value)
         except ValueError as exc:
             raise ConfigError(str(exc)) from None
     if key in _BOOLEAN_KEYS:
@@ -79,8 +78,8 @@ def validate_config_value(key: str, value: object) -> ConfigValue:
 def parse_config_literal(key: str, text: object) -> ConfigValue:
     """Parse the intentionally small JSON/Python scalar input grammar."""
     key = _require_key(key)
-    if key == "request_params":
-        raise ConfigError("request_params is launch-only; use /config.json to inspect it.")
+    if key == "extra_sample_params":
+        raise ConfigError("extra_sample_params is launch-only; use /config.json to inspect it.")
     if not isinstance(text, str):
         raise ConfigError(f"Invalid value for {key}.")
     literal = text.strip()
@@ -103,7 +102,12 @@ def parse_config_literal(key: str, text: object) -> ConfigValue:
 
 @dataclass(frozen=True)
 class InteractionConfigSnapshot:
-    """Immutable context values; snapshots published by config are resolved."""
+    """Immutable context values; snapshots published by config are resolved.
+
+    ``extra_sample_params`` is a launch-only, read-only view of the model
+    binding's map. It is not projected into sample params: requests inherit
+    the binding's map, so samples and compactions send the same extensions.
+    """
 
     enable_workspace: bool = True
     max_samples: Optional[int] = None
@@ -111,7 +115,7 @@ class InteractionConfigSnapshot:
     enable_auto_compaction: bool = True
     auto_compact_tokens: Optional[int] = None
     max_context_tokens: Optional[int] = None
-    request_params: Mapping = field(default_factory=dict)
+    extra_sample_params: Mapping = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         for key in CONFIG_KEYS:
@@ -120,22 +124,21 @@ class InteractionConfigSnapshot:
     def as_dict(self) -> Dict[str, ConfigValue]:
         return {key: thaw_json(getattr(self, key)) for key in CONFIG_KEYS}
 
-    def sampling_params(
-        self, base: Optional[SamplingParams] = None,
-    ) -> ResolvedSamplingParams:
-        """Project effective policy, preserving unrelated sampling preferences."""
-        if base is not None and not isinstance(base, SamplingParams):
-            raise TypeError("base must be SamplingParams or None")
-        base = base or SamplingParams()
-        return ResolvedSamplingParams(
+    def sample_params(
+        self, base: Optional[SampleParams] = None,
+    ) -> SampleParams:
+        """Project config-owned fields over a caller's other per-call params.
+
+        Budget and compaction policy come from this snapshot. Other fields,
+        including a per-call ``extra`` (usually None), come from ``base``.
+        """
+        if base is not None and not isinstance(base, SampleParams):
+            raise TypeError("base must be SampleParams or None")
+        return replace(
+            base or SampleParams(),
             max_output_tokens=self.max_output_tokens,
             enable_auto_compaction=self.enable_auto_compaction,
             auto_compact_tokens=self.auto_compact_tokens,
-            temperature=base.temperature,
-            top_p=base.top_p,
-            stop=base.stop,
-            seed=base.seed,
-            request_params=self.request_params,
         )
 
 class InteractionConfig:
@@ -249,7 +252,7 @@ class InteractionConfig:
                 enable_auto_compaction=args.enable_auto_compaction,
                 auto_compact_tokens=getattr(args, "auto_compact_tokens", None),
                 max_context_tokens=getattr(args, "max_context_tokens", None),
-                request_params=binding.request_params,
+                extra_sample_params=binding.extra_sample_params,
             ),
             on_enable_workspace=on_enable_workspace,
             require_max_output_tokens=binding.api == "messages",
@@ -275,7 +278,9 @@ class InteractionConfig:
         """Bind Python frontend inputs once, without loading credentials.
 
         Endpoint budgets/triggers are initial preferences, not later overrides.
-        Custom models may supply limit metadata at this boundary only.
+        Custom models may supply limit metadata at this boundary only. A
+        built-in model's binding owns ``extra_sample_params``; a snapshot may
+        repeat that map but not change it.
         """
         from .chat_completions import ChatCompletionsModel
         from .messages import MessagesModel
@@ -313,9 +318,16 @@ class InteractionConfig:
                 ),
                 max_context_tokens_fallback=getattr(model, "max_context_tokens", None),
             )
+        binding = model.binding
+        if (snapshot.extra_sample_params
+                and snapshot.extra_sample_params != binding.extra_sample_params):
+            raise ConfigError(
+                "extra_sample_params come from the model binding; bind them on "
+                "the model, or pass SampleParams(extra=...) for per-call extras."
+            )
         return cls.from_namespace(SimpleNamespace(
             model_api=profile, model=endpoint.model,
-            model_binding=model.binding.with_request_params(snapshot.request_params),
+            model_binding=binding,
             **snapshot.as_dict(),
         ))
 
@@ -333,8 +345,8 @@ class InteractionConfig:
 
     def set(self, key: str, value: object) -> ConfigValue:
         key = _require_key(key)
-        if key == "request_params":
-            raise ConfigError("request_params is launch-only; use /config.json to inspect it.")
+        if key == "extra_sample_params":
+            raise ConfigError("extra_sample_params is launch-only; use /config.json to inspect it.")
         value = validate_config_value(key, value)
         if value is None and key in self._fallbacks:
             value = self._fallbacks[key]

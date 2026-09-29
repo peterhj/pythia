@@ -19,7 +19,9 @@ from .model_catalog import _normalize_profile, parse_json_value
 MAX_CATALOG_BYTES = 1_048_576
 MAX_CATALOG_MODELS = 1024
 # Version 3 replaced messages.output_effort with request_params.output_config.
-LATEST_MODEL_CATALOG_VERSION = 3
+# Version 4 renamed request_params to extra_sample_params.
+LATEST_MODEL_CATALOG_VERSION = 4
+_EXTRA_SAMPLE_PARAMS_PREFIX = "extra_sample_params."
 _LIMIT_FIELDS = frozenset(("auto_compact_context_tokens", "max_context_tokens", "max_output_tokens"))
 _RESPONSES_FIELDS = frozenset(("reasoning_effort", "reasoning_summary", "text_verbosity"))
 _INTEGER = re.compile(r"^[+-]?[0-9]+$")
@@ -73,9 +75,11 @@ def _entry(section, values, base):
         endpoint["api"] = api
     limits = {} if original is None else dict(vars(original.limits))
     responses = {} if original is None or original.responses is None else dict(vars(original.responses))
-    params = {} if original is None else dict(original.request_params)
-    if "request_params" in values and any(key.startswith("request_params.") for key in values):
-        raise ValueError("Cannot combine whole-map and per-key request params.")
+    params = {} if original is None else dict(original.extra_sample_params)
+    if "extra_sample_params" in values and any(
+        key.startswith(_EXTRA_SAMPLE_PARAMS_PREFIX) for key in values
+    ):
+        raise ValueError("Cannot combine whole-map and per-key extra sample params.")
     for key, value in values.items():
         if key in {"endpoint.model", "endpoint.url", "endpoint.auth"}:
             endpoint[key[9:]] = _text(value)
@@ -93,10 +97,10 @@ def _entry(section, values, base):
             limits[key[7:]] = None if value == "null" else int(value)
         elif key.startswith("responses.") and key[10:] in _RESPONSES_FIELDS:
             responses[key[10:]] = _text(value)
-        elif key == "request_params":
+        elif key == "extra_sample_params":
             params = parse_json_value(value)
-        elif key.startswith("request_params."):
-            params[key[15:]] = parse_json_value(value)
+        elif key.startswith(_EXTRA_SAMPLE_PARAMS_PREFIX):
+            params[key.removeprefix(_EXTRA_SAMPLE_PARAMS_PREFIX)] = parse_json_value(value)
         else:
             raise ValueError("Unknown model field.")
 
@@ -109,7 +113,7 @@ def _entry(section, values, base):
     endpoint = EndpointSpec(**endpoint)
     if endpoint.auth == "codex-login" and not endpoint.is_official_codex:
         raise ValueError("Catalog Codex login requires the official Codex endpoint.")
-    fields.update(endpoint=endpoint, limits=ModelLimits(**limits), request_params=params)
+    fields.update(endpoint=endpoint, limits=ModelLimits(**limits), extra_sample_params=params)
     if responses:
         fields["responses"] = ResponsesDefaults(**responses)
     spec = (ModelSpec(name=name, **fields) if original is None
@@ -165,7 +169,13 @@ def parse_model_catalog(text, *, base=BUILTIN_MODEL_CATALOG, source="user"):
         if any(key.startswith("messages.") for key in parser[section]):
             raise ValueError(
                 f"Invalid model catalog entry {section!r} in {source}: messages.* fields "
-                'were removed in catalog version 3; use request_params.output_config = {"effort": ...}'
+                'were removed in catalog version 3; use extra_sample_params.output_config = {"effort": ...}'
+            )
+        if any(key == "request_params" or key.startswith("request_params.")
+               for key in parser[section]):
+            raise ValueError(
+                f"Invalid model catalog entry {section!r} in {source}: request_params "
+                "was renamed to extra_sample_params in catalog version 4"
             )
         try:
             spec = _entry(section, parser[section], base)
@@ -176,7 +186,7 @@ def parse_model_catalog(text, *, base=BUILTIN_MODEL_CATALOG, source="user"):
             specs[identity] = spec
             origins[identity] = str(source)
         except (ValueError, TypeError, KeyError, RecursionError):
-            # No values from request params/credentials should appear in errors.
+            # No values from extra sample params/credentials should appear in errors.
             raise ValueError(f"Invalid model catalog entry {section!r} in {source}") from None
     try:
         catalog = ModelCatalog(tuple(specs.values()), origins)

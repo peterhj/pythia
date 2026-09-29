@@ -28,7 +28,7 @@ from pythia.interaction import ModelTimeoutError
 from pythia.interaction import ModelTransportError
 from pythia.interaction import OpaqueCompaction
 from pythia.interaction import Reasoning
-from pythia.interaction import SamplingParams
+from pythia.interaction import SampleParams
 from pythia.interaction import ToolCall
 from pythia.interaction import ToolResult
 from pythia.interaction import ToolSpec
@@ -212,7 +212,7 @@ class MessagesEndpointTests(unittest.TestCase):
                 server_compaction=object(),
             )
 
-    def test_server_compaction_honors_sampling_options_override(self):
+    def test_server_compaction_honors_per_call_trigger(self):
         policy = MessagesServerCompaction()
         model = MessagesModel(_endpoint(
             api_url="https://api.anthropic.com",
@@ -224,7 +224,7 @@ class MessagesEndpointTests(unittest.TestCase):
         payload = model._build_request_payload(
             InteractionContext((Message("user", "Hello."),)),
             (),
-            SamplingParams(auto_compact_tokens=123_456),
+            SampleParams(auto_compact_tokens=123_456),
         )
 
         self.assertEqual(
@@ -235,7 +235,7 @@ class MessagesEndpointTests(unittest.TestCase):
             model._build_request_payload(
                 InteractionContext((Message("user", "Hello."),)),
                 (),
-                SamplingParams(auto_compact_tokens=49_999),
+                SampleParams(auto_compact_tokens=49_999),
             )
 
         explicit = MessagesModel(_endpoint(
@@ -249,10 +249,18 @@ class MessagesEndpointTests(unittest.TestCase):
         explicit_payload = explicit._build_request_payload(
             InteractionContext((Message("user", "Hello."),)),
             (),
-            SamplingParams(auto_compact_tokens=200_000),
+            SampleParams(auto_compact_tokens=200_000),
         )
+        # Per-call > endpoint > catalog: the call's trigger beats the endpoint's.
         self.assertEqual(
             explicit_payload["context_management"]["edits"][0]["trigger"]["value"],
+            200_000,
+        )
+        inherited = explicit._build_request_payload(
+            InteractionContext((Message("user", "Hello."),)), (), SampleParams(),
+        )
+        self.assertEqual(
+            inherited["context_management"]["edits"][0]["trigger"]["value"],
             150_000,
         )
 
@@ -286,7 +294,7 @@ class MessagesEndpointTests(unittest.TestCase):
         disabled = model._build_request_payload(
             InteractionContext((Message("user", "Hello."),)),
             (),
-            SamplingParams(enable_auto_compaction=False),
+            SampleParams(enable_auto_compaction=False),
         )
         self.assertNotIn("context_management", disabled)
 
@@ -298,7 +306,7 @@ class MessagesEndpointTests(unittest.TestCase):
         enabled_after_startup = runtime_enabled._build_request_payload(
             InteractionContext((Message("user", "Hello."),)),
             (),
-            SamplingParams(enable_auto_compaction=True),
+            SampleParams(enable_auto_compaction=True),
         )
         self.assertEqual(
             enabled_after_startup["context_management"],
@@ -316,7 +324,7 @@ class MessagesEndpointTests(unittest.TestCase):
         opener = _Opener(response)
         MessagesModel(model.endpoint, opener=opener).sample(
             InteractionContext((Message("user", "Hello."),)),
-            sampling_params=SamplingParams(enable_auto_compaction=False),
+            sample_params=SampleParams(enable_auto_compaction=False),
         )
         request, _ = opener.calls[0]
         self.assertIsNone(request.get_header("Anthropic-beta"))
@@ -391,7 +399,7 @@ class MessagesModelTests(unittest.TestCase):
         sample = model.sample(
             context,
             tools=(tool,),
-            sampling_params=SamplingParams(
+            sample_params=SampleParams(
                 max_output_tokens=100,
                 temperature=0.25,
                 top_p=0.9,
@@ -632,14 +640,14 @@ class MessagesModelTests(unittest.TestCase):
             ),
             (
                 InteractionContext((Message(role="user", content="hello"),)),
-                SamplingParams(seed=1),
+                SampleParams(seed=1),
                 "seed",
             ),
         ]
         for context, options, message in cases:
             with self.subTest(message=message):
                 with self.assertRaisesRegex(ModelConfigurationError, message):
-                    model.sample(context, sampling_params=options)
+                    model.sample(context, sample_params=options)
 
     def test_rejects_unknown_response_blocks(self):
         model = MessagesModel(
@@ -1045,8 +1053,8 @@ class MessagesDemoTests(unittest.TestCase):
             def __init__(self):
                 self.calls = []
 
-            def sample(self, context, *, tools=(), sampling_params=None):
-                del tools, sampling_params
+            def sample(self, context, *, tools=(), sample_params=None):
+                del tools, sample_params
                 self.calls.append(context.copy())
                 if len(self.calls) == 1:
                     return ModelSample(

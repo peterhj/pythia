@@ -47,9 +47,8 @@ from .model import ModelResponseError
 from .model import ModelSample
 from .model import ModelTimeoutError
 from .model import ModelTransportError
-from .model import SamplingParams
-from .model import ResolvedSamplingParams
-from .model import _apply_request_params
+from .model import SampleParams
+from .model import _apply_extra_sample_params
 from .model import _timed_sample
 from .model_catalog import ModelBinding
 from .model_catalog import MESSAGES_MIN_COMPACTION_TRIGGER_TOKENS
@@ -114,10 +113,11 @@ class MessagesPromptCaching:
 
 @dataclass(frozen=True)
 class MessagesServerCompaction:
-    """An unset trigger uses the known auto-compaction limit when encoding.
+    """Server compaction policy; its trigger is the endpoint-level default.
 
-    Without model-specific limits, omit the trigger to use the server default.
-    Explicit thresholds always take precedence.
+    A per-call ``SampleParams.auto_compact_tokens`` overrides the trigger, and
+    an unset trigger uses the known auto-compaction limit when encoding.
+    Without either, the trigger is omitted to use the server default.
     """
 
     trigger_input_tokens: Optional[int] = None
@@ -486,24 +486,23 @@ def _encode_tools(tools: Sequence[Any]) -> List[Dict[str, Any]]:
     return encoded
 
 
-def _apply_sampling_params(
+def _apply_sample_params(
     payload: Dict[str, Any],
-    sampling_params: Optional[SamplingParams],
+    sample_params: Optional[SampleParams],
 ) -> None:
-    if sampling_params is None:
+    """Encode typed knobs; the builder resolves the required budget."""
+    if sample_params is None:
         return
-    if sampling_params.seed is not None:
+    if sample_params.seed is not None:
         raise ModelConfigurationError(
             "Messages does not support the seed sampling option"
         )
-    if sampling_params.max_output_tokens is not None:
-        payload["max_tokens"] = sampling_params.max_output_tokens
-    if sampling_params.temperature is not None:
-        payload["temperature"] = sampling_params.temperature
-    if sampling_params.top_p is not None:
-        payload["top_p"] = sampling_params.top_p
-    if sampling_params.stop:
-        payload["stop_sequences"] = list(sampling_params.stop)
+    if sample_params.temperature is not None:
+        payload["temperature"] = sample_params.temperature
+    if sample_params.top_p is not None:
+        payload["top_p"] = sample_params.top_p
+    if sample_params.stop:
+        payload["stop_sequences"] = list(sample_params.stop)
 
 
 def _require_string(
@@ -839,19 +838,19 @@ class MessagesModel:
         self,
         context: InteractionContext,
         tools: Sequence[Any],
-        sampling_params: Optional[SamplingParams],
+        sample_params: Optional[SampleParams],
     ) -> Dict[str, Any]:
         if not isinstance(context, InteractionContext):
             raise TypeError("context must be InteractionContext")
         context.assert_model_ready()
         system, messages = _encode_context(context.model_items())
         spec = self.binding.spec
-        resolved = isinstance(sampling_params, ResolvedSamplingParams)
+        # Per-call > endpoint; the endpoint already resolved explicit > catalog.
         output_budget = (
-            sampling_params.max_output_tokens if resolved else self.endpoint.max_output_tokens
+            self.endpoint.max_output_tokens
+            if sample_params is None or sample_params.max_output_tokens is None
+            else sample_params.max_output_tokens
         )
-        if output_budget is None:
-            raise ModelConfigurationError("Resolved Messages max_output_tokens is required")
         payload: Dict[str, Any] = {
             "model": (
                 self.binding.endpoint.model
@@ -873,23 +872,21 @@ class MessagesModel:
             )
         compaction = self.endpoint.server_compaction
         auto_compaction_override = (
-            None if sampling_params is None else sampling_params.enable_auto_compaction
+            None if sample_params is None else sample_params.enable_auto_compaction
         )
         if compaction is None and auto_compaction_override is True:
             compaction = MessagesServerCompaction()
         enable_auto_compaction = auto_compaction_override is not False
         if compaction is not None and enable_auto_compaction:
-            if resolved:
-                # None explicitly delegates to the server; never re-inherit an
-                # endpoint/catalog number after frontend config resolution.
-                auto_compact_context = sampling_params.auto_compact_tokens
-            else:
-                # Direct library calls retain endpoint > params > catalog.
+            # Per-call > endpoint > catalog; if none is known, omit the
+            # trigger so the server uses its default.
+            auto_compact_context = (
+                None if sample_params is None else sample_params.auto_compact_tokens
+            )
+            if auto_compact_context is None:
                 auto_compact_context = compaction.trigger_input_tokens
-                if auto_compact_context is None and sampling_params is not None:
-                    auto_compact_context = sampling_params.auto_compact_tokens
-                if auto_compact_context is None and spec is not None:
-                    auto_compact_context = spec.limits.auto_compact_context_tokens
+            if auto_compact_context is None and spec is not None:
+                auto_compact_context = spec.limits.auto_compact_context_tokens
             if (
                 auto_compact_context is not None
                 and auto_compact_context
@@ -906,8 +903,8 @@ class MessagesModel:
             payload["context_management"] = {
                 "edits": [compaction.request_edit()]
             }
-        _apply_sampling_params(payload, sampling_params)
-        _apply_request_params(payload, self.binding, sampling_params)
+        _apply_sample_params(payload, sample_params)
+        _apply_extra_sample_params(payload, self.binding, sample_params)
         return payload
 
     @_timed_sample
@@ -916,11 +913,11 @@ class MessagesModel:
         context: InteractionContext,
         *,
         tools: Sequence[Any] = (),
-        sampling_params: Optional[SamplingParams] = None,
+        sample_params: Optional[SampleParams] = None,
     ) -> ModelSample:
-        if sampling_params is not None and not isinstance(sampling_params, SamplingParams):
-            raise TypeError("sampling_params must be SamplingParams or None")
-        payload = self._build_request_payload(context, tools, sampling_params)
+        if sample_params is not None and not isinstance(sample_params, SampleParams):
+            raise TypeError("sample_params must be SampleParams or None")
+        payload = self._build_request_payload(context, tools, sample_params)
         try:
             request_data = json.dumps(payload, ensure_ascii=False).encode(
                 "utf-8"

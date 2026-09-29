@@ -472,8 +472,8 @@ class SessionResumeTests(unittest.TestCase):
             def __init__(self):
                 self.contexts = []
 
-            def sample(self, context, *, tools=(), sampling_params=None):
-                del tools, sampling_params
+            def sample(self, context, *, tools=(), sample_params=None):
+                del tools, sample_params
                 self.contexts.append(context.copy())
                 return ModelSample(
                     items=(Message(role="assistant", content="fresh answer"),),
@@ -532,8 +532,8 @@ class SessionResumeTests(unittest.TestCase):
         )
 
         class Model:
-            def sample(self, context, *, tools=(), sampling_params=None):
-                del context, tools, sampling_params
+            def sample(self, context, *, tools=(), sample_params=None):
+                del context, tools, sample_params
                 raise AssertionError("completed sessions should not sample")
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -574,8 +574,8 @@ class SessionResumeTests(unittest.TestCase):
             def __init__(self):
                 self.contexts = []
 
-            def sample(self, context, *, tools=(), sampling_params=None):
-                del tools, sampling_params
+            def sample(self, context, *, tools=(), sample_params=None):
+                del tools, sample_params
                 self.contexts.append(context.copy())
                 return ModelSample(
                     items=(Message(role="assistant", content="new answer"),),
@@ -639,8 +639,8 @@ class SessionResumeTests(unittest.TestCase):
             def __init__(self):
                 self.contexts = []
 
-            def sample(self, context, *, tools=(), sampling_params=None):
-                del tools, sampling_params
+            def sample(self, context, *, tools=(), sample_params=None):
+                del tools, sample_params
                 self.contexts.append(context.copy())
                 return ModelSample(
                     items=(Message(role="assistant", content="resumed answer"),),

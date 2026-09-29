@@ -23,7 +23,7 @@ from pythia.interaction import ToolOutcome, ToolSpec, ToolResult, TurnSummary
 from pythia.interaction import ModelFailure, ModelTransportError, Reasoning, OpaqueCompaction
 from pythia.interaction import load_interaction_save
 from pythia.interaction import auto
-from pythia.interaction import ResolvedSamplingParams
+from pythia.interaction import SampleParams
 from pythia.interaction._auto_board import BoardError
 from pythia.interaction._auto_config import build_parser, namespace, resolve_config
 from pythia.interaction.messages import resolve_messages_max_output_tokens
@@ -261,7 +261,7 @@ class ConfigTests(unittest.TestCase):
             self.assertIsNone(settings["max_output_tokens"])
             snapshot = InteractionConfig.from_namespace(namespace(settings)).snapshot()
             self.assertIsNone(snapshot.max_samples)
-            self.assertEqual(snapshot.sampling_params(), ResolvedSamplingParams())
+            self.assertEqual(snapshot.sample_params(), SampleParams(enable_auto_compaction=True))
 
     def test_explicit_limits_and_per_context_null_overrides(self):
         args = build_parser().parse_args(["--max-samples", "3", "--max-output-tokens", "128"])
@@ -441,7 +441,7 @@ class RuntimeTests(unittest.TestCase):
             def sample(self, context, **params):
                 test.threads[self.index].append(threading.get_ident())
                 test.calls[self.index].append(context.copy())
-                test.options[self.index].append(params.get("sampling_params"))
+                test.options[self.index].append(params.get("sample_params"))
                 saved = load_interaction_save(test.path / "contexts" / f"{self.index}.jsonl")
                 test.assertEqual(saved.items, context.items)
                 test.assertFalse(context.pending_tool_calls())
@@ -599,7 +599,7 @@ class RuntimeTests(unittest.TestCase):
         self.assertTrue(self.finished(session, source["thread_id"]))
         for index in (1, 2):
             self.assertEqual(len(self.calls[index]), 10)
-            self.assertTrue(all(options == ResolvedSamplingParams() for options in self.options[index]))
+            self.assertTrue(all(options == SampleParams(enable_auto_compaction=True) for options in self.options[index]))
 
     def test_explicit_limits_still_apply(self):
         tool = Tool(ToolSpec("noop", "continue the test", {}),

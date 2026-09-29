@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import replace
 import sys
 from pathlib import Path
 from time import perf_counter
@@ -31,12 +30,9 @@ from .items import TurnSummary
 from .items import UserInteractionBoundary
 from .items import summarize_turn_usage
 from .media import parse_user_prompt
-from .messages import MessagesModel
-from .messages import MESSAGES_MIN_COMPACTION_TRIGGER_TOKENS
 from .model import Model
 from .model import ModelError
-from .model import SamplingParams
-from .model import ResolvedSamplingParams
+from .model import SampleParams
 from .model_config import DEFAULT_SAVE_PATH as DEFAULT_SAVE_PATH
 from .model_config import build_model
 from .model_config import build_parser
@@ -80,7 +76,7 @@ def run(
     prompt: Optional[str] = DEFAULT_PROMPT,
     instructions: Optional[Union[str, Instructions]] = None,
     max_samples: Optional[int] = None,
-    sampling_params: Optional[SamplingParams] = None,
+    sample_params: Optional[SampleParams] = None,
     save_path: Optional[Union[str, Path]] = None,
     resume: bool = False,
     enable_auto_compaction: bool = True,
@@ -138,14 +134,17 @@ def run(
         or max_samples <= 0
     ):
         raise ValueError("max_samples must be a positive integer or None")
-    if sampling_params is not None and not isinstance(sampling_params, SamplingParams):
-        raise TypeError("sampling_params must be SamplingParams or None")
-    base_params = sampling_params or SamplingParams()
-    if auto_compact_tokens is not None and (
-        base_params.auto_compact_tokens is not None
-        or isinstance(base_params, ResolvedSamplingParams)
-    ) and auto_compact_tokens != base_params.auto_compact_tokens:
-        raise ValueError("Conflicting auto_compact_tokens keyword and sampling param")
+    if sample_params is not None and not isinstance(sample_params, SampleParams):
+        raise TypeError("sample_params must be SampleParams or None")
+    base_params = sample_params or SampleParams()
+    if (
+        auto_compact_tokens is not None
+        and base_params.auto_compact_tokens is not None
+        and auto_compact_tokens != base_params.auto_compact_tokens
+    ):
+        raise ValueError("Conflicting auto_compact_tokens keyword and sample param")
+    # Bind config-owned fields once; the projection keeps the caller's other
+    # per-call preferences, including a per-call ``extra`` override.
     inputs = InteractionConfigSnapshot(
         enable_workspace=enable_workspace,
         max_samples=max_samples,
@@ -158,30 +157,12 @@ def run(
             else base_params.auto_compact_tokens
         ),
         max_context_tokens=max_context_tokens,
-        request_params=(base_params.request_params
-                        if isinstance(base_params, ResolvedSamplingParams) else {}),
     )
-    # Resolved params must not be sent through model-default inheritance again.
-    if isinstance(base_params, ResolvedSamplingParams):
-        messages = isinstance(model, MessagesModel)
-        turn_config = InteractionConfig(
-            inputs,
-            require_max_output_tokens=messages,
-            min_auto_compact_tokens=(
-                MESSAGES_MIN_COMPACTION_TRIGGER_TOKENS if messages else None
-            ),
-        ).snapshot()
-    else:
-        turn_config = InteractionConfig.from_model(model, inputs).snapshot()
-    sampling_params = turn_config.sampling_params(base_params)
-    binding = None
-    if debug_save_model_binding:
-        candidate = getattr(model, "binding", None)
-        if isinstance(candidate, ModelBinding):
-            binding = replace(
-                candidate,
-                request_params=turn_config.request_params,
-            )
+    turn_config = InteractionConfig.from_model(model, inputs).snapshot()
+    sample_params = turn_config.sample_params(base_params)
+    binding = getattr(model, "binding", None) if debug_save_model_binding else None
+    if not isinstance(binding, ModelBinding):
+        binding = None
 
     resumed_existing_save = False
     if resume and Path(save_path).exists():
@@ -295,7 +276,7 @@ def run(
             sample = model.sample(
                 context,
                 tools=environment.tool_specs,
-                sampling_params=sampling_params,
+                sample_params=sample_params,
             )
         except ModelError as exc:
             contribution = (
@@ -464,7 +445,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 prompt=prompt,
                 instructions=args.instructions,
                 max_samples=config.max_samples,
-                sampling_params=config.sampling_params(),
+                sample_params=config.sample_params(),
                 save_path=save_path,
                 resume=args.resume,
                 enable_auto_compaction=config.enable_auto_compaction,

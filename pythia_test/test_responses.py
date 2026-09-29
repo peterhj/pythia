@@ -41,7 +41,7 @@ from pythia.interaction import PromptSummarizingCompactor
 from pythia.interaction import Reasoning
 from pythia.interaction import REMOTE_COMPACTION_V2_RETAINED_USER_MESSAGE_TOKENS
 from pythia.interaction import ResponsesOpaqueCompactor
-from pythia.interaction import SamplingParams
+from pythia.interaction import SampleParams
 from pythia.interaction import StreamingResponsesEndpoint
 from pythia.interaction import TokenUsage
 from pythia.interaction import ToolCall
@@ -745,12 +745,12 @@ class CodexResponsesModelTests(unittest.TestCase):
         self.assertIn("old-user", request_text)
         self.assertIn("old local summary", request_text)
 
-    def test_request_params_extend_samples_and_remote_v2_compaction(self):
+    def test_extra_sample_params_extend_samples_and_remote_v2_compaction(self):
         binding = BUILTIN_MODEL_CATALOG.bind(
             "codex", "codex-test",
             endpoint_url=CODEX_RESPONSES_API_URL + "/responses",
             endpoint_auth="supplied",
-            request_params={"service_tier": "priority"},
+            extra_sample_params={"service_tier": "priority"},
         )
         opener = _ScriptedOpener(
             _FakeSSEResponse(_message_event(0, "OK"), _completed_event()),
@@ -925,9 +925,9 @@ class CodexResponsesModelTests(unittest.TestCase):
         for model in (custom, meta):
             compactor = create_default_compactor(model)
             self.assertIsInstance(compactor, PromptSummarizingCompactor)
-            self.assertIsNone(compactor._sampling_params.temperature)
+            self.assertIsNone(compactor._sample_params.temperature)
             self.assertEqual(
-                compactor._sampling_params.max_output_tokens,
+                compactor._sample_params.max_output_tokens,
                 DEFAULT_COMPACTION_MAX_OUTPUT_TOKENS,
             )
 
@@ -1222,7 +1222,7 @@ class CodexResponsesModelTests(unittest.TestCase):
         sample = model.sample(
             context,
             tools=(tool,),
-            sampling_params=SamplingParams(max_output_tokens=200),
+            sample_params=SampleParams(max_output_tokens=200),
         )
 
         self.assertEqual(context.items, before)
@@ -1683,7 +1683,7 @@ class CodexResponsesModelTests(unittest.TestCase):
         ):
             model.sample(
                 InteractionContext([Message(role="user", content="hello")]),
-                sampling_params=SamplingParams(temperature=0.5),
+                sample_params=SampleParams(temperature=0.5),
             )
 
         partial_message = _message_event(0, "partial")

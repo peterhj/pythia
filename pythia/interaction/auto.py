@@ -515,7 +515,7 @@ class _Session:
 
     def _turn(self, index, model, environment, config, context):
         started = time.perf_counter()
-        sampling_params = config.sampling_params()
+        sample_params = config.sample_params()
         samples = 0
         while config.max_samples is None or samples < config.max_samples:
             self._check_running()
@@ -535,7 +535,7 @@ class _Session:
             try:
                 sample = model.sample(
                     context.copy(), tools=environment.tool_specs,
-                    sampling_params=sampling_params,
+                    sample_params=sample_params,
                 )
             except ModelError as exc:
                 contribution = (*exc.completed_items, *((exc.failure,) if exc.failure is not None else ()))

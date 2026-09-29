@@ -20,7 +20,7 @@ def chat_endpoint(
     *,
     api_key=None,
     binding=None,
-    request_params=None,
+    extra_sample_params=None,
     **kwargs,
 ):
     if binding is None:
@@ -29,7 +29,7 @@ def chat_endpoint(
             model,
             endpoint_url=_full_url(api_url, "/v1/chat/completions"),
             endpoint_auth="supplied" if api_key is not None else "none",
-            request_params=request_params,
+            extra_sample_params=extra_sample_params,
         )
     return ChatCompletionsEndpoint(binding=binding, api_key=api_key, **kwargs)
 

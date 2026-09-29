@@ -28,7 +28,7 @@ from pythia.interaction import ModelSample
 from pythia.interaction import ModelSampleBoundary
 from pythia.interaction import OpaqueCompaction
 from pythia.interaction import Reasoning
-from pythia.interaction import ResolvedSamplingParams
+from pythia.interaction import SampleParams
 from pythia.interaction import SampleMetadata
 from pythia.interaction import SaveError
 from pythia.interaction import Tool
@@ -99,8 +99,8 @@ class _Model:
         self.checkpoints = []
         self.threads = []
 
-    def sample(self, context, *, tools=(), sampling_params=None):
-        self.calls.append((context.copy(), tuple(tools), sampling_params))
+    def sample(self, context, *, tools=(), sample_params=None):
+        self.calls.append((context.copy(), tuple(tools), sample_params))
         self.checkpoints.append(load_interaction_save(self.path).items)
         self.threads.append(threading.get_ident())
         if not self.outcomes:
@@ -649,7 +649,7 @@ class CLIControllerTests(_ControllerTestCase):
         )
         self.assertEqual(
             [call[2] for call in model.calls],
-            [ResolvedSamplingParams(max_output_tokens=77)] * 2,
+            [SampleParams(max_output_tokens=77, enable_auto_compaction=True)] * 2,
         )
         texts = [item.text for item in terminal.items]
         self.assertEqual(texts.count("[assistant] first"), 1)
@@ -969,7 +969,7 @@ class CLIControllerTests(_ControllerTestCase):
         self.assertEqual(len(model.calls), 1)
         self.assertEqual(
             model.calls[0][2],
-            ResolvedSamplingParams(enable_auto_compaction=False, auto_compact_tokens=100),
+            SampleParams(enable_auto_compaction=False, auto_compact_tokens=100),
         )
         self.assertIn(
             Message("assistant", "uncompacted answer"),

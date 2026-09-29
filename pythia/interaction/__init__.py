@@ -73,7 +73,7 @@ from .model import ModelResponseError
 from .model import ModelSample
 from .model import ModelTimeoutError
 from .model import ModelTransportError
-from .model import SamplingParams, ResolvedSamplingParams
+from .model import SampleParams
 from .model import TokenUsage
 from .model_catalog import ModelLimits
 from .model_catalog import ModelSpec
@@ -175,8 +175,7 @@ __all__ = [
     "ResponsesDefaults",
     "ResponsesOpaqueCompactor",
     "StreamingResponsesEndpoint",
-    "SamplingParams",
-    "ResolvedSamplingParams",
+    "SampleParams",
     "ModelCatalog",
     "ModelBinding",
     "EndpointSpec",

@@ -20,7 +20,7 @@ from pythia.interaction import InteractionContext
 from pythia.interaction import ModelTransportError
 from pythia.interaction import OpaqueCompaction
 from pythia.interaction import Reasoning
-from pythia.interaction import SamplingParams
+from pythia.interaction import SampleParams
 from pythia.interaction import TokenUsage
 from pythia.interaction import ToolResult
 from pythia.interaction import ToolSpec
@@ -124,14 +124,14 @@ class MessagesPromptCachingTests(unittest.TestCase):
                     Instructions("Be concise."), Message("user", "Check facts."),
                 ))
                 tools = (ToolSpec("lookup", "Look up facts.", {"type": "object"}),)
-                options = SamplingParams(max_output_tokens=128)
+                options = SampleParams(max_output_tokens=128)
                 control = {"type": "ephemeral", "ttl": ttl}
 
                 for turn in range(2):
                     before = [interaction_item_to_dict(item) for item in context]
                     expected = uncached._build_request_payload(context, tools, options)
                     sample = model.sample(
-                        context, tools=tools, sampling_params=options,
+                        context, tools=tools, sample_params=options,
                     )
                     self.assertEqual(_payload(opener), {**expected, "cache_control": control})
                     self.assertEqual(

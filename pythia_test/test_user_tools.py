@@ -19,7 +19,7 @@ from pythia.interaction import (
     CodexResponsesModel, CompactionError, CompactionMetadata, CompactionResult, ContextPrefix,
     ContextValidationError, DefaultEnvironment, Environment,
     Instructions, InteractionConfig, Message, MessagesEndpoint, MessagesModel, InteractionContext, ModelSample,
-    ModelSampleBoundary, OpaqueCompaction, PromptSummarizingCompactor, ResolvedSamplingParams, Init,
+    ModelSampleBoundary, OpaqueCompaction, PromptSummarizingCompactor, SampleParams, Init,
     TokenUsage, ToolCall, ToolResult, SampleMetadata, TurnSummary, UserInteraction,
     UserInteractionBoundary, UserToolCall, UserToolResult, load_interaction_save,
     render_interaction_items, save_interaction_save,
@@ -107,7 +107,7 @@ class UserToolValueTests(unittest.TestCase):
             "enable_auto_compaction = True",
             "auto_compact_tokens = None",
             "max_context_tokens = None",
-            "request_params = {}",
+            "extra_sample_params = {}",
         )))
         json_dump = execute("/config.json")
         self.assertTrue(json_dump.success)
@@ -415,7 +415,7 @@ class UserToolControllerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.run_cli(model, terminal), 0)
 
         self.assertEqual(len(model.calls), 1)
-        self.assertEqual(model.calls[0][2], ResolvedSamplingParams(max_output_tokens=17))
+        self.assertEqual(model.calls[0][2], SampleParams(max_output_tokens=17, enable_auto_compaction=True))
         self.assertFalse(any(
             isinstance(item, (UserToolCall, UserToolResult))
             for item in model.calls[0][0].model_items()
@@ -440,7 +440,7 @@ class UserToolControllerTests(unittest.IsolatedAsyncioTestCase):
                 "enable_auto_compaction": True,
                 "auto_compact_tokens": None,
                 "max_context_tokens": None,
-                "request_params": {},
+                "extra_sample_params": {},
                 "__init__": {
                     "enable_workspace": True,
                     "max_samples": None,
@@ -448,7 +448,7 @@ class UserToolControllerTests(unittest.IsolatedAsyncioTestCase):
                     "enable_auto_compaction": True,
                     "auto_compact_tokens": None,
                     "max_context_tokens": None,
-                    "request_params": {},
+                    "extra_sample_params": {},
                 },
             },
         )
@@ -540,7 +540,7 @@ class UserToolControllerTests(unittest.IsolatedAsyncioTestCase):
         terminal = _Terminal(second_frame)
         self.assertEqual(await self.run_cli(model, terminal), 0)
 
-        self.assertEqual(model.calls[0][2], ResolvedSamplingParams())
+        self.assertEqual(model.calls[0][2], SampleParams(enable_auto_compaction=True))
         self.assertTrue(any(
             "saved config commands were not replayed" in item.text
             for item in terminal.items
@@ -585,7 +585,7 @@ class UserToolControllerTests(unittest.IsolatedAsyncioTestCase):
         create.assert_not_called()
         self.assertEqual(
             model.calls[0][2],
-            ResolvedSamplingParams(enable_auto_compaction=False, auto_compact_tokens=100),
+            SampleParams(enable_auto_compaction=False, auto_compact_tokens=100),
         )
 
     async def test_config_max_samples_applies_to_the_next_turn(self):

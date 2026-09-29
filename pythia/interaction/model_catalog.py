@@ -36,7 +36,7 @@ MESSAGES_MIN_COMPACTION_TRIGGER_TOKENS = 50_000
 _PROFILES = frozenset(("codex", "responses", "messages", "chat-completions"))
 
 # Extensions are not a second path for typed policy or adapter-owned structure.
-_RESERVED_REQUEST_PARAMS = frozenset((
+_RESERVED_EXTRA_SAMPLE_PARAMS = frozenset((
     "model", "messages", "input", "instructions", "stream", "stream_options",
     "tools", "parallel_tool_calls", "max_tokens", "max_output_tokens",
     "max_completion_tokens", "max_new_tokens", "temperature", "top_p", "stop",
@@ -48,18 +48,18 @@ _RESERVED_REQUEST_PARAMS = frozenset((
 # Each API's adapter also owns these top-level fields, including those holding
 # typed catalog defaults (Responses reasoning/text).
 # They are protected even when a particular request omits them.
-_RESPONSES_RESERVED_REQUEST_PARAMS = frozenset((
+_RESPONSES_RESERVED_EXTRA_SAMPLE_PARAMS = frozenset((
     "tool_choice", "store", "include", "reasoning", "text", "prompt_cache_key",
     # Stateless requests carry the complete context; no server-side history.
     "previous_response_id", "conversation",
 ))
-_PROFILE_RESERVED_REQUEST_PARAMS = MappingProxyType({
-    "chat-completions": _RESERVED_REQUEST_PARAMS,
-    "messages": _RESERVED_REQUEST_PARAMS | {"system", "cache_control"},
-    "responses": _RESERVED_REQUEST_PARAMS | _RESPONSES_RESERVED_REQUEST_PARAMS,
-    "codex": _RESERVED_REQUEST_PARAMS | _RESPONSES_RESERVED_REQUEST_PARAMS,
+_PROFILE_RESERVED_EXTRA_SAMPLE_PARAMS = MappingProxyType({
+    "chat-completions": _RESERVED_EXTRA_SAMPLE_PARAMS,
+    "messages": _RESERVED_EXTRA_SAMPLE_PARAMS | {"system", "cache_control"},
+    "responses": _RESERVED_EXTRA_SAMPLE_PARAMS | _RESPONSES_RESERVED_EXTRA_SAMPLE_PARAMS,
+    "codex": _RESERVED_EXTRA_SAMPLE_PARAMS | _RESPONSES_RESERVED_EXTRA_SAMPLE_PARAMS,
 })
-MAX_REQUEST_PARAMS_BYTES = 65_536
+MAX_EXTRA_SAMPLE_PARAMS_BYTES = 65_536
 
 
 def parse_json_value(text: str):
@@ -83,18 +83,18 @@ def parse_json_value(text: str):
 
 def _freeze_json(value, depth=0):
     if depth > 32:
-        raise ValueError("Request params exceed maximum nesting depth.")
+        raise ValueError("Extra sample params exceed maximum nesting depth.")
     if value is None or isinstance(value, (str, bool, int)):
         return value
     if isinstance(value, float) and math.isfinite(value):
         return value
     if isinstance(value, MappingABC):
         if any(not isinstance(key, str) for key in value):
-            raise ValueError("Request param object keys must be strings.")
+            raise ValueError("Extra sample param object keys must be strings.")
         return MappingProxyType({key: _freeze_json(item, depth + 1) for key, item in value.items()})
     if isinstance(value, (list, tuple)):
         return tuple(_freeze_json(item, depth + 1) for item in value)
-    raise ValueError("Request params must contain only finite JSON values.")
+    raise ValueError("Extra sample params must contain only finite JSON values.")
 
 
 def thaw_json(value):
@@ -106,26 +106,26 @@ def thaw_json(value):
     return value
 
 
-def freeze_request_params(value, profile=None):
+def freeze_extra_sample_params(value, profile=None):
     """Validate and freeze request-body extensions.
 
     Without a profile only names reserved for every API are checked; bindings
     and adapters also reject the names owned by their API's adapter.
     """
     if not isinstance(value, MappingABC):
-        raise ValueError("request_params must be an object.")
-    reserved = (_RESERVED_REQUEST_PARAMS if profile is None
-                else _PROFILE_RESERVED_REQUEST_PARAMS[_normalize_profile(profile)])
+        raise ValueError("extra_sample_params must be an object.")
+    reserved = (_RESERVED_EXTRA_SAMPLE_PARAMS if profile is None
+                else _PROFILE_RESERVED_EXTRA_SAMPLE_PARAMS[_normalize_profile(profile)])
     if any(not isinstance(key, str) or not key or key.lower() in reserved
            or any(ord(char) < 32 for char in key) for key in value):
-        raise ValueError("Invalid or adapter-owned request parameter.")
+        raise ValueError("Invalid or adapter-owned extra sample param.")
     frozen = _freeze_json(value)
     try:
         encoded = json.dumps(thaw_json(frozen), ensure_ascii=False, allow_nan=False).encode("utf-8")
     except (ValueError, UnicodeError, RecursionError):
-        raise ValueError("Request params are not valid JSON.") from None
-    if len(encoded) > MAX_REQUEST_PARAMS_BYTES:
-        raise ValueError("Request params exceed the size limit.")
+        raise ValueError("Extra sample params are not valid JSON.") from None
+    if len(encoded) > MAX_EXTRA_SAMPLE_PARAMS_BYTES:
+        raise ValueError("Extra sample params exceed the size limit.")
     return frozen
 
 
@@ -226,6 +226,9 @@ class ModelLimits:
             )
 
 
+# TODO: Fold these typed presets into extra_sample_params (Responses ``reasoning``
+# and ``text``), as catalog v3 did for Messages effort; Responses would then
+# no longer reserve those fields.
 @dataclass(frozen=True)
 class ResponsesDefaults:
     """Pythia request preferences, not claims about a model's native defaults."""
@@ -251,7 +254,7 @@ class ModelSpec:
     responses: Optional[ResponsesDefaults] = None
     aliases: Tuple[str, ...] = ()
     source: Optional[str] = None
-    request_params: Mapping = field(default_factory=dict)
+    extra_sample_params: Mapping = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         _require_identifier(self.name, "name")
@@ -276,8 +279,8 @@ class ModelSpec:
         object.__setattr__(self, "aliases", aliases)
         if self.source is not None and (not isinstance(self.source, str) or not self.source.strip()):
             raise ValueError("source must be a nonempty string or None")
-        object.__setattr__(self, "request_params", freeze_request_params(
-            self.request_params, self.endpoint.api,
+        object.__setattr__(self, "extra_sample_params", freeze_extra_sample_params(
+            self.extra_sample_params, self.endpoint.api,
         ))
 
 
@@ -354,7 +357,7 @@ _FABLE = ModelSpec(
         "https://platform.claude.com/docs/en/models/fable-5-1/overview; "
         "https://platform.claude.com/docs/en/build-with-claude/effort"
     ),
-    request_params={"thinking": {"type": "adaptive"}},
+    extra_sample_params={"thinking": {"type": "adaptive"}},
 )
 _OPUS = ModelSpec(
     name="claude-opus-5.5",
@@ -368,7 +371,7 @@ _OPUS = ModelSpec(
         "https://platform.claude.com/docs/en/models/opus-5-5/overview; "
         "https://platform.claude.com/docs/en/build-with-claude/effort"
     ),
-    request_params={"thinking": {"type": "adaptive"}},
+    extra_sample_params={"thinking": {"type": "adaptive"}},
 )
 _SONNET = ModelSpec(
     name="claude-sonnet-5.5",
@@ -382,7 +385,7 @@ _SONNET = ModelSpec(
         "https://platform.claude.com/docs/en/models/sonnet-5-5/overview; "
         "https://platform.claude.com/docs/en/build-with-claude/effort"
     ),
-    request_params={"thinking": {"type": "adaptive"}},
+    extra_sample_params={"thinking": {"type": "adaptive"}},
 )
 
 
@@ -404,8 +407,8 @@ def _with_messages_effort(
         base,
         name=name,
         aliases=aliases,
-        # Keep the base's request params (e.g. thinking) and add Anthropic's effort field.
-        request_params={**base.request_params, "output_config": {"effort": effort}},
+        # Keep the base's extra sample params (e.g. thinking) and add Anthropic's effort field.
+        extra_sample_params={**base.extra_sample_params, "output_config": {"effort": effort}},
     )
 
 
@@ -465,12 +468,16 @@ _MODEL_INDEX = _build_index(_MODEL_SPECS)
 
 @dataclass(frozen=True)
 class ModelBinding:
-    """One resolved endpoint, including explicitly bound pass-through models."""
+    """One resolved endpoint, including explicitly bound pass-through models.
+
+    ``extra_sample_params`` (catalog map plus launch overlay) is the model's
+    default for ``SampleParams.extra``.
+    """
 
     selector: Optional[str]
     endpoint: EndpointSpec
     spec: Optional[ModelSpec] = None
-    request_params: Mapping = field(default_factory=dict)
+    extra_sample_params: Mapping = field(default_factory=dict)
     origin: str = "builtin"
     api_explicit: bool = True
 
@@ -489,7 +496,7 @@ class ModelBinding:
                 raise ValueError("binding spec must match the selected API")
             if self.selector not in (self.spec.name, *self.spec.aliases):
                 raise ValueError("binding selector does not select its spec")
-        object.__setattr__(self, "request_params", freeze_request_params(self.request_params, self.api))
+        object.__setattr__(self, "extra_sample_params", freeze_extra_sample_params(self.extra_sample_params, self.api))
 
     @property
     def api(self):
@@ -507,11 +514,11 @@ class ModelBinding:
     def supports_remote_compaction(self):
         return self.endpoint.is_official_codex and self.endpoint.auth in {"codex-login", "supplied"}
 
-    def with_request_params(self, overlay=None):
-        params = dict(self.request_params)
+    def with_extra_sample_params(self, overlay=None):
+        params = dict(self.extra_sample_params)
         if overlay is not None:
-            params.update(freeze_request_params(overlay, self.api))
-        return replace(self, request_params=params)
+            params.update(freeze_extra_sample_params(overlay, self.api))
+        return replace(self, extra_sample_params=params)
 
 @dataclass(frozen=True)
 class ModelCatalog:
@@ -561,7 +568,7 @@ class ModelCatalog:
             not canonical_only and name in spec.aliases
         ))
 
-    def bind(self, api=None, name=None, *, request_params=None,
+    def bind(self, api=None, name=None, *, extra_sample_params=None,
              endpoint_url=None, endpoint_model=None, endpoint_auth=None):
         if name is not None:
             if not isinstance(name, str):
@@ -591,11 +598,11 @@ class ModelCatalog:
         endpoint = replace(endpoint, **changes)
         binding = ModelBinding(
             name, endpoint, spec,
-            {} if spec is None else spec.request_params,
+            {} if spec is None else spec.extra_sample_params,
             "builtin" if spec is None else self.origins[(spec.endpoint.api, spec.name)],
             explicit,
         )
-        return binding.with_request_params(request_params)
+        return binding.with_extra_sample_params(extra_sample_params)
 
 
 BUILTIN_MODEL_CATALOG = ModelCatalog(
@@ -626,7 +633,7 @@ def binding_from_namespace(args, catalog=None):
         endpoint_url=getattr(args, "endpoint_url", None),
         endpoint_model=getattr(args, "endpoint_model", None),
         endpoint_auth=auth,
-        request_params=getattr(args, "request_params", None),
+        extra_sample_params=getattr(args, "extra_sample_params", None),
     )
     if inferred_supplied and binding.api == "codex" and (
         binding.spec is None or binding.spec.endpoint.auth == "codex-login"

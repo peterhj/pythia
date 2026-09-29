@@ -15,10 +15,10 @@ from unittest import mock
 
 from pythia.interaction import (
     BUILTIN_MODEL_CATALOG, CodexResponsesModel, ConfigError, Environment, Init,
-    Instructions, InteractionConfig, InteractionContext, Message, ModelCatalog,
-    ModelConfigurationError, ModelSample, ResolvedSamplingParams, SamplingParams,
+    Instructions, InteractionConfig, InteractionConfigSnapshot, InteractionContext, Message, ModelCatalog,
+    ModelConfigurationError, ModelSample, SampleParams,
     StreamingResponsesEndpoint, ToolSpec, LATEST_MODEL_CATALOG_VERSION,
-    load_model_catalog, parse_model_catalog,
+    create_default_compactor, load_model_catalog, parse_model_catalog,
 )
 from pythia.interaction import auto, cli, demo, model_catalog, responses
 from pythia.interaction._auto_config import build_parser, load_saved_config, namespace, resolve_config
@@ -33,7 +33,7 @@ from pythia.interaction.model_config import build_model, prepare_namespace, supp
 from pythia.interaction.model_catalog_config import MAX_CATALOG_BYTES
 
 
-HEADER = "[catalog]\nversion = 3\n"
+HEADER = "[catalog]\nversion = 4\n"
 LOCAL = """
 [model.local-max]
 endpoint.api = chat-completions
@@ -44,8 +44,8 @@ aliases = ["local-alias"]
 limits.auto_compact_context_tokens = 100000
 limits.max_context_tokens = 150000
 limits.max_output_tokens = 32000
-request_params.thinking = {"type": "enabled", "budget_tokens": 1000}
-request_params.reasoning_effort = "max"
+extra_sample_params.thinking = {"type": "enabled", "budget_tokens": 1000}
+extra_sample_params.reasoning_effort = "max"
 """
 MESSAGE = """
 [model.worker]
@@ -56,7 +56,7 @@ endpoint.auth = none
 limits.auto_compact_context_tokens = 60000
 limits.max_context_tokens = 80000
 limits.max_output_tokens = 8000
-request_params.output_config = {"effort": "high"}
+extra_sample_params.output_config = {"effort": "high"}
 """
 CODEX = """
 [model.code-env]
@@ -92,19 +92,19 @@ def no_credentials(key, default=None):
 class CatalogParserTests(unittest.TestCase):
     def test_missing_header_or_version_assumes_latest_and_warns_after_validation(self):
         for text in (
-            (HEADER + LOCAL).replace("version = 3\n", ""),
+            (HEADER + LOCAL).replace("version = 4\n", ""),
             LOCAL,
         ):
             with self.subTest(text=text), self.assertWarnsRegex(
                 UserWarning,
-                r"does not specify a version; assuming latest supported version 3",
+                r"does not specify a version; assuming latest supported version 4",
             ):
                 registry = parse_model_catalog(text, source="catalog.ini")
             self.assertEqual(
                 registry.get_model_spec("chat-completions", "local-max").name,
                 "local-max",
             )
-        self.assertEqual(LATEST_MODEL_CATALOG_VERSION, 3)
+        self.assertEqual(LATEST_MODEL_CATALOG_VERSION, 4)
 
         invalid = LOCAL + "unknown = value\n"
         with mock.patch("warnings.warn") as warn:
@@ -117,20 +117,20 @@ class CatalogParserTests(unittest.TestCase):
         spec = registry.get_model_spec("chat-completions", "local-alias")
         self.assertEqual(spec.name, "local-max")
         self.assertEqual(spec.endpoint.model, "served-local")
-        self.assertEqual(spec.request_params["thinking"]["budget_tokens"], 1000)
+        self.assertEqual(spec.extra_sample_params["thinking"]["budget_tokens"], 1000)
         self.assertEqual(spec.limits.max_context_tokens, 150000)
         self.assertEqual(registry.bind(name="worker").api, "messages")
         self.assertIsNone(model_catalog.get_model_spec("chat-completions", "local-max"))
         self.assertIn(spec, registry.list_model_specs("chat-completions"))
 
     def test_parser_preserves_case_percent_comments_and_multiline_json(self):
-        registry = catalog(LOCAL + '''request_params.CaseSensitive = "100% # literal ; text"
-request_params.a.b = 7
-request_params.nested = {
+        registry = catalog(LOCAL + '''extra_sample_params.CaseSensitive = "100% # literal ; text"
+extra_sample_params.a.b = 7
+extra_sample_params.nested = {
     "inner": [true, null, "value"]
     }
 ''')
-        params = registry.bind(name="local-max").request_params
+        params = registry.bind(name="local-max").extra_sample_params
         self.assertEqual(params["CaseSensitive"], "100% # literal ; text")
         self.assertNotIn("casesensitive", params)
         self.assertEqual(params["a.b"], 7)
@@ -159,21 +159,21 @@ responses.text_verbosity = medium
         base = catalog()
         changed = catalog('''[model.local-max]
 override = true
-request_params.thinking = {"type": "disabled"}
+extra_sample_params.thinking = {"type": "disabled"}
 ''', base=base)
-        params = changed.bind(name="local-max").request_params
+        params = changed.bind(name="local-max").extra_sample_params
         self.assertEqual(dict(params["thinking"]), {"type": "disabled"})
         self.assertEqual(params["reasoning_effort"], "max")
         literal_null = catalog('''[model.local-max]
 override = true
-request_params.thinking = null
+extra_sample_params.thinking = null
 ''', base=base)
-        self.assertIsNone(literal_null.bind(name="local-max").request_params["thinking"])
+        self.assertIsNone(literal_null.bind(name="local-max").extra_sample_params["thinking"])
         cleared = catalog('''[model.local-max]
 override = true
-request_params = {}
+extra_sample_params = {}
 ''', base=base)
-        self.assertEqual(dict(cleared.bind(name="local-max").request_params), {})
+        self.assertEqual(dict(cleared.bind(name="local-max").extra_sample_params), {})
 
     def test_alias_replacement_and_nullable_field_clear(self):
         base = catalog('[model.claude-fable-5.1]\noverride = true\naliases = ["old-fable"]\n')
@@ -197,17 +197,17 @@ limits.auto_compact_context_tokens = null
             LOCAL + "unknown = value\n",
             LOCAL.replace("limits.max_context_tokens = 150000", "limits.max_context_tokens = true"),
             LOCAL.replace('aliases = ["local-alias"]', 'aliases = "alias"'),
-            LOCAL.replace('request_params.reasoning_effort = "max"', 'request_params.reasoning_effort = max'),
-            LOCAL + "request_params = {}\n",
-            LOCAL + "request_params.duplicate = {\"x\":1,\"x\":2}\n",
-            LOCAL + "request_params.nonfinite = NaN\n",
-            LOCAL + "request_params.nonfinite = 1e999\n",
+            LOCAL.replace('extra_sample_params.reasoning_effort = "max"', 'extra_sample_params.reasoning_effort = max'),
+            LOCAL + "extra_sample_params = {}\n",
+            LOCAL + "extra_sample_params.duplicate = {\"x\":1,\"x\":2}\n",
+            LOCAL + "extra_sample_params.nonfinite = NaN\n",
+            LOCAL + "extra_sample_params.nonfinite = 1e999\n",
             LOCAL.replace("endpoint.auth = none", "endpoint.auth = codex-login"),
             LOCAL.replace("http://127.0.0.1:8000", "https://user:secret@example.test"),
             LOCAL.replace("endpoint.auth = none", "endpoint.auth = env:BAD-NAME"),
             MESSAGE.replace("60000", "49999"),
-            MESSAGE + 'request_params.system = "replacement instructions"\n',
-            CODEX + 'request_params.reasoning = {"effort": "low"}\n',
+            MESSAGE + 'extra_sample_params.system = "replacement instructions"\n',
+            CODEX + 'extra_sample_params.reasoning = {"effort": "low"}\n',
             '[model.codex-gpt-6-astra]\noverride = true\nendpoint.api = null\n',
             '[model.missing]\noverride = true\n',
             LOCAL.replace("local-max", "codex-gpt-6-astra").replace("chat-completions", "codex"),
@@ -218,23 +218,34 @@ limits.auto_compact_context_tokens = null
         with self.assertRaises(ValueError):  # Overrides name the canonical model, not an alias.
             catalog('[model.local-alias]\noverride = true\n', base=catalog())
         with self.assertRaisesRegex(ValueError, r"'model\.worker' in user: messages\.\* fields were removed "
-                                                r"in catalog version 3; use request_params\.output_config"):
+                                                r"in catalog version 3; use extra_sample_params\.output_config"):
             catalog(MESSAGE + "messages.output_effort = high\n")
+        # Version 4 renamed request_params; name the replacement, never the value.
+        for line in ('request_params.thinking = {"type": "enabled"}\n', 'request_params = {"secret": 1}\n'):
+            with self.subTest(line=line), self.assertRaisesRegex(
+                ValueError, r"^Invalid model catalog entry 'model\.worker' in user: request_params "
+                            r"was renamed to extra_sample_params in catalog version 4$",
+            ):
+                catalog(MESSAGE + line)
 
     def test_duplicate_sections_keys_defaults_and_versions_rejected(self):
         for text in (
             HEADER + LOCAL + LOCAL,
-            HEADER + LOCAL + 'request_params.reasoning_effort = "low"\n',
+            HEADER + LOCAL + 'extra_sample_params.reasoning_effort = "low"\n',
             HEADER + "[DEFAULT]\noverride = true\n" + LOCAL,
-            HEADER.replace("version = 3", "version = 1") + LOCAL,
-            HEADER.replace("version = 3", "version = 2") + LOCAL,
-            HEADER.replace("version = 3", "version = 4") + LOCAL,
+            HEADER.replace("version = 4", "version = 1") + LOCAL,
+            HEADER.replace("version = 4", "version = 2") + LOCAL,
+            HEADER.replace("version = 4", "version = 3") + LOCAL,
+            HEADER.replace("version = 4", "version = 5") + LOCAL,
             HEADER + "[other]\nx = 1\n", HEADER + "unknown = 1\n",
         ):
             with self.subTest(text=text), self.assertRaises(ValueError):
                 parse_model_catalog(text)
-        with self.assertRaisesRegex(ValueError, r"^Unsupported model catalog version 2 in user; expected version 3$"):
-            parse_model_catalog(HEADER.replace("version = 3", "version = 2") + LOCAL)
+        for version in (2, 3):
+            with self.subTest(version=version), self.assertRaisesRegex(
+                ValueError, rf"^Unsupported model catalog version {version} in user; expected version 4$",
+            ):
+                parse_model_catalog(HEADER.replace("version = 4", f"version = {version}") + LOCAL)
 
     def test_alias_collision_is_not_file_order_dependent(self):
         other = LOCAL.replace("[model.local-max]", "[model.other]")
@@ -247,31 +258,31 @@ limits.auto_compact_context_tokens = null
                     "max_completion_tokens", "temperature", "seed", "api_key", "Authorization"):
             with self.subTest(key=key):
                 with self.assertRaises(ValueError) as error:
-                    catalog(LOCAL + f'request_params.{key} = "VERY_SECRET_TOKEN"\n')
+                    catalog(LOCAL + f'extra_sample_params.{key} = "VERY_SECRET_TOKEN"\n')
                 self.assertNotIn("VERY_SECRET_TOKEN", str(error.exception))
 
-    def test_messages_and_responses_entries_accept_request_params(self):
+    def test_messages_and_responses_entries_accept_extra_sample_params(self):
         generic = CODEX.replace("[model.code-env]", "[model.generic]").replace(
             "endpoint.api = codex", "endpoint.api = responses",
         )
         registry = catalog(
-            MESSAGE + 'request_params.thinking = {"type": "enabled", "budget_tokens": 1024}\n'
-            + CODEX + 'request_params.service_tier = "flex"\n'
-            + generic + 'request_params.truncation = "auto"\n'
+            MESSAGE + 'extra_sample_params.thinking = {"type": "enabled", "budget_tokens": 1024}\n'
+            + CODEX + 'extra_sample_params.service_tier = "flex"\n'
+            + generic + 'extra_sample_params.truncation = "auto"\n'
         )
-        thinking = registry.bind(name="worker").request_params["thinking"]
+        thinking = registry.bind(name="worker").extra_sample_params["thinking"]
         self.assertEqual(dict(thinking), {"type": "enabled", "budget_tokens": 1024})
-        self.assertEqual(registry.bind(name="code-env").request_params["service_tier"], "flex")
-        self.assertEqual(registry.bind("responses", "generic").request_params["truncation"], "auto")
+        self.assertEqual(registry.bind(name="code-env").extra_sample_params["service_tier"], "flex")
+        self.assertEqual(registry.bind("responses", "generic").extra_sample_params["truncation"], "auto")
         patched = catalog('''[model.codex-gpt-6-astra]
 override = true
 endpoint.api = codex
-request_params.service_tier = "priority"
+extra_sample_params.service_tier = "priority"
 ''')
-        self.assertEqual(patched.bind("codex", "codex-gpt-6-astra").request_params["service_tier"], "priority")
-        self.assertFalse(BUILTIN_MODEL_CATALOG.bind("codex", "codex-gpt-6-astra").request_params)
+        self.assertEqual(patched.bind("codex", "codex-gpt-6-astra").extra_sample_params["service_tier"], "priority")
+        self.assertFalse(BUILTIN_MODEL_CATALOG.bind("codex", "codex-gpt-6-astra").extra_sample_params)
 
-    def test_request_params_protect_the_fields_each_api_adapter_owns(self):
+    def test_extra_sample_params_protect_the_fields_each_api_adapter_owns(self):
         responses_owned = ("tool_choice", "store", "include", "reasoning", "text",
                            "prompt_cache_key", "previous_response_id", "conversation")
         owned = {
@@ -292,15 +303,15 @@ request_params.service_tier = "priority"
                     if key in owned.get(api, ()):
                         for spelling in (key, key.upper()):
                             with self.assertRaises(ValueError):
-                                catalog(text + f"request_params.{spelling} = 1\n")
+                                catalog(text + f"extra_sample_params.{spelling} = 1\n")
                             with self.assertRaises(ValueError):
-                                catalog(text).bind(api, name, request_params={spelling: 1})
+                                catalog(text).bind(api, name, extra_sample_params={spelling: 1})
                     else:
                         # Protection is API-specific: e.g. Chat Completions keeps these.
-                        registry = catalog(text + f"request_params.{key} = 1\n")
-                        self.assertEqual(registry.bind(api, name).request_params[key], 1)
+                        registry = catalog(text + f"extra_sample_params.{key} = 1\n")
+                        self.assertEqual(registry.bind(api, name).extra_sample_params[key], 1)
 
-    def test_catalog_and_nested_request_params_are_immutable(self):
+    def test_catalog_and_nested_extra_sample_params_are_immutable(self):
         registry = catalog()
         binding = registry.bind(name="local-max")
         with self.assertRaises(FrozenInstanceError):
@@ -308,9 +319,9 @@ request_params.service_tier = "priority"
         with self.assertRaises(TypeError):
             registry.origins[("chat-completions", "local-max")] = "other"
         with self.assertRaises(TypeError):
-            binding.request_params["thinking"]["type"] = "disabled"
+            binding.extra_sample_params["thinking"]["type"] = "disabled"
         with self.assertRaises(TypeError):
-            binding.spec.request_params["reasoning_effort"] = "low"
+            binding.spec.extra_sample_params["reasoning_effort"] = "low"
 
     def test_explicit_api_isolation_and_bare_name_ambiguity(self):
         registry = catalog(LOCAL.replace("local-max", "codex-gpt-6-astra"))
@@ -320,7 +331,7 @@ request_params.service_tier = "priority"
         self.assertEqual(registry.bind("chat-completions", "codex-gpt-6-astra").endpoint.model, "served-local")
         isolated = registry.bind("messages", "codex-gpt-6-astra")
         self.assertIsNone(isolated.spec)
-        self.assertFalse(isolated.request_params)
+        self.assertFalse(isolated.extra_sample_params)
         with self.assertRaises(ValueError):
             catalog('[model.codex-gpt-6-astra]\noverride = true\nsource = patch\n', base=registry)
         patched = catalog('[model.codex-gpt-6-astra]\noverride = true\nendpoint.api = codex\nsource = patch\n', base=registry)
@@ -367,31 +378,35 @@ class BoundRequestTests(unittest.TestCase):
         self.assertEqual(config.get("max_context_tokens"), 150000)
         self.assertIsNone(config.get("max_output_tokens"))  # The ceiling is not a budget.
         self.assertEqual(config.initial_values(), config.values())
-        for params in (None, SamplingParams(), SamplingParams(max_output_tokens=77),
-                       config.snapshot().sampling_params()):
+        for params in (None, SampleParams(), SampleParams(max_output_tokens=77),
+                       config.snapshot().sample_params()):
             payload = model._build_request_payload(context(), (), params)
             self.assertEqual(payload["model"], "served-local")
             self.assertEqual(payload["reasoning_effort"], "max")
             self.assertEqual(payload["thinking"]["type"], "enabled")
         payload["thinking"]["type"] = "changed"
         self.assertEqual(model._build_request_payload(context(), (), None)["thinking"]["type"], "enabled")
-        self.assertEqual(config.get("request_params")["thinking"]["type"], "enabled")
+        self.assertEqual(config.get("extra_sample_params")["thinking"]["type"], "enabled")
         with self.assertRaisesRegex(ConfigError, "launch-only"):
-            config.set("request_params", {})
+            config.set("extra_sample_params", {})
         rendered = json.loads(config.render(json_output=True))
         self.assertEqual(next(iter(rendered)), "__init__")
-        self.assertEqual(rendered["request_params"], rendered["__init__"]["request_params"])
+        self.assertEqual(rendered["extra_sample_params"], rendered["__init__"]["extra_sample_params"])
 
-    def test_explicit_request_overlay_and_resolved_empty_never_fall_back(self):
-        args = args_for(catalog(), "--model", "local-max", "--request-params",
+    def test_launch_overlay_applies_and_per_call_extra_replaces_it(self):
+        args = args_for(catalog(), "--model", "local-max", "--extra-sample-params",
                         '{"thinking":{"type":"disabled"},"custom":true}')
         cfg = InteractionConfig.from_namespace(args)
         model = build_model(args)
-        payload = model._build_request_payload(context(), (), cfg.snapshot().sampling_params())
+        payload = model._build_request_payload(context(), (), cfg.snapshot().sample_params())
         self.assertEqual(payload["thinking"], {"type": "disabled"})
         self.assertEqual(payload["reasoning_effort"], "max")
         self.assertIs(payload["custom"], True)
-        empty = model._build_request_payload(context(), (), ResolvedSamplingParams())
+        # A per-call map replaces the bound map wholesale; {} sends none.
+        replaced = model._build_request_payload(context(), (), SampleParams(extra={"top_k": 5}))
+        self.assertEqual(replaced["top_k"], 5)
+        self.assertFalse({"thinking", "reasoning_effort", "custom"} & replaced.keys())
+        empty = model._build_request_payload(context(), (), SampleParams(extra={}))
         self.assertNotIn("thinking", empty)
         self.assertNotIn("reasoning_effort", empty)
 
@@ -403,7 +418,7 @@ class BoundRequestTests(unittest.TestCase):
         self.assertEqual(model.endpoint.max_output_tokens, 8000)
         self.assertEqual(model.max_context_tokens, 80000)
         payload = model._build_request_payload(
-            context(), (), cfg.snapshot().sampling_params(),
+            context(), (), cfg.snapshot().sample_params(),
         )
         self.assertEqual(payload["model"], "served-messages")
         self.assertEqual(payload["output_config"], {"effort": "high"})
@@ -430,47 +445,47 @@ class BoundRequestTests(unittest.TestCase):
                 mock.patch.object(responses, "load_codex_auth", side_effect=AssertionError("stale raw path")):
             self.assertEqual(build_model(args).endpoint.bearer_token, "fake-token")
 
-    def test_user_messages_request_params_extend_every_request(self):
-        registry = catalog(MESSAGE + 'request_params.thinking = {"type": "enabled", "budget_tokens": 1024}\n'
-                           + "request_params.top_k = 5\n")
+    def test_user_messages_extra_sample_params_extend_every_request(self):
+        registry = catalog(MESSAGE + 'extra_sample_params.thinking = {"type": "enabled", "budget_tokens": 1024}\n'
+                           + "extra_sample_params.top_k = 5\n")
         args = args_for(registry, "--model", "worker",
-                        "--request-params", '{"metadata": {"user_id": "catalog-test"}}')
+                        "--extra-sample-params", '{"metadata": {"user_id": "catalog-test"}}')
         cfg = InteractionConfig.from_namespace(args)
         model = build_model(args)
-        self.assertEqual(cfg.get("request_params")["top_k"], 5)
-        for params in (None, SamplingParams(temperature=1.0), cfg.snapshot().sampling_params()):
+        self.assertEqual(cfg.get("extra_sample_params")["top_k"], 5)
+        for params in (None, SampleParams(temperature=1.0), cfg.snapshot().sample_params()):
             payload = model._build_request_payload(context(), (), params)
             self.assertEqual(payload["thinking"], {"type": "enabled", "budget_tokens": 1024})
             self.assertEqual(payload["top_k"], 5)
             self.assertEqual(payload["metadata"], {"user_id": "catalog-test"})
-            # Adapter-owned fields and other catalog request params are preserved.
+            # Adapter-owned fields and other catalog extra sample params are preserved.
             self.assertEqual(payload["model"], "served-messages")
             self.assertEqual(payload["max_tokens"], 8000)
             self.assertEqual(payload["output_config"], {"effort": "high"})
             self.assertEqual(payload["context_management"]["edits"][0]["trigger"]["value"], 60000)
         payload["thinking"]["budget_tokens"] = 0
         self.assertEqual(model._build_request_payload(context(), (), None)["thinking"]["budget_tokens"], 1024)
-        empty = model._build_request_payload(context(), (), ResolvedSamplingParams(max_output_tokens=10))
-        # An explicitly empty resolved map is complete: catalog effort goes with the other params.
+        empty = model._build_request_payload(context(), (), SampleParams(max_output_tokens=10, extra={}))
+        # An empty per-call map is complete: catalog effort goes with the other extras.
         self.assertFalse({"thinking", "top_k", "metadata", "output_config"} & empty.keys())
         with self.assertRaises(ValueError):
-            args_for(registry, "--model", "worker", "--request-params", '{"system": "replacement"}')
+            args_for(registry, "--model", "worker", "--extra-sample-params", '{"system": "replacement"}')
 
-    def test_launch_request_params_override_builtin_messages_effort(self):
+    def test_launch_extra_sample_params_override_builtin_messages_effort(self):
         args = args_for(BUILTIN_MODEL_CATALOG, "--model", "claude-opus-5.5-max", "--endpoint-auth", "none",
-                        "--request-params", '{"output_config": {"effort": "low"}}')
+                        "--extra-sample-params", '{"output_config": {"effort": "low"}}')
         cfg = InteractionConfig.from_namespace(args)
-        payload = build_model(args)._build_request_payload(context(), (), cfg.snapshot().sampling_params())
+        payload = build_model(args)._build_request_payload(context(), (), cfg.snapshot().sample_params())
         self.assertEqual(payload["output_config"], {"effort": "low"})
         self.assertEqual(payload["thinking"], {"type": "adaptive"})  # Other preset params are kept.
 
-    def test_user_codex_request_params_extend_every_request(self):
-        registry = catalog(CODEX + 'request_params.service_tier = "flex"\n')
-        args = args_for(registry, "--model", "code-env", "--request-params", '{"truncation": "auto"}')
+    def test_user_codex_extra_sample_params_extend_every_request(self):
+        registry = catalog(CODEX + 'extra_sample_params.service_tier = "flex"\n')
+        args = args_for(registry, "--model", "code-env", "--extra-sample-params", '{"truncation": "auto"}')
         cfg = InteractionConfig.from_namespace(args)
         with mock.patch.dict("os.environ", {"CATALOG_TEST_TOKEN": "fake-token"}):
             model = build_model(args)
-        for params in (None, SamplingParams(max_output_tokens=77), cfg.snapshot().sampling_params()):
+        for params in (None, SampleParams(max_output_tokens=77), cfg.snapshot().sample_params()):
             payload, _ = model._build_request_payload(context(), (), params)
             self.assertEqual(payload["service_tier"], "flex")
             self.assertEqual(payload["truncation"], "auto")
@@ -478,28 +493,63 @@ class BoundRequestTests(unittest.TestCase):
             self.assertEqual(payload["reasoning"], {"effort": "high"})
             self.assertIs(payload["store"], False)
             self.assertEqual(payload["include"], ["reasoning.encrypted_content"])
-        empty, _ = model._build_request_payload(context(), (), ResolvedSamplingParams())
+        empty, _ = model._build_request_payload(context(), (), SampleParams(extra={}))
         self.assertFalse({"service_tier", "truncation"} & empty.keys())
         with self.assertRaises(ValueError):
-            args_for(registry, "--model", "code-env", "--request-params", '{"store": true}')
+            args_for(registry, "--model", "code-env", "--extra-sample-params", '{"store": true}')
 
-    def test_resolved_request_params_are_checked_against_the_adapter_api(self):
+    def test_per_call_extra_is_checked_against_the_adapter_api(self):
         reasoning = {"reasoning": {"effort": "low"}}
         chat = ChatCompletionsModel(chat_endpoint("http://localhost:8000", "literal"))
-        payload = chat._build_request_payload(context(), (), ResolvedSamplingParams(request_params=reasoning))
+        payload = chat._build_request_payload(context(), (), SampleParams(extra=reasoning))
         self.assertEqual(payload["reasoning"], {"effort": "low"})
         codex = codex_model(responses_endpoint(
             "http://localhost:8000/v1", "literal", "token", api_provider="codex",
         ))
         with self.assertRaisesRegex(ModelConfigurationError, "adapter-owned"):
-            codex._build_request_payload(context(), (), ResolvedSamplingParams(request_params=reasoning))
+            codex._build_request_payload(context(), (), SampleParams(extra=reasoning))
         messages = MessagesModel(MessagesEndpoint(binding=catalog(MESSAGE).bind(name="worker")))
         with self.assertRaisesRegex(ModelConfigurationError, "adapter-owned"):
-            messages._build_request_payload(context(), (), ResolvedSamplingParams(
-                max_output_tokens=10, request_params={"cache_control": {"type": "ephemeral"}},
+            messages._build_request_payload(context(), (), SampleParams(
+                max_output_tokens=10, extra={"cache_control": {"type": "ephemeral"}},
             ))
 
-    def test_every_field_an_adapter_writes_is_a_protected_request_param(self):
+    def test_samples_and_prompt_compaction_send_the_same_bound_extras(self):
+        requests = []
+        class Response:
+            status = 200
+            headers = {}
+            def read(self):
+                return b'{"choices":[{"message":{"role":"assistant","content":"done"},"finish_reason":"stop"}]}'
+            def close(self):
+                pass
+        def opener(request, **kwargs):
+            requests.append(json.loads(request.data))
+            return Response()
+        args = args_for(catalog(), "--model", "local-max", "--extra-sample-params", '{"custom": true}')
+        cfg = InteractionConfig.from_namespace(args)
+        model = build_model(args)
+        model._opener = opener
+        model.sample(context(), sample_params=cfg.snapshot().sample_params())
+        create_default_compactor(model).compact(context())
+        expected = {"thinking": {"type": "enabled", "budget_tokens": 1000},
+                    "reasoning_effort": "max", "custom": True}
+        self.assertEqual(len(requests), 2)
+        for payload in requests:
+            self.assertEqual({key: payload.get(key) for key in expected}, expected)
+        self.assertEqual(cfg.get("extra_sample_params"), expected)
+
+    def test_python_config_takes_extras_from_the_model_binding(self):
+        model = ChatCompletionsModel(ChatCompletionsEndpoint(binding=catalog().bind(name="local-max")))
+        bound = model.binding.extra_sample_params
+        self.assertEqual(InteractionConfig.from_model(model).get("extra_sample_params"), bound)
+        # A snapshot may repeat the bound map, but not change it.
+        same = InteractionConfigSnapshot(extra_sample_params=bound)
+        self.assertEqual(InteractionConfig.from_model(model, same).get("extra_sample_params"), bound)
+        with self.assertRaisesRegex(ConfigError, "come from the model binding"):
+            InteractionConfig.from_model(model, InteractionConfigSnapshot(extra_sample_params={"custom": True}))
+
+    def test_every_field_an_adapter_writes_is_a_protected_extra_sample_param(self):
         tool = ToolSpec("lookup", "Look things up.", {"type": "object", "properties": {}})
         full = InteractionContext((Init("session-1"), Instructions("Be brief."), Message("user", "hello")))
         sampling = {"max_output_tokens": 5, "temperature": 0.5, "top_p": 0.5, "stop": ("END",)}
@@ -513,10 +563,10 @@ class BoundRequestTests(unittest.TestCase):
             binding=BUILTIN_MODEL_CATALOG.bind("codex", "codex-gpt-6-astra-max", endpoint_auth="supplied"),
             bearer_token="token",
         ))
-        codex_payload, _ = codex._build_request_payload(full, (tool,), SamplingParams(max_output_tokens=5))
+        codex_payload, _ = codex._build_request_payload(full, (tool,), SampleParams(max_output_tokens=5))
         written = {
-            "chat-completions": chat._build_request_payload(full, (tool,), SamplingParams(seed=1, **sampling)),
-            "messages": messages._build_request_payload(full, (tool,), SamplingParams(**sampling)),
+            "chat-completions": chat._build_request_payload(full, (tool,), SampleParams(seed=1, **sampling)),
+            "messages": messages._build_request_payload(full, (tool,), SampleParams(**sampling)),
             # One adapter serves both Responses dialects.
             "codex": codex_payload,
             "responses": codex_payload,
@@ -526,21 +576,21 @@ class BoundRequestTests(unittest.TestCase):
                              written["messages"].keys())
         self.assertLessEqual({"reasoning", "text", "prompt_cache_key", "max_output_tokens"},
                              codex_payload.keys())
-        # Catalog request params (the fixture's output_config) are extensions, not adapter fields;
+        # Catalog extra sample params (the fixture's output_config) are extensions, not adapter fields;
         # an adapter write to the same key would already have raised while building the payload.
-        extensions = {"messages": set(messages.binding.request_params)}
+        extensions = {"messages": set(messages.binding.extra_sample_params)}
         self.assertEqual(extensions["messages"], {"output_config"})
         for api, payload in written.items():
             for key in payload.keys() - extensions.get(api, set()):
                 with self.subTest(api=api, key=key), self.assertRaises(ValueError):
-                    model_catalog.freeze_request_params({key: None}, api)
+                    model_catalog.freeze_extra_sample_params({key: None}, api)
 
     def test_adapter_never_silently_replaces_an_unprotected_field(self):
         # Simulate an adapter field that was not added to the protected names.
-        drifted = dict(model_catalog._PROFILE_RESERVED_REQUEST_PARAMS)
+        drifted = dict(model_catalog._PROFILE_RESERVED_EXTRA_SAMPLE_PARAMS)
         drifted["messages"] = drifted["messages"] - {"cache_control"}
-        with mock.patch.object(model_catalog, "_PROFILE_RESERVED_REQUEST_PARAMS", drifted):
-            binding = catalog(MESSAGE + 'request_params.cache_control = {"type": "ephemeral"}\n').bind(name="worker")
+        with mock.patch.object(model_catalog, "_PROFILE_RESERVED_EXTRA_SAMPLE_PARAMS", drifted):
+            binding = catalog(MESSAGE + 'extra_sample_params.cache_control = {"type": "ephemeral"}\n').bind(name="worker")
         model = MessagesModel(MessagesEndpoint(binding=binding, prompt_caching=MessagesPromptCaching()))
         with self.assertRaisesRegex(ModelConfigurationError, "replace adapter-owned request fields: cache_control"):
             model._build_request_payload(context(), (), None)
@@ -580,7 +630,7 @@ class BoundRequestTests(unittest.TestCase):
     def test_direct_library_endpoints_do_not_load_a_home_catalog(self):
         with mock.patch("os.open", side_effect=AssertionError("implicit catalog read")):
             endpoint = chat_endpoint("http://localhost:8000", "local-max",
-                                               request_params={"reasoning_effort": "high"})
+                                               extra_sample_params={"reasoning_effort": "high"})
             payload = ChatCompletionsModel(endpoint)._build_request_payload(context(), (), None)
         self.assertEqual(payload["model"], "local-max")
         self.assertEqual(payload["reasoning_effort"], "high")
@@ -595,7 +645,8 @@ class BoundRequestTests(unittest.TestCase):
 
     def test_unconfigured_chat_sampling_does_not_enable_reasoning(self):
         model = ChatCompletionsModel(chat_endpoint("http://localhost:8000", "literal"))
-        for params in (None, SamplingParams(max_output_tokens=77), ResolvedSamplingParams(max_output_tokens=77)):
+        for params in (None, SampleParams(max_output_tokens=77),
+                       SampleParams(max_output_tokens=77, enable_auto_compaction=True)):
             payload = model._build_request_payload(context(), (), params)
             self.assertNotIn("thinking", payload)
             self.assertNotIn("reasoning_effort", payload)
@@ -635,32 +686,32 @@ class AutoCatalogTests(unittest.TestCase):
                 "2": {"model_api": None, "model": "worker"},
             }}))
             settings = resolve_config(path, {"model": "local-max", "model_api": "chat-completions",
-                                            "request_params": {"custom": True}}, catalog=registry)
+                                            "extra_sample_params": {"custom": True}}, catalog=registry)
             main = InteractionConfig.from_namespace(namespace(settings[1], registry))
             worker_args = namespace(settings[2], registry)
             worker = InteractionConfig.from_namespace(worker_args)
             self.assertEqual(worker_args.model_api, "messages")
             self.assertEqual(worker.get("auto_compact_tokens"), 60000)
             # Exactly the worker's own catalog params; nothing leaks from the main context or LOCAL.
-            self.assertEqual(model_catalog.thaw_json(worker.get("request_params")), {"output_config": {"effort": "high"}})
-            self.assertTrue(main.get("request_params")["custom"])
+            self.assertEqual(model_catalog.thaw_json(worker.get("extra_sample_params")), {"output_config": {"effort": "high"}})
+            self.assertTrue(main.get("extra_sample_params")["custom"])
             self.assertIsNone(settings[2]["model_api"])
-            self.assertIsNone(settings[2]["request_params"])
+            self.assertIsNone(settings[2]["extra_sample_params"])
 
     def test_missing_map_inherits_null_resets_and_nested_values_replace(self):
         registry = catalog()
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "contexts.json"
             path.write_text(json.dumps({"version": 1, "contexts": {
-                "2": {"request_params": None},
-                "-1": {"request_params": {"thinking": {"type": "disabled"}}},
+                "2": {"extra_sample_params": None},
+                "-1": {"extra_sample_params": {"thinking": {"type": "disabled"}}},
             }}))
-            settings = resolve_config(path, {"model": "local-max", "request_params": {"custom": 1}}, catalog=registry)
+            settings = resolve_config(path, {"model": "local-max", "extra_sample_params": {"custom": 1}}, catalog=registry)
             one, two, watch = (InteractionConfig.from_namespace(namespace(settings[i], registry)) for i in (1, 2, -1))
-            self.assertEqual(one.get("request_params")["custom"], 1)
-            self.assertNotIn("custom", two.get("request_params"))
-            self.assertEqual(watch.get("request_params")["thinking"], {"type": "disabled"})
-            self.assertEqual(watch.get("request_params")["custom"], 1)
+            self.assertEqual(one.get("extra_sample_params")["custom"], 1)
+            self.assertNotIn("custom", two.get("extra_sample_params"))
+            self.assertEqual(watch.get("extra_sample_params")["thinking"], {"type": "disabled"})
+            self.assertEqual(watch.get("extra_sample_params")["custom"], 1)
 
     def test_api_clear_retains_selector_and_old_concrete_api_stays_scoped(self):
         saved = resolve_config(overrides={"model_api": "chat-completions", "model": "worker"})
@@ -689,7 +740,7 @@ class AutoCatalogTests(unittest.TestCase):
             settings = resolve_config(overrides={"model": "local-max"}, catalog=registry)
             document = {"version": 1, "contexts": {str(i): dict(s) for i, s in settings.items()}}
             for row in document["contexts"].values():
-                row.pop("request_params")
+                row.pop("extra_sample_params")
             path.write_text(json.dumps(document))
             with self.assertRaisesRegex(ValueError, "Invalid saved"):
                 load_saved_config(path)
@@ -699,7 +750,7 @@ class AutoCatalogTests(unittest.TestCase):
             }))
             saved = load_saved_config(path)
             current = resolve_config(saved=saved, catalog=registry)
-            self.assertIsNone(current[1]["request_params"])
+            self.assertIsNone(current[1]["extra_sample_params"])
             self.assertIsNone(current[1]["model_api"])
             self.assertEqual(namespace(current[1], registry).model_binding.endpoint.model, "served-local")
 
@@ -792,7 +843,7 @@ class CatalogEntrypointTests(unittest.TestCase):
                 "served-local",
             )
 
-    def test_cli_sends_catalog_and_launch_request_params_to_messages(self):
+    def test_cli_sends_catalog_and_launch_extra_sample_params_to_messages(self):
         requests = []
         class Response:
             status = 200
@@ -816,12 +867,12 @@ class CatalogEntrypointTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "catalog.ini"
             path.write_text(HEADER + MESSAGE
-                            + 'request_params.thinking = {"type": "enabled", "budget_tokens": 1024}\n')
+                            + 'extra_sample_params.thinking = {"type": "enabled", "budget_tokens": 1024}\n')
             with mock.patch.object(cli, "build_model", side_effect=model_factory), \
                     redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
                 result = cli.main(["--headless", "--enable-default-tools", "false",
                                    "--model-catalog", str(path), "--model", "worker",
-                                   "--request-params", '{"top_k": 5}',
+                                   "--extra-sample-params", '{"top_k": 5}',
                                    "--prompt", "hello", "--save", str(Path(directory) / "log.jsonl")])
         self.assertEqual(result, 0)
         self.assertEqual(len(requests), 1)
@@ -876,10 +927,10 @@ class DebugModelBindingTests(unittest.TestCase):
             ))
             document = json.loads(path.read_text())
         entry = document["bindings"]["main"]
-        self.assertEqual(document["version"], 1)
+        self.assertEqual(document["version"], 2)
         self.assertNotIn("auth_file", document["bindings"]["codex"]["endpoint"])
         self.assertNotIn("/secret/auth.json", json.dumps(document))
-        self.assertEqual(entry["request_params"]["reasoning_effort"], "max")
+        self.assertEqual(entry["extra_sample_params"]["reasoning_effort"], "max")
 
     def test_snapshot_failure_returns_warning_and_removes_temporary_file(self):
         binding = catalog().bind(name="local-max")

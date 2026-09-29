@@ -66,8 +66,8 @@ from .model import ModelResponseError
 from .model import ModelSample
 from .model import ModelTimeoutError
 from .model import ModelTransportError
-from .model import SamplingParams
-from .model import _apply_request_params
+from .model import SampleParams
+from .model import _apply_extra_sample_params
 from .model import _timed_sample
 from .model_catalog import ModelSpec
 from .model_catalog import ModelBinding
@@ -452,28 +452,28 @@ def _encode_tools(tools: Sequence[Any]) -> List[Dict[str, Any]]:
     return encoded
 
 
-def _apply_sampling_params(
+def _apply_sample_params(
     payload: Dict[str, Any],
-    sampling_params: Optional[SamplingParams],
+    sample_params: Optional[SampleParams],
 ) -> None:
-    if sampling_params is None:
+    if sample_params is None:
         return
     unsupported = []
-    if sampling_params.temperature is not None:
+    if sample_params.temperature is not None:
         unsupported.append("temperature")
-    if sampling_params.top_p is not None:
+    if sample_params.top_p is not None:
         unsupported.append("top_p")
-    if sampling_params.stop:
+    if sample_params.stop:
         unsupported.append("stop")
-    if sampling_params.seed is not None:
+    if sample_params.seed is not None:
         unsupported.append("seed")
     if unsupported:
         raise ModelConfigurationError(
             "Codex Responses does not support these sampling options yet: "
             + ", ".join(unsupported)
         )
-    if sampling_params.max_output_tokens is not None:
-        payload["max_output_tokens"] = sampling_params.max_output_tokens
+    if sample_params.max_output_tokens is not None:
+        payload["max_output_tokens"] = sample_params.max_output_tokens
 
 
 def _new_identifier(factory: Callable[[], Any], field_name: str) -> str:
@@ -1731,7 +1731,7 @@ class CodexResponsesModel:
         self,
         context: InteractionContext,
         tools: Sequence[Any],
-        sampling_params: Optional[SamplingParams],
+        sample_params: Optional[SampleParams],
     ) -> Tuple[Dict[str, Any], _ProviderState]:
         if not isinstance(context, InteractionContext):
             raise TypeError("context must be InteractionContext")
@@ -1772,8 +1772,8 @@ class CodexResponsesModel:
             payload["text"] = {"verbosity": defaults.text_verbosity}
         if provider_state.session_id is not None:
             payload["prompt_cache_key"] = provider_state.session_id
-        _apply_sampling_params(payload, sampling_params)
-        _apply_request_params(payload, self.binding, sampling_params)
+        _apply_sample_params(payload, sample_params)
+        _apply_extra_sample_params(payload, self.binding, sample_params)
         return payload, provider_state
 
     def _build_headers(
@@ -1895,21 +1895,21 @@ class CodexResponsesModel:
         context: InteractionContext,
         *,
         tools: Sequence[Any] = (),
-        sampling_params: Optional[SamplingParams] = None,
+        sample_params: Optional[SampleParams] = None,
     ) -> ModelSample:
-        if sampling_params is not None and not isinstance(sampling_params, SamplingParams):
-            raise TypeError("sampling_params must be SamplingParams or None")
+        if sample_params is not None and not isinstance(sample_params, SampleParams):
+            raise TypeError("sample_params must be SampleParams or None")
         with self._credential_lock:
-            return self._sample_locked(context, tools, sampling_params)
+            return self._sample_locked(context, tools, sample_params)
 
     def _sample_locked(
         self,
         context: InteractionContext,
         tools: Sequence[Any],
-        sampling_params: Optional[SamplingParams],
+        sample_params: Optional[SampleParams],
     ) -> ModelSample:
         payload, provider_state = self._build_request_payload(
-            context, tools, sampling_params,
+            context, tools, sample_params,
         )
         return self._execute_request_locked(
             payload,

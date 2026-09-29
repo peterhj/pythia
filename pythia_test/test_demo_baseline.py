@@ -21,7 +21,7 @@ from pythia.interaction import InteractionContext
 from pythia.interaction import ModelSample
 from pythia.interaction import ModelSampleBoundary
 from pythia.interaction import Reasoning
-from pythia.interaction import ResolvedSamplingParams
+from pythia.interaction import SampleParams
 from pythia.interaction import TokenUsage
 from pythia.interaction import ToolCall
 from pythia.interaction import ToolResult
@@ -42,7 +42,7 @@ DEMO_ARGUMENT_DEFAULTS = {
     "no_user_model_catalog": False,
     "list_models": False,
     "debug_save_model_binding": False,
-    "request_params": None,
+    "extra_sample_params": None,
     "model": None,
     "api_key": None,
     "codex_home": None,
@@ -115,8 +115,8 @@ class _CheckpointRecordingModel:
         self.calls = []
         self.checkpoints = []
 
-    def sample(self, context, *, tools=(), sampling_params=None):
-        self.calls.append((context.copy(), tuple(tools), sampling_params))
+    def sample(self, context, *, tools=(), sample_params=None):
+        self.calls.append((context.copy(), tuple(tools), sample_params))
         self.checkpoints.append(load_interaction_save("interaction.jsonl"))
         try:
             return next(self.samples)
@@ -250,7 +250,7 @@ class DemoStartupBaselineTests(unittest.TestCase):
                 UserInteractionBoundary(),
             ),
         )
-        self.assertEqual(options, ResolvedSamplingParams())
+        self.assertEqual(options, SampleParams(enable_auto_compaction=True))
 
     def test_initial_query_is_one_item_once_across_tool_follow_up(self):
         query = "/quit\nInspect café without splitting this query.\n"
@@ -297,7 +297,7 @@ class DemoStartupBaselineTests(unittest.TestCase):
             )
             self.assertEqual(
                 options,
-                ResolvedSamplingParams(max_output_tokens=77),
+                SampleParams(max_output_tokens=77, enable_auto_compaction=True),
             )
         self.assertEqual(
             tuple(

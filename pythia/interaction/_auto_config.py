@@ -9,10 +9,10 @@ from urllib.parse import urlsplit
 
 from ._auto_board import parse_json
 from ._prompt import add_prompt_arguments
-from .model import SamplingParams
+from .model import SampleParams
 from .model_config import _boolean_argument
 from .model_config import add_catalog_arguments, add_endpoint_arguments, prepare_namespace
-from .model_catalog import BUILTIN_MODEL_CATALOG, freeze_request_params, thaw_json
+from .model_catalog import BUILTIN_MODEL_CATALOG, freeze_extra_sample_params, thaw_json
 from .runtime_config import InteractionConfig
 from .timeouts import DEFAULT_REQUEST_TIMEOUT_SECONDS
 
@@ -26,7 +26,7 @@ DEFAULTS = {
     "request_timeout_seconds": DEFAULT_REQUEST_TIMEOUT_SECONDS,
     "enable_workspace": True, "enable_auto_compaction": True,
     "auto_compact_tokens": None, "max_context_tokens": None,
-    "request_params": None,
+    "extra_sample_params": None,
     "instructions": None,
 }
 _APIS = {"chat-completions", "messages", "codex"}
@@ -49,8 +49,8 @@ def _layer(value, base):
     api = value.get("model_api")
     if api is not None and (not isinstance(api, str) or api not in _APIS):
         raise ValueError("Unsupported auto model API.")
-    if value.get("request_params") is not None:
-        value["request_params"] = thaw_json(freeze_request_params(value["request_params"]))
+    if value.get("extra_sample_params") is not None:
+        value["extra_sample_params"] = thaw_json(freeze_extra_sample_params(value["extra_sample_params"]))
     for key in _PATHS:
         if key == "cwd" and key in value and value[key] is None:
             raise ValueError("cwd must be an existing directory path.")
@@ -97,14 +97,14 @@ def _merge(current, value, catalog):
                 continue
             current[key] = None
     if before != after:
-        current["request_params"] = None
+        current["extra_sample_params"] = None
     if value.get("endpoint_auth") is not None:
         if value["endpoint_auth"] != "codex-login":
             current["codex_home"] = current["codex_auth_file"] = None
-    previous_params = current.get("request_params") or {}
+    previous_params = current.get("extra_sample_params") or {}
     current.update(value)
-    if isinstance(value.get("request_params"), dict):
-        current["request_params"] = {**previous_params, **value["request_params"]}
+    if isinstance(value.get("extra_sample_params"), dict):
+        current["extra_sample_params"] = {**previous_params, **value["extra_sample_params"]}
     return current
 
 
@@ -209,7 +209,7 @@ def _validate(settings, catalog):
             raise ValueError("endpoint_url must be an HTTP(S) URL without credentials/query/fragment.") from None
     if not Path(settings["cwd"]).is_dir():
         raise ValueError("Context cwd must be an existing directory.")
-    SamplingParams(max_output_tokens=settings["max_output_tokens"])
+    SampleParams(max_output_tokens=settings["max_output_tokens"])
     # Reuse provider-aware max-output-token and runtime setting validation.
     InteractionConfig.from_namespace(args)
 
@@ -253,7 +253,7 @@ def build_parser():
     )
     parser.add_argument("--board-port", type=int, default=0, help="Loopback port (0 chooses an available port).")
     add_endpoint_arguments(parser, auto=True)
-    add_catalog_arguments(parser, suppress_request_params=True)
+    add_catalog_arguments(parser, suppress_extra_sample_params=True)
     for key in ("model", "cwd", "instructions"):
         parser.add_argument("--" + key.replace("_", "-"), default=argparse.SUPPRESS)
     parser.add_argument("--max-samples", type=int, default=argparse.SUPPRESS,

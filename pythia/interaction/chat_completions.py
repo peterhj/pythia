@@ -48,8 +48,8 @@ from .model import ModelResponseError
 from .model import ModelSample
 from .model import ModelTimeoutError
 from .model import ModelTransportError
-from .model import SamplingParams
-from .model import _apply_request_params
+from .model import SampleParams
+from .model import _apply_extra_sample_params
 from .model_catalog import ModelBinding
 from .model import TokenUsage
 from .model import _timed_sample
@@ -308,22 +308,22 @@ def _encode_tools(tools: Sequence[Any]) -> List[Dict[str, Any]]:
     return encoded
 
 
-def _apply_sampling_params(
+def _apply_sample_params(
     payload: Dict[str, Any],
-    sampling_params: Optional[SamplingParams],
+    sample_params: Optional[SampleParams],
 ) -> None:
-    if sampling_params is None:
+    if sample_params is None:
         return
-    if sampling_params.max_output_tokens is not None:
-        payload["max_tokens"] = sampling_params.max_output_tokens
-    if sampling_params.temperature is not None:
-        payload["temperature"] = sampling_params.temperature
-    if sampling_params.top_p is not None:
-        payload["top_p"] = sampling_params.top_p
-    if sampling_params.stop:
-        payload["stop"] = list(sampling_params.stop)
-    if sampling_params.seed is not None:
-        payload["seed"] = sampling_params.seed
+    if sample_params.max_output_tokens is not None:
+        payload["max_tokens"] = sample_params.max_output_tokens
+    if sample_params.temperature is not None:
+        payload["temperature"] = sample_params.temperature
+    if sample_params.top_p is not None:
+        payload["top_p"] = sample_params.top_p
+    if sample_params.stop:
+        payload["stop"] = list(sample_params.stop)
+    if sample_params.seed is not None:
+        payload["seed"] = sample_params.seed
 
 
 def _coerce_content_text(value: Any, field_name: str) -> str:
@@ -615,7 +615,7 @@ class ChatCompletionsModel:
         self,
         context: InteractionContext,
         tools: Sequence[Any],
-        sampling_params: Optional[SamplingParams],
+        sample_params: Optional[SampleParams],
     ) -> Dict[str, Any]:
         if not isinstance(context, InteractionContext):
             raise TypeError("context must be InteractionContext")
@@ -630,8 +630,8 @@ class ChatCompletionsModel:
         if encoded_tools:
             payload["tools"] = encoded_tools
             payload["parallel_tool_calls"] = False
-        _apply_sampling_params(payload, sampling_params)
-        _apply_request_params(payload, self.binding, sampling_params)
+        _apply_sample_params(payload, sample_params)
+        _apply_extra_sample_params(payload, self.binding, sample_params)
         return payload
 
     @_timed_sample
@@ -640,11 +640,11 @@ class ChatCompletionsModel:
         context: InteractionContext,
         *,
         tools: Sequence[Any] = (),
-        sampling_params: Optional[SamplingParams] = None,
+        sample_params: Optional[SampleParams] = None,
     ) -> ModelSample:
-        if sampling_params is not None and not isinstance(sampling_params, SamplingParams):
-            raise TypeError("sampling_params must be SamplingParams or None")
-        payload = self._build_request_payload(context, tools, sampling_params)
+        if sample_params is not None and not isinstance(sample_params, SampleParams):
+            raise TypeError("sample_params must be SampleParams or None")
+        payload = self._build_request_payload(context, tools, sample_params)
         try:
             request_data = json.dumps(
                 payload,

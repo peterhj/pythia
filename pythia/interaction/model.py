@@ -25,7 +25,7 @@ from .items import ToolCall
 from .items import SampleMetadata
 from .items import _validate_elapsed_seconds
 from .usage import TokenUsage
-from .model_catalog import freeze_request_params
+from .model_catalog import freeze_extra_sample_params
 from .model_catalog import thaw_json
 
 if TYPE_CHECKING:
@@ -96,7 +96,19 @@ def _validate_optional_finite_number(
 
 
 @dataclass(frozen=True)
-class SamplingParams:
+class SampleParams:
+    """Per-call parameters of ``Model.sample()``.
+
+    Every ``None`` field (and an empty ``stop``) inherits the model's default,
+    with one precedence order: this call, then adapter settings such as a
+    Messages endpoint's budget or compaction trigger, then the model binding
+    and catalog. Adapters reject typed fields that their API cannot send.
+
+    ``extra`` holds request-body extensions for this call. A mapping replaces
+    the binding's ``extra_sample_params`` (``{}`` sends none); ``None``
+    inherits them.
+    """
+
     max_output_tokens: Optional[int] = None
     temperature: Optional[float] = None
     top_p: Optional[float] = None
@@ -106,6 +118,7 @@ class SamplingParams:
     enable_auto_compaction: Optional[bool] = None
     # Host context-management threshold override, never a sampling wire field.
     auto_compact_tokens: Optional[int] = None
+    extra: Optional[Mapping] = None
 
     def __post_init__(self) -> None:
         if self.max_output_tokens is not None:
@@ -156,55 +169,36 @@ class SamplingParams:
             raise ValueError(
                 "auto_compact_tokens must be a positive integer or None"
             )
+        if self.extra is not None:
+            object.__setattr__(self, "extra", freeze_extra_sample_params(self.extra))
 
 
-@dataclass(frozen=True)
-class ResolvedSamplingParams(SamplingParams):
-    """Frontend policy already resolved against its model binding.
-
-    Unlike ordinary SamplingParams, max_output_tokens/auto_compact_tokens=None
-    mean no application-specified number, not inheritance from the endpoint or
-    catalog. The compaction boolean is authoritative. Other sampling fields
-    retain their usual semantics. Adapters must not serialize this distinction.
-    """
-
-    enable_auto_compaction: bool = True
-    request_params: Mapping = field(default_factory=dict)
-
-    def __post_init__(self) -> None:
-        super().__post_init__()
-        if not isinstance(self.enable_auto_compaction, bool):
-            raise TypeError("resolved enable_auto_compaction must be a bool")
-        object.__setattr__(self, "request_params", freeze_request_params(self.request_params))
-
-
-def _apply_request_params(
+def _apply_extra_sample_params(
     payload: dict,
     binding: "ModelBinding",
-    sampling_params: Optional[SamplingParams],
+    sample_params: Optional[SampleParams],
 ) -> None:
     """Add one request's body extensions without replacing adapter fields.
 
-    Resolved frontend params carry the complete effective map, even when
-    empty. Other calls, including ``None`` and compaction requests, use the
-    binding's map. Resolved maps are validated without an API, so the names
-    reserved by this binding's API are checked here before sending.
+    A per-call ``extra`` map replaces the binding's map, even when empty;
+    ``None`` params or ``extra`` use the binding's map. Per-call maps are
+    validated without an API, so the names reserved by this binding's API are
+    checked here before sending.
     """
-    if isinstance(sampling_params, ResolvedSamplingParams):
+    override = None if sample_params is None else sample_params.extra
+    if override is None:
+        params = binding.extra_sample_params
+    else:
         try:
-            params = freeze_request_params(
-                sampling_params.request_params, binding.api,
-            )
+            params = freeze_extra_sample_params(override, binding.api)
         except ValueError as exc:
             raise ModelConfigurationError(str(exc)) from None
-    else:
-        params = binding.request_params
     extensions = thaw_json(params)
     # Typed and structural fields stay authoritative; never override silently.
     replaced = sorted(extensions.keys() & payload.keys())
     if replaced:
         raise ModelConfigurationError(
-            "request_params cannot replace adapter-owned request fields: "
+            "extra_sample_params cannot replace adapter-owned request fields: "
             + ", ".join(replaced)
         )
     payload.update(extensions)
@@ -340,7 +334,7 @@ class Model(Protocol):
         context: InteractionContext,
         *,
         tools: Sequence["ToolSpec"] = (),
-        sampling_params: Optional[SamplingParams] = None,
+        sample_params: Optional[SampleParams] = None,
     ) -> ModelSample:
         ...
 
@@ -355,7 +349,6 @@ __all__ = [
     "ModelSample",
     "ModelTimeoutError",
     "ModelTransportError",
-    "SamplingParams",
-    "ResolvedSamplingParams",
+    "SampleParams",
     "TokenUsage",
 ]

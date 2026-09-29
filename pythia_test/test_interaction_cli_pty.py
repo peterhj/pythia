@@ -81,7 +81,7 @@ class Model:
         self.save_path = Path(save_path).expanduser().absolute()
         self.enable_default_tools = enable_default_tools
 
-    def sample(self, context, *, tools=(), sampling_params=None):
+    def sample(self, context, *, tools=(), sample_params=None):
         assert load_interaction_save(self.save_path).items == context.items
         assert {tool.name for tool in tools} == (
             {"exec_command", "write_stdin", "apply_patch", "update_plan"}

@@ -24,7 +24,7 @@ from pythia.interaction.model_config import build_model, prepare_namespace, supp
 
 
 V2 = '''[catalog]
-version = 3
+version = 4
 [model.local-max]
 endpoint.api = chat-completions
 endpoint.url = http://127.0.0.1:8000/custom/invoke/
@@ -33,8 +33,8 @@ endpoint.auth = none
 aliases = ["local"]
 limits.auto_compact_context_tokens = 100000
 limits.max_context_tokens = 150000
-request_params.thinking = {"type": "enabled"}
-request_params.reasoning_effort = "max"
+extra_sample_params.thinking = {"type": "enabled"}
+extra_sample_params.reasoning_effort = "max"
 '''
 
 
@@ -83,18 +83,18 @@ route.auth_source = explicit
         spec = registry.get_model_spec("chat-completions", "local")
         self.assertEqual(spec.endpoint.auth, "none")
         changed = parse_model_catalog('''[catalog]
-version = 3
+version = 4
 [model.local-max]
 override = true
 limits.max_context_tokens = 200000
-request_params.thinking = {"type": "disabled"}
+extra_sample_params.thinking = {"type": "disabled"}
 ''', base=registry).get_model_spec("chat-completions", "local")
         self.assertEqual(changed.endpoint, spec.endpoint)
         self.assertEqual(changed.limits.max_context_tokens, 200000)
-        self.assertEqual(dict(changed.request_params["thinking"]), {"type": "disabled"})
+        self.assertEqual(dict(changed.extra_sample_params["thinking"]), {"type": "disabled"})
 
     def test_mixed_and_incomplete_schemas_rejected(self):
-        for text in (V2.replace("version = 3", "version = 1"), V2 + "route.api = chat-completions\n",
+        for text in (V2.replace("version = 4", "version = 1"), V2 + "route.api = chat-completions\n",
                      V2 + "api_model = other\n", V2.replace("endpoint.auth = none\n", ""),
                      V2.replace("endpoint.model = wire-model", "endpoint.model = null")):
             with self.subTest(text=text), self.assertRaises(ValueError):
@@ -105,8 +105,8 @@ request_params.thinking = {"type": "disabled"}
                 endpoint=replace(BUILTIN_MODEL_CATALOG.specs[0].endpoint, model=None),
             )
         with self.assertRaises(ValueError):
-            parse_model_catalog(V2.replace('request_params.thinking = {"type": "enabled"}\n', '')
-                                .replace('request_params.reasoning_effort = "max"', 'request_params = null'))
+            parse_model_catalog(V2.replace('extra_sample_params.thinking = {"type": "enabled"}\n', '')
+                                .replace('extra_sample_params.reasoning_effort = "max"', 'extra_sample_params = null'))
 
     def test_credentialed_url_change_requires_explicit_auth_rebinding(self):
         registry = parse_model_catalog(V2.replace('endpoint.auth = none', 'endpoint.auth = env:KEY'))
@@ -114,7 +114,7 @@ request_params.thinking = {"type": "disabled"}
             registry.bind(name="local", endpoint_url="https://other.test/infer")
         with self.assertRaises(ValueError):
             parse_model_catalog('''[catalog]
-version=3
+version=4
 [model.local-max]
 override=true
 endpoint.url=https://other.test/infer
@@ -131,7 +131,7 @@ class EndpointRuntimeTests(unittest.TestCase):
         config = InteractionConfig.from_namespace(args)
         self.assertEqual(args.model_binding.selector, "local")
         self.assertEqual(model.endpoint.url, "http://127.0.0.1:8000/custom/invoke/")
-        payload = model._build_request_payload(ctx(), (), config.snapshot().sampling_params())
+        payload = model._build_request_payload(ctx(), (), config.snapshot().sample_params())
         self.assertEqual(payload["model"], "wire-override")
         self.assertEqual(payload["reasoning_effort"], "max")
 
@@ -186,7 +186,7 @@ class EndpointRuntimeTests(unittest.TestCase):
 
     def test_environment_requirement_does_not_depend_on_catalog_origin(self):
         changed = parse_model_catalog('''[catalog]
-version = 3
+version = 4
 [model.claude-fable-5.1]
 override = true
 source = metadata only

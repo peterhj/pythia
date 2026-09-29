@@ -35,7 +35,7 @@ from pythia.interaction import ModelTimeoutError
 from pythia.interaction import ModelTransportError
 from pythia.interaction import PromptSummarizingCompactor
 from pythia.interaction import Reasoning
-from pythia.interaction import SamplingParams
+from pythia.interaction import SampleParams
 from pythia.interaction import TokenUsage
 from pythia.interaction import Tool
 from pythia.interaction import ToolCall
@@ -575,7 +575,7 @@ class ChatCompletionsModelTests(unittest.TestCase):
         sample = model.sample(
             context,
             tools=(spec,),
-            sampling_params=SamplingParams(
+            sample_params=SampleParams(
                 max_output_tokens=100,
                 temperature=0.25,
                 stop=("END",),
@@ -1331,8 +1331,8 @@ class _ScriptedModel:
         self.outcomes = list(outcomes)
         self.calls = []
 
-    def sample(self, context, *, tools=(), sampling_params=None):
-        self.calls.append((context.copy(), tuple(tools), sampling_params))
+    def sample(self, context, *, tools=(), sample_params=None):
+        self.calls.append((context.copy(), tuple(tools), sample_params))
         if not self.outcomes:
             raise AssertionError("unexpected model sample")
         outcome = self.outcomes.pop(0)
@@ -1344,13 +1344,13 @@ class _ScriptedModel:
 class CompactionTests(unittest.TestCase):
     def test_prompt_compaction_output_limit_can_be_overridden(self):
         model = mock.Mock()
-        options = SamplingParams(max_output_tokens=321)
+        options = SampleParams(max_output_tokens=321)
 
         compactor = PromptSummarizingCompactor(
-            model, sampling_params=options,
+            model, sample_params=options,
         )
 
-        self.assertIs(compactor._sampling_params, options)
+        self.assertIs(compactor._sample_params, options)
 
     def test_prompt_compactor_returns_append_only_checkpoint(self):
         usage = TokenUsage(input_tokens=80, output_tokens=20, total_tokens=100)
@@ -1414,7 +1414,7 @@ class CompactionTests(unittest.TestCase):
         self.assertEqual(tools, ())
         self.assertEqual(
             options,
-            SamplingParams(
+            SampleParams(
                 temperature=0.0,
                 max_output_tokens=DEFAULT_COMPACTION_MAX_OUTPUT_TOKENS,
             ),

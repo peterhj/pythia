@@ -541,7 +541,7 @@ class DemoMediaTests(unittest.TestCase):
             def __init__(self):
                 self.calls = []
 
-            def sample(self, context, *, tools=(), sampling_params=None):
+            def sample(self, context, *, tools=(), sample_params=None):
                 self.calls.append(context.copy())
                 return _answer("ok")
 

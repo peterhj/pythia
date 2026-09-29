@@ -127,7 +127,7 @@ class ModelCatalogTests(unittest.TestCase):
         )
         self.assertEqual(fable.endpoint.auth, "env:ANTHROPIC_API_KEY")
         self.assertIsNone(fable.responses)
-        self.assertEqual(model_catalog.thaw_json(fable.request_params), {"thinking": {"type": "adaptive"}})
+        self.assertEqual(model_catalog.thaw_json(fable.extra_sample_params), {"thinking": {"type": "adaptive"}})
 
         fable_max = get_model_spec("messages", "claude-fable-5.1-max")
         self.assertIs(
@@ -138,7 +138,7 @@ class ModelCatalogTests(unittest.TestCase):
         self.assertEqual(fable_max.endpoint.model, "claude-fable-5-1")
         self.assertIs(fable_max.limits, fable.limits)
         self.assertIs(fable_max.endpoint, fable.endpoint)
-        self.assertEqual(model_catalog.thaw_json(fable_max.request_params), {
+        self.assertEqual(model_catalog.thaw_json(fable_max.extra_sample_params), {
             "thinking": {"type": "adaptive"},
             "output_config": {"effort": "max"},
         })
@@ -304,7 +304,7 @@ class ModelCatalogTests(unittest.TestCase):
                 for name in (spec.name, *spec.aliases):
                     self.assertIn(name, model_help)
             self.assertIn("META_API_KEY", model_help)
-            # Request settings: typed Responses defaults, then request params as sent.
+            # Request settings: typed Responses defaults, then extra sample params as sent.
             self.assertIn("codex-gpt-6-astra-max (codex, effort=max, summary=auto, verbosity=low)", model_help)
             self.assertIn('claude-opus-5.5-max (messages, thinking={"type":"adaptive"}, '
                           'output_config={"effort":"max"}, ANTHROPIC_API_KEY)', model_help)
@@ -312,11 +312,11 @@ class ModelCatalogTests(unittest.TestCase):
             self.assertNotIn("muse-spark-1.3-max", model_help)
             self.assertEqual(parser.parse_args(["--model", "future-model"]).model, "future-model")
 
-    def test_help_escapes_percent_in_request_params(self):
+    def test_help_escapes_percent_in_extra_sample_params(self):
         # argparse %-formats help strings; an unescaped "%" would crash --help.
         # A hyphen-free name: argparse may wrap lines at hyphens.
         spec = replace(get_model_spec("messages", "claude-fable-5.1"), name="pct",
-                       request_params={"metadata": {"note": "100% literal"}})
+                       extra_sample_params={"metadata": {"note": "100% literal"}})
         with mock.patch.object(model_config, "list_model_specs", return_value=(spec,)):
             text = cli._build_parser().format_help()
         self.assertIn('pct (messages, metadata={"note":"100% literal"}, ANTHROPIC_API_KEY)',

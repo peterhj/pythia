@@ -8,8 +8,7 @@ from pythia.interaction import ConfigError
 from pythia.interaction import InteractionConfig
 from pythia.interaction import InteractionConfigSnapshot
 from pythia.interaction import ModelConfigurationError
-from pythia.interaction import SamplingParams
-from pythia.interaction import ResolvedSamplingParams
+from pythia.interaction import SampleParams
 from pythia.interaction import cli
 from pythia.interaction.runtime_config import parse_config_literal
 
@@ -18,8 +17,8 @@ class InteractionConfigTests(unittest.TestCase):
     def test_output_limit_uses_the_explicit_shared_name(self):
         self.assertIn("max_output_tokens", CONFIG_KEYS)
         self.assertNotIn("max_tokens", CONFIG_KEYS)
-        self.assertTrue(hasattr(SamplingParams(), "max_output_tokens"))
-        self.assertFalse(hasattr(SamplingParams(), "max_tokens"))
+        self.assertTrue(hasattr(SampleParams(), "max_output_tokens"))
+        self.assertFalse(hasattr(SampleParams(), "max_tokens"))
         self.assertTrue(
             hasattr(InteractionConfigSnapshot(), "max_output_tokens")
         )
@@ -38,7 +37,7 @@ class InteractionConfigTests(unittest.TestCase):
                 "enable_auto_compaction = True",
                 "auto_compact_tokens = None",
                 "max_context_tokens = None",
-                "request_params = {}",
+                "extra_sample_params = {}",
             )),
         )
         rendered_json = config.render(json_output=True)
@@ -49,7 +48,7 @@ class InteractionConfigTests(unittest.TestCase):
             "enable_auto_compaction": True,
             "auto_compact_tokens": None,
             "max_context_tokens": None,
-            "request_params": {},
+            "extra_sample_params": {},
             "__init__": {
                 "enable_workspace": True,
                 "max_samples": None,
@@ -57,7 +56,7 @@ class InteractionConfigTests(unittest.TestCase):
                 "enable_auto_compaction": True,
                 "auto_compact_tokens": None,
                 "max_context_tokens": None,
-                "request_params": {},
+                "extra_sample_params": {},
             },
         })
         self.assertEqual(list(json.loads(rendered_json)), ["__init__", *CONFIG_KEYS])
@@ -88,7 +87,7 @@ class InteractionConfigTests(unittest.TestCase):
                 "# init: auto_compact_tokens = 500000",
                 "auto_compact_tokens = 100",
                 "max_context_tokens = None",
-                "request_params = {}",
+                "extra_sample_params = {}",
             )),
         )
         payload = json.loads(config.render(json_output=True))
@@ -117,11 +116,11 @@ class InteractionConfigTests(unittest.TestCase):
             "enable_auto_compaction": False,
             "auto_compact_tokens": 500000,
             "max_context_tokens": 1000000,
-            "request_params": {},
+            "extra_sample_params": {},
         })
         self.assertEqual(
-            config.snapshot().sampling_params(),
-            ResolvedSamplingParams(
+            config.snapshot().sample_params(),
+            SampleParams(
                 max_output_tokens=2048,
                 enable_auto_compaction=False,
                 auto_compact_tokens=500000,
@@ -138,18 +137,18 @@ class InteractionConfigTests(unittest.TestCase):
                         parse_config_literal(key, bad)
 
         config = InteractionConfig()
-        self.assertEqual(config.snapshot().sampling_params(), ResolvedSamplingParams())
+        self.assertEqual(config.snapshot().sample_params(), SampleParams(enable_auto_compaction=True))
         config.set("auto_compact_tokens", 500000)
         self.assertEqual(
-            config.snapshot().sampling_params(),
-            ResolvedSamplingParams(auto_compact_tokens=500000),
+            config.snapshot().sample_params(),
+            SampleParams(auto_compact_tokens=500000, enable_auto_compaction=True),
         )
         # max_context_tokens is informational: no auto<=max gate.
         config.set("max_context_tokens", 1000)
         self.assertEqual(config.get("auto_compact_tokens"), 500000)
         self.assertEqual(config.get("max_context_tokens"), 1000)
         config.set("auto_compact_tokens", None)
-        self.assertEqual(config.snapshot().sampling_params(), ResolvedSamplingParams())
+        self.assertEqual(config.snapshot().sample_params(), SampleParams(enable_auto_compaction=True))
 
     def test_messages_uses_catalog_fallback_and_explicit_precedence(self):
         catalogued = cli._build_parser().parse_args([
@@ -241,27 +240,27 @@ class InteractionConfigTests(unittest.TestCase):
             failed.set("enable_workspace", False)
         self.assertIs(failed.get("enable_workspace"), True)
 
-    def test_sampling_options_preserve_startup_defaults_and_runtime_override(self):
+    def test_sample_params_preserve_startup_defaults_and_runtime_override(self):
         config = InteractionConfig()
-        self.assertEqual(config.snapshot().sampling_params(), ResolvedSamplingParams())
+        self.assertEqual(config.snapshot().sample_params(), SampleParams(enable_auto_compaction=True))
 
         config.set("max_output_tokens", 99)
         self.assertEqual(
-            config.snapshot().sampling_params(),
-            ResolvedSamplingParams(max_output_tokens=99),
+            config.snapshot().sample_params(),
+            SampleParams(max_output_tokens=99, enable_auto_compaction=True),
         )
         config.set("max_output_tokens", None)
-        self.assertEqual(config.snapshot().sampling_params(), ResolvedSamplingParams())
+        self.assertEqual(config.snapshot().sample_params(), SampleParams(enable_auto_compaction=True))
 
         config.set("enable_auto_compaction", False)
         self.assertEqual(
-            config.snapshot().sampling_params(),
-            ResolvedSamplingParams(enable_auto_compaction=False),
+            config.snapshot().sample_params(),
+            SampleParams(enable_auto_compaction=False),
         )
         config.set("enable_auto_compaction", True)
         self.assertEqual(
-            config.snapshot().sampling_params(),
-            ResolvedSamplingParams(enable_auto_compaction=True),
+            config.snapshot().sample_params(),
+            SampleParams(enable_auto_compaction=True),
         )
 
 

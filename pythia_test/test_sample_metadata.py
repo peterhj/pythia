@@ -28,8 +28,7 @@ from pythia.interaction import ModelSampleBoundary
 from pythia.interaction import ModelTimeoutError
 from pythia.interaction import SampleMetadata
 from pythia.interaction import SaveError
-from pythia.interaction import SamplingParams
-from pythia.interaction import ResolvedSamplingParams
+from pythia.interaction import SampleParams
 from pythia.interaction import StreamingResponsesEndpoint
 from pythia.interaction import TokenUsage
 from pythia.interaction import TurnSummary
@@ -63,7 +62,7 @@ class SampleMetadataTests(unittest.TestCase):
     def test_sampling_auto_compaction_override_is_optional_boolean(self):
         for value in (None, False, True):
             self.assertIs(
-                SamplingParams(enable_auto_compaction=value).enable_auto_compaction,
+                SampleParams(enable_auto_compaction=value).enable_auto_compaction,
                 value,
             )
         for value in (0, 1, "false", [], {}):
@@ -71,7 +70,7 @@ class SampleMetadataTests(unittest.TestCase):
                 TypeError,
                 "enable_auto_compaction",
             ):
-                SamplingParams(enable_auto_compaction=value)
+                SampleParams(enable_auto_compaction=value)
 
     def test_elapsed_validation_and_unknown_default(self):
         for item_type, fields in (
@@ -371,12 +370,12 @@ class SampleMetadataTests(unittest.TestCase):
 
             def __init__(self):
                 self.contexts = []
-                self.sampling_params = []
+                self.sample_params = []
 
-            def sample(self, context, *, tools=(), sampling_params=None):
+            def sample(self, context, *, tools=(), sample_params=None):
                 del tools
                 self.contexts.append(context.copy())
-                self.sampling_params.append(sampling_params)
+                self.sample_params.append(sample_params)
                 return ModelSample((Message("assistant", "Done."),))
 
         model = Model()
@@ -416,8 +415,8 @@ class SampleMetadataTests(unittest.TestCase):
         compactor.compact.assert_called_once()
         self.assertEqual(len(model.contexts), 1)
         self.assertEqual(
-            model.sampling_params,
-            [ResolvedSamplingParams(auto_compact_tokens=100)],
+            model.sample_params,
+            [SampleParams(auto_compact_tokens=100, enable_auto_compaction=True)],
         )
         self.assertEqual(model.contexts[0].model_items(), (
             Message("user", "follow up"),
@@ -433,12 +432,12 @@ class SampleMetadataTests(unittest.TestCase):
 
             def __init__(self):
                 self.contexts = []
-                self.sampling_params = []
+                self.sample_params = []
 
-            def sample(self, context, *, tools=(), sampling_params=None):
+            def sample(self, context, *, tools=(), sample_params=None):
                 del tools
                 self.contexts.append(context.copy())
-                self.sampling_params.append(sampling_params)
+                self.sample_params.append(sample_params)
                 return ModelSample((Message("assistant", "Done."),))
 
         model = Model()
@@ -466,8 +465,8 @@ class SampleMetadataTests(unittest.TestCase):
         create.assert_not_called()
         self.assertEqual(len(model.contexts), 1)
         self.assertEqual(
-            model.sampling_params,
-            [ResolvedSamplingParams(enable_auto_compaction=False, auto_compact_tokens=100)],
+            model.sample_params,
+            [SampleParams(enable_auto_compaction=False, auto_compact_tokens=100)],
         )
         self.assertIn(
             Message("assistant", "uncompacted"),

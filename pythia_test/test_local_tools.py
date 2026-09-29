@@ -1137,8 +1137,8 @@ class _ScriptedRepositoryModel:
     def __init__(self):
         self.calls = []
 
-    def sample(self, context, *, tools=(), sampling_params=None):
-        self.calls.append((context.copy(), tuple(tools), sampling_params))
+    def sample(self, context, *, tools=(), sample_params=None):
+        self.calls.append((context.copy(), tuple(tools), sample_params))
         if len(self.calls) == 1:
             return ModelSample(
                 items=(
@@ -1178,8 +1178,8 @@ class _LoopingRepositoryModel:
     def __init__(self):
         self.index = 0
 
-    def sample(self, context, *, tools=(), sampling_params=None):
-        del context, tools, sampling_params
+    def sample(self, context, *, tools=(), sample_params=None):
+        del context, tools, sample_params
         self.index += 1
         return ModelSample(
             items=(

@@ -64,7 +64,7 @@ from .media import parse_user_prompt
 from .model import Model
 from .model import ModelAuthenticationError
 from .model import ModelError
-from .model import SamplingParams
+from .model import SampleParams
 from .model_config import DEFAULT_SAVE_PATH
 from .model_config import _boolean_argument
 from .model_config import build_model
@@ -510,7 +510,7 @@ async def _turn(
     # sampling failure below can arm a new one, not a tool/compaction/save error.
     state.retry = None
     turn_config = config.snapshot()
-    sampling_params = turn_config.sampling_params()
+    sample_params = turn_config.sample_params()
     turn_started = time.perf_counter()
     samples = 0
     while not state.closing:
@@ -556,7 +556,7 @@ async def _turn(
                 model.sample,
                 context.copy(),
                 tools=environment.tool_specs,
-                sampling_params=sampling_params,
+                sample_params=sample_params,
             )
         except ModelError as exc:
             contribution = (
@@ -1140,7 +1140,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if args.max_samples is not None and args.max_samples <= 0:
             raise ValueError("max_samples must be a positive integer or None")
         if args.max_output_tokens is not None:
-            SamplingParams(max_output_tokens=args.max_output_tokens)
+            SampleParams(max_output_tokens=args.max_output_tokens)
         save_path = resolve_save_path(args.save_path)
         if (args.headless and args.prompt is None
                 and not (args.resume and args.instructions is not None and save_path.is_file())):

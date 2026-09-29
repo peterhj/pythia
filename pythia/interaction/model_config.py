@@ -19,7 +19,7 @@ from .messages import MESSAGES_MIN_COMPACTION_TRIGGER_TOKENS
 from .model import Model
 from .model_catalog import list_model_specs
 from .model_catalog import binding_from_namespace
-from .model_catalog import parse_json_value, freeze_request_params, thaw_json
+from .model_catalog import parse_json_value, freeze_extra_sample_params, thaw_json
 from .codex_auth import CodexAuth, _resolve_auth_file
 from .model_catalog_config import load_model_catalog
 from .responses import CodexResponsesModel
@@ -122,15 +122,15 @@ def render_model_catalog(catalog):
     return "\n".join(lines)
 
 
-def _request_params_argument(text):
+def _extra_sample_params_argument(text):
     try:
         value = parse_json_value(text)
-        return None if value is None else thaw_json(freeze_request_params(value))
+        return None if value is None else thaw_json(freeze_extra_sample_params(value))
     except ValueError:
-        raise argparse.ArgumentTypeError("expected a JSON object of request params or null") from None
+        raise argparse.ArgumentTypeError("expected a JSON object of extra sample params or null") from None
 
 
-def add_catalog_arguments(parser, *, suppress_request_params=False):
+def add_catalog_arguments(parser, *, suppress_extra_sample_params=False):
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--model-catalog", type=Path,
                        help="INI user catalog (default: ~/.pythia/model-catalog.ini)")
@@ -144,9 +144,10 @@ def add_catalog_arguments(parser, *, suppress_request_params=False):
             "may include endpoint and request configuration"
         ),
     )
-    parser.add_argument("--request-params", type=_request_params_argument,
-                        default=argparse.SUPPRESS if suppress_request_params else None,
-                        help="JSON object of model-specific request-body extensions; launch-only")
+    parser.add_argument("--extra-sample-params", type=_extra_sample_params_argument,
+                        default=argparse.SUPPRESS if suppress_extra_sample_params else None,
+                        help=("JSON object of model-specific request-body extensions, "
+                              "overlaid on the catalog's extra_sample_params; launch-only"))
 
 
 def add_endpoint_arguments(parser, *, auto=False):
@@ -254,7 +255,7 @@ def build_model(args: argparse.Namespace, *, catalog=None) -> Model:
 
 
 def _request_settings(spec) -> list:
-    """A preset's typed Responses defaults, then its request params as sent."""
+    """A preset's typed Responses defaults, then its extra sample params as sent."""
     settings = []
     if spec.responses is not None:
         for label, value in (
@@ -264,8 +265,8 @@ def _request_settings(spec) -> list:
         ):
             if value is not None:
                 settings.append(f"{label}={value}")
-    # Compact JSON, i.e. the value syntax of request_params.<key> and --request-params.
-    for key, value in spec.request_params.items():
+    # Compact JSON, i.e. the value syntax of extra_sample_params.<key> and --extra-sample-params.
+    for key, value in spec.extra_sample_params.items():
         settings.append(f"{key}={json.dumps(thaw_json(value), ensure_ascii=False, separators=(',', ':'))}")
     return settings
 

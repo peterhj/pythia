@@ -40,7 +40,7 @@ def _debug_entry(binding):
                 "max_output_tokens",
             )
         },
-        "request_params": thaw_json(binding.request_params),
+        "extra_sample_params": thaw_json(binding.extra_sample_params),
         "responses": (
             None if spec is None or spec.responses is None
             else vars(spec.responses)
@@ -59,7 +59,8 @@ def save_debug_model_bindings(path, bindings):
             raise TypeError("debug bindings must be a string-keyed mapping")
         payload = json.dumps(
             {
-                "version": 1,
+                # Version 2 renamed request_params to extra_sample_params.
+                "version": 2,
                 "bindings": {
                     key: _debug_entry(binding)
                     for key, binding in bindings.items()
