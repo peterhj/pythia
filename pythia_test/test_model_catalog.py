@@ -110,9 +110,14 @@ class ModelCatalogTests(unittest.TestCase):
                     self.assertNotIn(field, payload)
 
     def test_aliases_are_identical_but_effort_presets_are_distinct(self):
-        fable = get_model_spec("messages", "claude-fable-5-1")
+        fable = get_model_spec("messages", "claude-fable-5.1")
         self.assertIs(get_model_spec("messages", " claude-fable-5.1 "), fable)
-        self.assertEqual(fable.aliases, ("claude-fable-5.1",))
+        self.assertEqual(fable.aliases, ())
+        self.assertIsNone(get_model_spec("messages", "claude-fable-5-1"))  # Wire ID, not a selector.
+        # Builtins declare no aliases; check alias identity on an aliased copy.
+        aliased = model_catalog.ModelCatalog((replace(fable, aliases=("fable",)),))
+        self.assertIs(aliased.get_model_spec("messages", " fable "),
+                      aliased.get_model_spec("messages", "claude-fable-5.1"))
         self.assertEqual(
             fable.limits,
             ModelLimits(
@@ -125,12 +130,12 @@ class ModelCatalogTests(unittest.TestCase):
         self.assertIsNone(fable.responses)
         self.assertIsNone(fable.messages)
 
-        fable_max = get_model_spec("messages", "claude-fable-5-1-max")
+        fable_max = get_model_spec("messages", "claude-fable-5.1-max")
         self.assertIs(
             get_model_spec("messages", " claude-fable-5.1-max "),
             fable_max,
         )
-        self.assertEqual(fable_max.aliases, ("claude-fable-5.1-max",))
+        self.assertEqual(fable_max.aliases, ())
         self.assertEqual(fable_max.endpoint.model, "claude-fable-5-1")
         self.assertIs(fable_max.limits, fable.limits)
         self.assertIs(fable_max.endpoint, fable.endpoint)
@@ -157,9 +162,7 @@ class ModelCatalogTests(unittest.TestCase):
     def test_fable_max_uses_output_effort(self):
         context = InteractionContext((Message("user", "Hello."),))
         cases = (
-            ("claude-fable-5-1", None),
             ("claude-fable-5.1", None),
-            ("claude-fable-5-1-max", "max"),
             ("claude-fable-5.1-max", "max"),
         )
         for name, effort in cases:
@@ -221,26 +224,27 @@ class ModelCatalogTests(unittest.TestCase):
                     self.assertEqual(chat._build_request_payload(context, (), None)["model"], name)
 
     def test_catalog_is_immutable_and_rejects_colliding_selectors(self):
-        spec = get_model_spec("messages", "claude-fable-5-1")
+        spec = get_model_spec("messages", "claude-fable-5.1")
         for obj, field, value in ((spec, "name", "other"), (spec.limits, "max_context_tokens", 1),
                                   (spec.endpoint, "url", "https://other.test")):
             with self.assertRaises(FrozenInstanceError):
                 setattr(obj, field, value)
         with self.assertRaises(TypeError):
             model_catalog._MODEL_INDEX[("messages", "other")] = spec
+        aliased = replace(spec, aliases=("fable",))
         for specs in (
             (spec, spec),
-            (spec, replace(spec, name="other")),  # Colliding alias.
-            (spec, replace(spec, name="claude-fable-5.1", aliases=())),
+            (aliased, replace(aliased, name="other")),  # Colliding alias.
+            (aliased, replace(aliased, name="fable", aliases=())),
             (replace(spec, aliases=(spec.name,)),),
         ):
             with self.assertRaisesRegex(ValueError, "duplicate model selector"):
                 model_catalog._build_index(specs)
         other_profile = replace(
-            spec,
-            endpoint=replace(spec.endpoint, api="responses"),
+            aliased,
+            endpoint=replace(aliased.endpoint, api="responses"),
         )
-        self.assertEqual(len(model_catalog._build_index((spec, other_profile))), 4)
+        self.assertEqual(len(model_catalog._build_index((aliased, other_profile))), 4)
 
     def test_catalog_validation(self):
         for field in (
@@ -253,7 +257,7 @@ class ModelCatalogTests(unittest.TestCase):
                     ModelLimits(**{field: value})
         with self.assertRaises(ValueError):
             ModelLimits(auto_compact_context_tokens=200, max_context_tokens=100)
-        spec = get_model_spec("messages", "claude-fable-5-1")
+        spec = get_model_spec("messages", "claude-fable-5.1")
         for fields in ({"name": ""}, {"endpoint": "bad"},
                        {"aliases": "alias"}, {"aliases": [" "]},
                        {"responses": ResponsesDefaults(reasoning_effort="max")}):

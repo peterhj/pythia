@@ -210,7 +210,7 @@ for module in (cli, demo):
             with self.assertRaisesRegex(ValueError, option.lstrip("-")):
                 cli.build_model(args)
         messages = cli._build_parser().parse_args([
-            "--endpoint-api", "messages", "--model", "claude-fable-5-1",
+            "--endpoint-api", "messages", "--model", "claude-fable-5.1",
             "--auto-compact-tokens", "100",
         ])
         with self.assertRaisesRegex(ValueError, "at least 50000"):

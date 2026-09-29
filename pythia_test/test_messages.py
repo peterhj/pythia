@@ -112,11 +112,11 @@ class MessagesEndpointTests(unittest.TestCase):
     def test_output_limit_prefers_explicit_then_catalog_and_requires_a_source(self):
         catalogued = messages_endpoint(
             api_url="http://localhost",
-            model="claude-fable-5-1",
+            model="claude-fable-5.1",
         )
         explicit = messages_endpoint(
             api_url="http://localhost",
-            model="claude-fable-5-1",
+            model="claude-fable-5.1",
             max_output_tokens=100,
         )
         self.assertEqual(catalogued.max_output_tokens, 128_000)
@@ -216,7 +216,7 @@ class MessagesEndpointTests(unittest.TestCase):
         policy = MessagesServerCompaction()
         model = MessagesModel(_endpoint(
             api_url="https://api.anthropic.com",
-            model="claude-fable-5-1",
+            model="claude-fable-5.1",
             api_key="test-key",
             server_compaction=policy,
         ))
@@ -240,7 +240,7 @@ class MessagesEndpointTests(unittest.TestCase):
 
         explicit = MessagesModel(_endpoint(
             api_url="https://api.anthropic.com",
-            model="claude-fable-5-1",
+            model="claude-fable-5.1",
             api_key="test-key",
             server_compaction=MessagesServerCompaction(
                 trigger_input_tokens=150_000,
@@ -260,7 +260,7 @@ class MessagesEndpointTests(unittest.TestCase):
         policy = MessagesServerCompaction()
         model = MessagesModel(_endpoint(
             api_url="https://api.anthropic.com",
-            model="claude-fable-5-1",
+            model="claude-fable-5.1",
             api_key="test-key",
             server_compaction=policy,
         ))
@@ -292,7 +292,7 @@ class MessagesEndpointTests(unittest.TestCase):
 
         runtime_enabled = MessagesModel(_endpoint(
             api_url="https://api.anthropic.com",
-            model="claude-fable-5-1",
+            model="claude-fable-5.1",
             api_key="test-key",
         ))
         enabled_after_startup = runtime_enabled._build_request_payload(
@@ -969,7 +969,7 @@ class MessagesDemoTests(unittest.TestCase):
             "--endpoint-api",
             "messages",
             "--model",
-            "claude-fable-5-1",
+            "claude-fable-5.1",
             "--endpoint-auth", "none",
         ])
 

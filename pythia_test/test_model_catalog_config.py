@@ -176,16 +176,17 @@ request_params = {}
         self.assertEqual(dict(cleared.bind(name="local-max").request_params), {})
 
     def test_alias_replacement_and_nullable_field_clear(self):
-        registry = catalog('''[model.claude-fable-5-1]
+        base = catalog('[model.claude-fable-5.1]\noverride = true\naliases = ["old-fable"]\n')
+        registry = catalog('''[model.claude-fable-5.1]
 override = true
 endpoint.api = messages
 aliases = ["my-fable"]
 limits.auto_compact_context_tokens = null
-''')
-        self.assertIsNone(registry.get_model_spec("messages", "claude-fable-5.1"))
-        self.assertEqual(registry.get_model_spec("messages", "my-fable").name, "claude-fable-5-1")
+''', base=base)
+        self.assertIsNone(registry.get_model_spec("messages", "old-fable"))
+        self.assertEqual(registry.get_model_spec("messages", "my-fable").name, "claude-fable-5.1")
         self.assertIsNone(registry.bind("messages", "my-fable").limits.auto_compact_context_tokens)
-        self.assertIsNotNone(model_catalog.get_model_spec("messages", "claude-fable-5.1"))
+        self.assertIsNotNone(base.get_model_spec("messages", "old-fable"))
 
     def test_old_spellings_and_invalid_schema_are_rejected(self):
         bad = (
@@ -209,12 +210,13 @@ limits.auto_compact_context_tokens = null
             CODEX + 'request_params.reasoning = {"effort": "low"}\n',
             '[model.codex-gpt-6-astra]\noverride = true\nendpoint.api = null\n',
             '[model.missing]\noverride = true\n',
-            '[model.claude-fable-5.1]\noverride = true\n',
             LOCAL.replace("local-max", "codex-gpt-6-astra").replace("chat-completions", "codex"),
         )
         for text in bad:
             with self.subTest(text=text), self.assertRaises(ValueError):
                 catalog(text)
+        with self.assertRaises(ValueError):  # Overrides name the canonical model, not an alias.
+            catalog('[model.local-alias]\noverride = true\n', base=catalog())
 
     def test_duplicate_sections_keys_defaults_and_versions_rejected(self):
         for text in (

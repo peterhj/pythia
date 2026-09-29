@@ -154,14 +154,14 @@ class InteractionConfigTests(unittest.TestCase):
     def test_messages_uses_catalog_fallback_and_explicit_precedence(self):
         catalogued = cli._build_parser().parse_args([
             "--endpoint-api", "messages",
-            "--model", "claude-fable-5-1",
+            "--model", "claude-fable-5.1",
         ])
         config = InteractionConfig.from_namespace(catalogued)
         self.assertEqual(config.get("max_output_tokens"), 128_000)
 
         explicit = cli._build_parser().parse_args([
             "--endpoint-api", "messages",
-            "--model", "claude-fable-5-1",
+            "--model", "claude-fable-5.1",
             "--max-output-tokens", "100",
         ])
         config = InteractionConfig.from_namespace(explicit)

@@ -187,16 +187,16 @@ class EndpointRuntimeTests(unittest.TestCase):
     def test_environment_requirement_does_not_depend_on_catalog_origin(self):
         changed = parse_model_catalog('''[catalog]
 version = 2
-[model.claude-fable-5-1]
+[model.claude-fable-5.1]
 override = true
 source = metadata only
 ''')
         for registry in (BUILTIN_MODEL_CATALOG, changed):
             with self.subTest(registry=registry), mock.patch.dict("os.environ", {}, clear=True):
-                args = prepared("--model", "claude-fable-5-1", catalog=registry)
+                args = prepared("--model", "claude-fable-5.1", catalog=registry)
                 with self.assertRaisesRegex(ValueError, "credential"):
                     build_model(args)
-                anonymous = prepared("--model", "claude-fable-5-1", "--endpoint-auth", "none", catalog=registry)
+                anonymous = prepared("--model", "claude-fable-5.1", "--endpoint-auth", "none", catalog=registry)
                 self.assertIsNone(build_model(anonymous).endpoint.api_key)
 
     def test_explicit_env_and_supplied_credentials(self):

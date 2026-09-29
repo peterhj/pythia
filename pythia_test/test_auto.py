@@ -287,7 +287,7 @@ class ConfigTests(unittest.TestCase):
                     resolve_config(overrides={key: value})
 
     def test_unset_messages_budget_uses_catalog_or_requires_explicit_limit(self):
-        model = "claude-fable-5-1"
+        model = "claude-fable-5.1"
         settings = resolve_config(overrides={"model_api": "messages", "model": model})[2]
         self.assertIsNone(settings["max_output_tokens"])
         args = namespace(settings)

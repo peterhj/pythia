@@ -85,7 +85,7 @@ class ConfigSeedingTests(unittest.TestCase):
         for api, model, budget in (
             ("codex", "codex-gpt-6-astra", None),
             ("messages", "claude-fable-5.1", 128_000),
-            ("messages", "claude-fable-5-1-max", 128_000),
+            ("messages", "claude-fable-5.1-max", 128_000),
         ):
             with self.subTest(api=api, model=model), mock.patch.object(
                 CodexResponsesModel, "__init__", side_effect=AssertionError("credentials"),
