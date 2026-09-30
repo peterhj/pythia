@@ -11,6 +11,7 @@ import argparse
 import asyncio
 from collections import deque
 from collections.abc import Iterable
+from contextlib import contextmanager
 from contextlib import nullcontext
 from dataclasses import dataclass
 from dataclasses import field
@@ -21,14 +22,18 @@ import signal
 import sys
 import threading
 import time
+import urllib.request
 import uuid
 from typing import Optional
 from typing import Sequence
 from typing import Union
 
+from ._account_http import default_account_opener
 from ._cli_editor import Editor
 from ._cli_editor import safe_text
 from ._cli_terminal import PosixTerminal
+from ._debug_trace import DebugTrace
+from ._debug_trace import trace_operation
 from ._prompt import load_prompt
 from .codex_auth import CodexAuthUnavailable
 from .compaction import CompactionError
@@ -114,6 +119,7 @@ class _UIState:
     login_cancel: threading.Event = field(default_factory=threading.Event)
     transient: queue.Queue[tuple[str, str]] = field(default_factory=lambda: queue.Queue(maxsize=8))
     active_user_call: Optional[str] = None
+    trace: Optional[DebugTrace] = None
 
     def set_phase(self, phase: str) -> None:
         self.phase, self.phase_started = phase, time.monotonic()
@@ -183,6 +189,33 @@ class _UIState:
                 self.pending.append(intent)
                 self.editor = Editor()
                 self.changed.set()
+
+
+def _build_model(args: argparse.Namespace, trace: Optional[DebugTrace]) -> Model:
+    """Build the model; with --debug-trace, route its HTTP through the trace."""
+    if trace is None:
+        return build_model(args)
+    return build_model(
+        args,
+        opener=trace.opener(urllib.request.urlopen),
+        # Codex OAuth refresh during a sample's 401 recovery.
+        auth_opener=trace.opener(default_account_opener(), op="auth_refresh"),
+    )
+
+
+@contextmanager
+def _traced_operation(state: _UIState, op: str):
+    """Tag the enclosed worker call's HTTP exchanges; report trace failures."""
+    if state.trace is None:
+        yield
+        return
+    try:
+        with trace_operation(op):
+            yield
+    finally:
+        warning = state.trace.take_warning()
+        if warning is not None:
+            state.notice(warning)
 
 
 async def _checkpoint(context: InteractionContext, state: _UIState, path: Path) -> None:
@@ -382,11 +415,12 @@ async def _compact_user_tool(
         else:
             try:
                 compactor = create_default_compactor(model)
-                compaction = await asyncio.to_thread(
-                    compactor.compact,
-                    source_context,
-                    tools=model_environment.tool_specs,
-                )
+                with _traced_operation(state, "compact"):
+                    compaction = await asyncio.to_thread(
+                        compactor.compact,
+                        source_context,
+                        tools=model_environment.tool_specs,
+                    )
                 if not isinstance(compaction, CompactionResult):
                     raise TypeError(
                         "compactor must return CompactionResult, got "
@@ -465,9 +499,15 @@ async def _user_tool(
             config=config,
             expected_account=expected_account,
             provider_history=_has_provider_history(context),
+            **({} if state.trace is None else {
+                "opener": state.trace.opener(default_account_opener()),
+            }),
         )
         state.set_phase(f"user tool: {intent.name}")
-        outcome = await asyncio.to_thread(environment.execute_tool_calls, (call.call,))
+        with _traced_operation(state, intent.name):
+            outcome = await asyncio.to_thread(
+                environment.execute_tool_calls, (call.call,),
+            )
         result = UserToolResult(outcome.items[0])
         await _append(context, (result,), state, path)
         state.displays.extend(render_interaction_items((result,), source_user_calls=(call,)))
@@ -476,7 +516,7 @@ async def _user_tool(
     if intent.name == "login" and result.result.success and not state.closing:
         state.set_phase("loading model")
         try:
-            model = await asyncio.to_thread(build_model, args)
+            model = await asyncio.to_thread(_build_model, args, state.trace)
             if (expected_account is not None and
                     getattr(getattr(model, "endpoint", None), "account_id", None) != expected_account):
                 raise ValueError("credential account changed during activation")
@@ -531,11 +571,12 @@ async def _turn(
         ):
             state.set_phase("compacting")
             compactor = create_default_compactor(model)
-            compaction = await asyncio.to_thread(
-                compactor.compact,
-                context.copy(),
-                tools=environment.tool_specs,
-            )
+            with _traced_operation(state, "compact"):
+                compaction = await asyncio.to_thread(
+                    compactor.compact,
+                    context.copy(),
+                    tools=environment.tool_specs,
+                )
             if not isinstance(compaction, CompactionResult):
                 raise TypeError(
                     "compactor must return CompactionResult, got "
@@ -552,12 +593,13 @@ async def _turn(
                 return
         state.set_phase("sampling")
         try:
-            sample = await asyncio.to_thread(
-                model.sample,
-                context.copy(),
-                tools=environment.tool_specs,
-                sample_params=sample_params,
-            )
+            with _traced_operation(state, "sample"):
+                sample = await asyncio.to_thread(
+                    model.sample,
+                    context.copy(),
+                    tools=environment.tool_specs,
+                    sample_params=sample_params,
+                )
         except ModelError as exc:
             contribution = (
                 *exc.completed_items,
@@ -641,7 +683,7 @@ async def _reload_retry_model(
         )
         return None
     try:
-        model = await asyncio.to_thread(build_model, args)
+        model = await asyncio.to_thread(_build_model, args, state.trace)
         account = getattr(getattr(model, "endpoint", None), "account_id", None)
         if expected_account is not None and account != expected_account:
             state.notice(
@@ -963,6 +1005,12 @@ def _runtime_config(environment, args):
 
 def _startup_notices(state, args, path):
     state.notice(f"Save log: {path}")
+    if state.trace is not None:
+        state.notice(
+            f"Debug trace: {state.trace.request_path} and "
+            f"{state.trace.response_path} (append-only; verbatim HTTP "
+            "payloads and headers, including credentials)."
+        )
     if args.enable_default_tools:
         state.notice(
             "Warning: exec_command runs without a sandbox; use a trusted model and workspace."
@@ -978,7 +1026,7 @@ def _startup_notices(state, args, path):
                      if not state.headless else "Default model tools disabled.")
 
 
-async def _run_headless(model, environment, args, path):
+async def _run_headless(model, environment, args, path, *, trace=None):
     """One explicit task, quiet context display, and orderly effect draining."""
     if model is None:
         raise ValueError("Headless execution requires an available model.")
@@ -987,6 +1035,7 @@ async def _run_headless(model, environment, args, path):
     state = _UIState(
         headless=True,
         bound_account_id=getattr(getattr(model, "endpoint", None), "account_id", None),
+        trace=trace,
     )
     _startup_notices(state, args, path)
     loop = asyncio.get_running_loop()
@@ -1028,6 +1077,8 @@ async def _run(
     terminal: PosixTerminal,
     args: argparse.Namespace,
     path: Path = DEFAULT_SAVE_PATH,
+    *,
+    trace: Optional[DebugTrace] = None,
 ) -> int:
     path = Path(path).absolute()
     config = _runtime_config(environment, args)
@@ -1035,6 +1086,7 @@ async def _run(
     state = _UIState(
         editor=Editor(prompt, len(prompt)), auth_required=model is None,
         bound_account_id=getattr(getattr(model, "endpoint", None), "account_id", None),
+        trace=trace,
     )
     state.notice(
         "pythia.interaction — /retry, /compact, /config, /config.json, /login, /quota; "
@@ -1118,6 +1170,16 @@ def _build_parser() -> argparse.ArgumentParser:
             "(default: %(default)s)"
         ),
     )
+    parser.add_argument(
+        "--debug-trace",
+        action="store_true",
+        help=(
+            "append every HTTP request and response (model sampling and "
+            "compaction, /quota, and Codex OAuth) verbatim, including "
+            "credentials, to SAVE.trace.req.jsonl and SAVE.trace.res.jsonl; "
+            "never truncated, even without --resume; launch-only"
+        ),
+    )
     return parser
 
 
@@ -1148,8 +1210,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 "--headless requires --prompt or --prompt-file, or "
                 "--resume with --instructions and an existing save."
             )
+        trace = DebugTrace.open(save_path) if args.debug_trace else None
         try:
-            model = build_model(args)
+            model = _build_model(args, trace)
         except CodexAuthUnavailable:
             if args.headless or not supports_account_services(args):
                 raise
@@ -1161,9 +1224,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         )
         with environment_manager as environment:
             if args.headless:
-                return asyncio.run(_run_headless(model, environment, args, path=save_path))
+                return asyncio.run(_run_headless(
+                    model, environment, args, path=save_path, trace=trace,
+                ))
             terminal = PosixTerminal(sys.stdin, sys.stdout)
-            return asyncio.run(_run(model, environment, terminal, args, path=save_path))
+            return asyncio.run(_run(
+                model, environment, terminal, args, path=save_path, trace=trace,
+            ))
     except KeyboardInterrupt:
         return 130
     except Exception as exc:

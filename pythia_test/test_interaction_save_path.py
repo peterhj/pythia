@@ -69,6 +69,7 @@ class SaveArgumentTests(_SavePathTestCase):
         cli_args = vars(cli._build_parser().parse_args(argv))
         self.assertTrue(cli_args.pop("enable_default_tools"))
         self.assertFalse(cli_args.pop("headless"))
+        self.assertFalse(cli_args.pop("debug_trace"))
         self.assertIsNone(cli_args.pop("prompt_file"))
         self.assertEqual(cli_args, demo_args)
 

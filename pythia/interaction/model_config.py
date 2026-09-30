@@ -180,7 +180,18 @@ def _endpoint_api_key(args, binding):
     return value
 
 
-def build_model(args: argparse.Namespace, *, catalog=None) -> Model:
+def build_model(
+    args: argparse.Namespace,
+    *,
+    catalog=None,
+    opener=None,
+    auth_opener=None,
+) -> Model:
+    """Build the configured model.
+
+    ``opener`` replaces the adapter's model HTTP opener. ``auth_opener``
+    replaces the Codex OAuth refresh opener; other APIs make no auth requests.
+    """
     args = prepare_namespace(args, catalog)
     binding = args.model_binding
     for name in ("auto_compact_tokens", "max_context_tokens"):
@@ -202,7 +213,7 @@ def build_model(args: argparse.Namespace, *, catalog=None) -> Model:
             request_timeout_seconds=args.request_timeout_seconds,
             api_key=_endpoint_api_key(args, binding),
         )
-        return ChatCompletionsModel(endpoint)
+        return ChatCompletionsModel(endpoint, opener=opener)
 
     if args.model_api == "messages":
         if args.codex_home is not None or args.codex_auth_file is not None:
@@ -237,7 +248,7 @@ def build_model(args: argparse.Namespace, *, catalog=None) -> Model:
             server_compaction=compaction_options,
             prompt_caching=MessagesPromptCaching(),
         )
-        return MessagesModel(endpoint)
+        return MessagesModel(endpoint, opener=opener)
 
     if args.model_api == "codex":
         if args.model is None or not args.model.strip():
@@ -249,6 +260,8 @@ def build_model(args: argparse.Namespace, *, catalog=None) -> Model:
             binding=binding,
             auth=(CodexAuth(_endpoint_api_key(args, binding))
                   if binding.endpoint.auth == "supplied" else None),
+            opener=opener,
+            auth_opener=auth_opener,
         )
 
     raise ValueError(f"unsupported model API: {args.model_api!r}")

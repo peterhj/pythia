@@ -18,6 +18,11 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+def default_account_opener():
+    """Return the non-redirecting opener used by account requests by default."""
+    return urllib.request.build_opener(_NoRedirect()).open
+
+
 def _safe_header(headers, name):
     try:
         value = headers.get(name)
@@ -52,7 +57,7 @@ def _http_diagnostic_suffix(headers):
 def request_json(request, timeout_seconds, *, opener=None):
     if request.get_header("User-agent") is None:
         request.add_header("User-Agent", USER_AGENT)
-    open_request = opener or urllib.request.build_opener(_NoRedirect()).open
+    open_request = opener or default_account_opener()
     try:
         response = open_request(request, timeout=timeout_seconds)
         try:

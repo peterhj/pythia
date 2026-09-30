@@ -85,13 +85,19 @@ def create_user_environment(
     config=None,
     expected_account=None,
     provider_history=False,
+    opener=None,
 ):
-    """Create invocation-scoped adapters with a safe error boundary and notice sink."""
+    """Create invocation-scoped adapters with a safe error boundary and notice sink.
+
+    ``opener`` replaces the account-request opener for login and quota.
+    """
     supported = supports_account_services(args)
     if config is None:
         config = InteractionConfig.from_namespace(args)
     if not isinstance(config, InteractionConfig):
         raise TypeError("config must be InteractionConfig")
+    # Passed only when supplied, so default calls keep their exact signature.
+    account_options = {} if opener is None else {"opener": opener}
 
     def guard(handler):
         def execute(arguments, *, timeout_seconds=None):
@@ -124,7 +130,8 @@ def create_user_environment(
                                   auth_file=endpoint.auth_file or args.codex_auth_file).resolve()
         login(path, notify=notify, cancel=cancel, workspace_id=workspace,
               expected_account=expected_account, timeout_seconds=timeout_seconds,
-              request_timeout_seconds=args.request_timeout_seconds)
+              request_timeout_seconds=args.request_timeout_seconds,
+              **account_options)
         return ToolOutcome("Codex credentials saved. Model activation is handled separately.")
 
     def quota(arguments, timeout_seconds):
@@ -135,7 +142,8 @@ def create_user_environment(
                                auth_file=endpoint.auth_file or args.codex_auth_file)
         if expected_account is not None and auth.account_id != expected_account:
             return ToolOutcome("Credential account changed; start a fresh session before using it.", False)
-        return ToolOutcome(query_quota(auth, timeout_seconds=timeout_seconds))
+        return ToolOutcome(query_quota(auth, timeout_seconds=timeout_seconds,
+                                       **account_options))
 
     def configure(arguments, timeout_seconds):
         del timeout_seconds
