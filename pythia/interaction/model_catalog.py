@@ -339,6 +339,17 @@ _GPT6_LUNA = replace(
     _GPT6_SOL, name="codex-gpt-6-luna",
     endpoint=replace(_GPT6_SOL.endpoint, model="gpt-6-luna"),
 )
+# GPT-6.1 Sol's upstream catalog entry also matches Astra's capacities,
+# summary/verbosity support, and reasoning levels.
+_GPT6_1_SOL = replace(
+    _GPT6_SOL, name="codex-gpt-6.1-sol",
+    endpoint=replace(_GPT6_SOL.endpoint, model="gpt-6.1-sol"),
+    source=(
+        "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/"
+        "codex-rs/models-manager/models.json; "
+        "Pythia auto-compaction/max-context policy override"
+    ),
+)
 _SPARK = ModelSpec(
     name="muse-spark-1.3",
     endpoint=replace(_META, model="muse-spark-1.3-contributor"),
@@ -425,6 +436,9 @@ _MODEL_SPECS = (
     _GPT6_LUNA,
     _with_effort(_GPT6_LUNA, "codex-gpt-6-luna-medium", "medium"),
     _with_effort(_GPT6_LUNA, "codex-gpt-6-luna-max", "max"),
+    _GPT6_1_SOL,
+    _with_effort(_GPT6_1_SOL, "codex-gpt-6.1-sol-medium", "medium"),
+    _with_effort(_GPT6_1_SOL, "codex-gpt-6.1-sol-max", "max"),
     _SPARK,
     _with_effort(_SPARK, "muse-spark-1.3-xhigh", "xhigh"),
     _FABLE,

@@ -53,6 +53,9 @@ _CODEX_PRESETS = (
     ("codex-gpt-6-luna", "gpt-6-luna", {"summary": "auto"}, "low", "chatgpt"),
     ("codex-gpt-6-luna-medium", "gpt-6-luna", {"effort": "medium", "summary": "auto"}, "low", "chatgpt"),
     ("codex-gpt-6-luna-max", "gpt-6-luna", {"effort": "max", "summary": "auto"}, "low", "chatgpt"),
+    ("codex-gpt-6.1-sol", "gpt-6.1-sol", {"summary": "auto"}, "low", "chatgpt"),
+    ("codex-gpt-6.1-sol-medium", "gpt-6.1-sol", {"effort": "medium", "summary": "auto"}, "low", "chatgpt"),
+    ("codex-gpt-6.1-sol-max", "gpt-6.1-sol", {"effort": "max", "summary": "auto"}, "low", "chatgpt"),
     ("muse-spark-1.3", "muse-spark-1.3-contributor", {}, None, "meta"),
     ("muse-spark-1.3-xhigh", "muse-spark-1.3-contributor", {"effort": "xhigh"}, None, "meta"),
 )
@@ -143,9 +146,10 @@ class ModelCatalogTests(unittest.TestCase):
             "output_config": {"effort": "max"},
         })
 
-        self.assertEqual(len(list_model_specs()), 20)
+        self.assertEqual(len(list_model_specs()), 23)
         for base_name, preset_name in (("codex-gpt-5.6-sol", "codex-gpt-5.6-sol-medium"),
                                        ("codex-gpt-6-astra", "codex-gpt-6-astra-max"),
+                                       ("codex-gpt-6.1-sol", "codex-gpt-6.1-sol-max"),
                                        ("muse-spark-1.3", "muse-spark-1.3-xhigh")):
             base = get_model_spec("codex", base_name)
             preset = get_model_spec("codex", preset_name)
@@ -209,7 +213,7 @@ class ModelCatalogTests(unittest.TestCase):
         # Bare wire model IDs are not catalog selectors.
         for name in (None, "", "unknown", "CODEX-GPT-6-ASTRA", "codex-gpt-6-astra-low",
                      "codex-gpt-5.6-sol-high", "muse-spark-1.3-max",
-                     "gpt-5.6-sol", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna"):
+                     "gpt-5.6-sol", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-6.1-sol"):
             with self.subTest(name=name):
                 self.assertIsNone(get_model_spec("codex", name))
         for name in ("claude-fable-5.2", "claude-fable-5-1-20260901",
@@ -289,7 +293,7 @@ class ModelCatalogTests(unittest.TestCase):
                            "urllib.request.urlopen"):
                 stack.enter_context(mock.patch(target, side_effect=AssertionError("unexpected effect")))
             module_spec.loader.exec_module(module)
-            self.assertEqual(len(module.list_model_specs()), 20)
+            self.assertEqual(len(module.list_model_specs()), 23)
             self.assertEqual(
                 module.get_model_spec("codex", "muse-spark-1.3").endpoint.auth,
                 "env:META_API_KEY",
