@@ -15,27 +15,40 @@ import pythia.interaction.context as context_module
 
 from pythia.interaction import ChatCompletionsEndpoint
 from pythia.interaction import ChatCompletionsModel
+from pythia.interaction import COMPACTION_SUMMARY_PREFIX
+from pythia.interaction import COMPACTION_SUMMARY_SUFFIX
+from pythia.interaction import CompactionContextWindowError
 from pythia.interaction import CompactionError
 from pythia.interaction import CompactionMetadata
+from pythia.interaction import CompactionSettings
 from pythia.interaction import ContextPrefix
 from pythia.interaction import ContextValidationError
-from pythia.interaction import DEFAULT_COMPACTION_MAX_OUTPUT_TOKENS
+from pythia.interaction import DEFAULT_KEEP_RECENT_TOKENS
 from pythia.interaction import DEFAULT_REQUEST_TIMEOUT_SECONDS
-from pythia.interaction import DEFAULT_SUMMARY_PREFIX
 from pythia.interaction import Environment
 from pythia.interaction import EnvironmentError
 from pythia.interaction import EnvironmentResult
+from pythia.interaction import Init
+from pythia.interaction import InteractionConfigSnapshot
+from pythia.interaction import Instructions
+from pythia.interaction import MediaPart
 from pythia.interaction import Message
 from pythia.interaction import ModelConfigurationError
 from pythia.interaction import InteractionContext
 from pythia.interaction import ModelContextWindowError
+from pythia.interaction import ModelFailure
 from pythia.interaction import ModelSample
 from pythia.interaction import ModelSampleBoundary
 from pythia.interaction import ModelTimeoutError
 from pythia.interaction import ModelTransportError
-from pythia.interaction import PromptSummarizingCompactor
+from pythia.interaction import NothingToCompact
+from pythia.interaction import OpaqueCompaction
+from pythia.interaction import PiCompactor
 from pythia.interaction import Reasoning
 from pythia.interaction import SampleParams
+from pythia.interaction import SUMMARIZATION_PROMPT
+from pythia.interaction import SUMMARIZATION_SYSTEM_PROMPT
+from pythia.interaction import TextPart
 from pythia.interaction import TokenUsage
 from pythia.interaction import Tool
 from pythia.interaction import ToolCall
@@ -43,10 +56,22 @@ from pythia.interaction import ToolOutcome
 from pythia.interaction import ToolResult
 from pythia.interaction import ToolSpec
 from pythia.interaction import SampleMetadata
+from pythia.interaction import TURN_PREFIX_SUMMARIZATION_PROMPT
+from pythia.interaction import TurnSummary
+from pythia.interaction import UPDATE_SUMMARIZATION_PROMPT
 from pythia.interaction import UserInteraction
 from pythia.interaction import UserInteractionBoundary
+from pythia.interaction import UserToolCall
+from pythia.interaction import UserToolResult
 from pythia.interaction import USER_AGENT
+from pythia.interaction import auto_compaction_due
+from pythia.interaction import create_default_compactor
+from pythia.interaction import estimate_context_tokens
+from pythia.interaction import is_compaction_summary
 from pythia.interaction import should_auto_compact
+from pythia.interaction.compaction import _LEGACY_SUMMARY_PREFIX
+from pythia.interaction.compaction import _cut_points
+from pythia.interaction.compaction import estimate_item_tokens
 from pythia.interaction.experimental_tools import create_inject_user_message_tool
 
 
@@ -121,31 +146,6 @@ class InteractionContextTests(unittest.TestCase):
         self.assertEqual(
             repr(InteractionContext(items)), f"InteractionContext({items!r})"
         )
-
-    def test_auto_compaction_uses_latest_uncompacted_sample_usage(self):
-        low = SampleMetadata(TokenUsage(total_tokens=99))
-        high = SampleMetadata(TokenUsage(total_tokens=100))
-        self.assertFalse(
-            should_auto_compact(InteractionContext((low,)), 100)
-        )
-        self.assertTrue(
-            should_auto_compact(InteractionContext((low, high)), 100)
-        )
-
-        prefix = ContextPrefix((Message("user", "summary"),))
-        compacted = InteractionContext((low, high, prefix))
-        self.assertFalse(should_auto_compact(compacted, 100))
-        compacted.append(CompactionMetadata(
-            TokenUsage(total_tokens=101),
-            "responses_compaction_v2",
-        ))
-        self.assertFalse(should_auto_compact(compacted, 100))
-        compacted.append(SampleMetadata(TokenUsage(total_tokens=100)))
-        self.assertTrue(should_auto_compact(compacted, 100))
-
-        for threshold in (True, 0, -1, 1.5):
-            with self.subTest(threshold=threshold), self.assertRaises(ValueError):
-                should_auto_compact(InteractionContext(), threshold)
 
     def test_context_is_append_only_and_projects_compaction(self):
         original = [
@@ -1341,152 +1341,743 @@ class _ScriptedModel:
         return outcome
 
 
+def _text(tokens, char="x"):
+    """Text whose character estimate is exactly ``tokens``."""
+    return char * (tokens * 4)
+
+
+def _summary(text="Summary.", **kwargs):
+    kwargs.setdefault("stop_reason", "end_turn")
+    return ModelSample(items=(Message("assistant", text),), **kwargs)
+
+
+def _wrapped(summary):
+    return f"{COMPACTION_SUMMARY_PREFIX}{summary}{COMPACTION_SUMMARY_SUFFIX}"
+
+
+def _prompt(call):
+    """The user prompt of one recorded summary request."""
+    context, _tools, _params = call
+    instructions, message = context.model_items()
+    return message.content
+
+
+def _two_turns():
+    """A finished first turn, then a long agentic second turn.
+
+    Estimates: first turn 4 + 2 + 4; second request 4; call-1 6; its result
+    30; "Working." 2; call-2 7; its result 30.
+    """
+    return InteractionContext((
+        Init("session"),
+        Instructions("Be brief."),
+        Message("user", "First request."),
+        UserInteractionBoundary(),
+        Reasoning("Plan it."),
+        Message("assistant", "First answer."),
+        SampleMetadata(TokenUsage(total_tokens=50)),
+        ModelSampleBoundary(),
+        TurnSummary(sample_count=1),
+        Message("user", "Second request."),
+        UserInteractionBoundary(),
+        ToolCall("exec_command", "call-1", '{"cmd":"ls"}'),
+        SampleMetadata(TokenUsage(total_tokens=60)),
+        ModelSampleBoundary(),
+        ToolResult("call-1", _text(30, "r")),
+        Message("assistant", "Working."),
+        ToolCall("exec_command", "call-2", '{"cmd":"pwd"}'),
+        SampleMetadata(TokenUsage(total_tokens=90)),
+        ModelSampleBoundary(),
+        ToolResult("call-2", _text(30, "s")),
+    ))
+
+
+class CompactionEstimateTests(unittest.TestCase):
+    def test_item_estimates_are_characters_over_four_rounded_up(self):
+        self.assertEqual(estimate_item_tokens(Message("user", "abcde")), 2)
+        self.assertEqual(estimate_item_tokens(Message("user", (
+            TextPart("abcd"), MediaPart("https://example.test/image.png"),
+        ))), (4 + 4_800) // 4)
+        self.assertEqual(estimate_item_tokens(Reasoning("abcd")), 1)
+        self.assertEqual(estimate_item_tokens(Reasoning("", summary=("ab", "cd"))), 2)
+        self.assertEqual(estimate_item_tokens(Reasoning("", content_signature="sig")), 0)
+        self.assertEqual(estimate_item_tokens(ToolCall("ab", "call", "{}")), 1)
+        self.assertEqual(estimate_item_tokens(ToolResult("call", "abcdefgh")), 2)
+        self.assertEqual(estimate_item_tokens(Instructions("abc")), 1)
+        self.assertEqual(estimate_item_tokens(OpaqueCompaction.from_messages("abcde")), 2)
+        for item in (
+            ModelSampleBoundary(), UserInteractionBoundary(), TurnSummary(),
+            SampleMetadata(TokenUsage(total_tokens=5)), Init("session"),
+            UserToolCall(ToolCall("compact", "user_1", "{}")),
+            UserToolResult(ToolResult("user_1", "private text")),
+        ):
+            with self.subTest(item=type(item).__name__):
+                self.assertEqual(estimate_item_tokens(item), 0)
+
+    def test_pure_estimate_without_reported_usage(self):
+        context = InteractionContext((
+            Instructions(_text(3)),
+            Message("user", _text(10)),
+            Message("assistant", _text(5)),
+            SampleMetadata(TokenUsage()),
+            ModelSampleBoundary(),
+        ))
+        self.assertEqual(estimate_context_tokens(context), 18)
+
+    def test_anchor_counts_items_after_the_latest_reported_usage(self):
+        context = InteractionContext((
+            Message("user", _text(10)),
+            ToolCall("t", "call", "{}"),
+            SampleMetadata(TokenUsage(total_tokens=1_000)),
+            ModelSampleBoundary(),
+            ToolResult("call", _text(7)),
+        ))
+        # Trailing tool results are counted on top of the reported usage.
+        self.assertEqual(estimate_context_tokens(context), 1_007)
+        context.extend((
+            UserToolCall(ToolCall("config", "user_1", "{}")),
+            UserToolResult(ToolResult("user_1", _text(50))),
+            Message("assistant", _text(3)),
+            SampleMetadata(TokenUsage(total_tokens=0)),
+            ModelSampleBoundary(),
+        ))
+        # Zero usage is not an anchor, and user tools count as nothing.
+        self.assertEqual(estimate_context_tokens(context), 1_010)
+
+    def test_anchor_is_taken_after_the_latest_prefix(self):
+        context = InteractionContext((
+            Message("user", _text(1)),
+            Message("assistant", _text(1)),
+            SampleMetadata(TokenUsage(total_tokens=5_000)),
+            ModelSampleBoundary(),
+            ContextPrefix((Message("user", _text(8)),)),
+            CompactionMetadata(TokenUsage(total_tokens=9_000), "pi"),
+        ))
+        self.assertEqual(estimate_context_tokens(context), 8)
+        context.append(Message("user", _text(4)))
+        self.assertEqual(estimate_context_tokens(context), 12)
+        context.extend((
+            Message("assistant", _text(2)),
+            SampleMetadata(TokenUsage(total_tokens=300)),
+            ModelSampleBoundary(),
+        ))
+        self.assertEqual(estimate_context_tokens(context), 300)
+
+    def test_trigger_compares_the_estimate_with_the_threshold(self):
+        context = InteractionContext((
+            Message("user", _text(1)),
+            Message("assistant", _text(1)),
+            SampleMetadata(TokenUsage(total_tokens=98)),
+            ModelSampleBoundary(),
+            Message("user", _text(2)),
+        ))
+        self.assertTrue(should_auto_compact(context, 100))
+        self.assertFalse(should_auto_compact(context, 101))
+        # Usage alone, with nothing model-visible, never triggers.
+        self.assertFalse(should_auto_compact(InteractionContext((
+            SampleMetadata(TokenUsage(total_tokens=100)),
+        )), 100))
+        for threshold in (True, 0, -1, 1.5):
+            with self.subTest(threshold=threshold), self.assertRaises(ValueError):
+                should_auto_compact(InteractionContext(), threshold)
+
+    def test_just_compacted_context_is_not_compacted_again(self):
+        context = InteractionContext((
+            Message("user", _text(100)),
+            ContextPrefix((Message("user", _text(100)),)),
+            CompactionMetadata(TokenUsage(), "pi"),
+        ))
+        self.assertEqual(estimate_context_tokens(context), 100)
+        self.assertFalse(should_auto_compact(context, 50))
+        context.extend((
+            ModelFailure(category="timeout", message="timed out"),
+            ModelSampleBoundary(),
+        ))
+        self.assertFalse(should_auto_compact(context, 50))
+        context.append(Message("user", _text(1)))
+        self.assertTrue(should_auto_compact(context, 50))
+
+    def test_auto_compaction_due_needs_policy_threshold_and_host_ownership(self):
+        class Host:
+            auto_compaction_owner = "host"
+
+        class Server:
+            auto_compaction_owner = "server"
+
+        context = InteractionContext((Message("user", _text(200)),))
+        due = InteractionConfigSnapshot(auto_compact_tokens=100)
+        self.assertTrue(auto_compaction_due(Host(), context, due))
+        self.assertTrue(auto_compaction_due(object(), context, due))
+        self.assertFalse(auto_compaction_due(Server(), context, due))
+        for snapshot in (
+            InteractionConfigSnapshot(auto_compact_tokens=None),
+            InteractionConfigSnapshot(auto_compact_tokens=100, enable_auto_compaction=False),
+            InteractionConfigSnapshot(auto_compact_tokens=201),
+        ):
+            with self.subTest(snapshot=snapshot):
+                self.assertFalse(auto_compaction_due(Host(), context, snapshot))
+
+
 class CompactionTests(unittest.TestCase):
-    def test_prompt_compaction_output_limit_can_be_overridden(self):
-        model = mock.Mock()
-        options = SampleParams(max_output_tokens=321)
-
-        compactor = PromptSummarizingCompactor(
-            model, sample_params=options,
+    def test_settings_and_default_compactor(self):
+        self.assertEqual(DEFAULT_KEEP_RECENT_TOKENS, 20_000)
+        self.assertEqual(
+            CompactionSettings(),
+            CompactionSettings(mode="pi", keep_recent_tokens=20_000, max_output_tokens=None),
         )
-
-        self.assertIs(compactor._sample_params, options)
-
-    def test_prompt_compactor_returns_append_only_checkpoint(self):
-        usage = TokenUsage(input_tokens=80, output_tokens=20, total_tokens=100)
-        model = _ScriptedModel(
-            ModelSample(
-                items=(Message(role="assistant", content="Condensed work."),),
-                stop_reason="end_turn",
-                usage=usage,
-                provider_session_id="provider-session",
-                provider_turn_id="provider-turn",
-                provider_turn_state="provider-state",
-                request_attempts=2,
-                recovery=("credential_reload",),
-            )
+        for kwargs in (
+            {"mode": "remote"}, {"keep_recent_tokens": -1},
+            {"keep_recent_tokens": True}, {"max_output_tokens": 0},
+        ):
+            with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
+                CompactionSettings(**kwargs)
+        model = _ScriptedModel()
+        compactor = create_default_compactor(model)
+        self.assertIsInstance(compactor, PiCompactor)
+        self.assertEqual(
+            (compactor.keep_recent_tokens, compactor.max_output_tokens),
+            (20_000, None),
         )
-        context = InteractionContext(
-            [
-                Message(role="system", content="Base instructions."),
-                Message(role="user", content="First request."),
-                Message(role="assistant", content="First answer."),
-                Message(
-                    role="user",
-                    content=f"{DEFAULT_SUMMARY_PREFIX}\nOld summary.",
-                ),
-                Message(role="user", content="Latest request."),
-                Message(role="assistant", content="Latest answer."),
-            ]
+        configured = create_default_compactor(model, CompactionSettings(
+            mode="provider", keep_recent_tokens=0, max_output_tokens=77,
+        ))
+        # Provider mode without remote compaction, as for Messages.
+        self.assertIsInstance(configured, PiCompactor)
+        self.assertEqual(
+            (configured.keep_recent_tokens, configured.max_output_tokens),
+            (0, 77),
         )
+        for kwargs in ({"keep_recent_tokens": -1}, {"max_output_tokens": 0}):
+            with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
+                PiCompactor(model, **kwargs)
+        with self.assertRaises(TypeError):
+            PiCompactor(object())
+
+    def test_cut_points_skip_tool_results_and_later_user_messages_in_a_run(self):
+        span = (
+            Message("user", "one"),                      # 0: cut point
+            UserInteractionBoundary(),
+            Message("user", "two"),                      # 2: same run
+            Reasoning("think"),                          # 3: first output
+            Message("assistant", "text"),
+            ToolCall("t", "call-1", "{}"),
+            SampleMetadata(TokenUsage()),
+            ModelSampleBoundary(),
+            ToolResult("call-1", "result"),              # 8: never
+            ToolCall("t", "call-2", "{}"),               # 9: next sample
+            ModelSampleBoundary(),
+            ToolResult("call-2", "result"),
+            Message("user", "three"),                    # 12: new run
+            Message("assistant", "answer"),              # 13: first output
+        )
+        self.assertEqual(_cut_points(span), [0, 3, 9, 12, 13])
+
+    def test_turn_boundary_cut_summarizes_history_and_keeps_the_tail(self):
+        model = _ScriptedModel(_summary(
+            "History summary.",
+            usage=TokenUsage(80, 20, 100, 10),
+            provider_session_id="provider-session",
+            provider_turn_id="provider-turn",
+            provider_turn_state="provider-state",
+            request_attempts=2,
+            recovery=("credential_reload",),
+        ))
+        context = _two_turns()
         before = context.items
-        compactor = PromptSummarizingCompactor(model)
 
         with mock.patch(
             "pythia.interaction.compaction.perf_counter",
             side_effect=(100.0, 112.5),
         ):
-            result = compactor.compact(context)
+            result = PiCompactor(model, keep_recent_tokens=78).compact(context)
 
         self.assertEqual(context.items, before)
-        self.assertEqual(result.usage, usage)
-        self.assertEqual(result.protocol, "prompt_summarization")
+        self.assertEqual(len(model.calls), 1)
+        prompt = _prompt(model.calls[0])
+        self.assertEqual(prompt, (
+            "<conversation>\n"
+            "[User]: First request.\n\n"
+            "[Assistant thinking]: Plan it.\n\n"
+            "[Assistant]: First answer.\n"
+            "</conversation>\n\n" + SUMMARIZATION_PROMPT
+        ))
+        checkpoint, = result.items
+        self.assertEqual(checkpoint.prefix_items, (
+            Instructions("Be brief."),
+            Message("user", _wrapped("History summary.")),
+            # Metadata leaves the tail; boundaries stay for the encoders.
+            Message("user", "Second request."),
+            UserInteractionBoundary(),
+            ToolCall("exec_command", "call-1", '{"cmd":"ls"}'),
+            ModelSampleBoundary(),
+            ToolResult("call-1", _text(30, "r")),
+            Message("assistant", "Working."),
+            ToolCall("exec_command", "call-2", '{"cmd":"pwd"}'),
+            ModelSampleBoundary(),
+            ToolResult("call-2", _text(30, "s")),
+        ))
+        self.assertEqual(result.protocol, "pi")
+        self.assertEqual(result.usage, TokenUsage(80, 20, 100, 10))
         self.assertEqual(result.elapsed_seconds, 12.5)
         self.assertEqual(result.request_attempts, 2)
         self.assertEqual(result.recovery, ("credential_reload",))
-        self.assertEqual(len(result.items), 1)
-        checkpoint = result.items[0]
-        self.assertIsInstance(checkpoint, ContextPrefix)
-        assert isinstance(checkpoint, ContextPrefix)
-        self.assertEqual(
-            checkpoint.prefix_items,
-            (
-                Message(role="system", content="Base instructions."),
-                Message(role="user", content="First request."),
-                Message(role="user", content="Latest request."),
-                Message(
-                    role="user",
-                    content=f"{DEFAULT_SUMMARY_PREFIX}\nCondensed work.",
-                ),
-            ),
-        )
-        temporary_context, tools, options = model.calls[0]
-        self.assertEqual(tools, ())
-        self.assertEqual(
-            options,
-            SampleParams(
-                temperature=0.0,
-                max_output_tokens=DEFAULT_COMPACTION_MAX_OUTPUT_TOKENS,
-            ),
-        )
-        self.assertEqual(DEFAULT_COMPACTION_MAX_OUTPUT_TOKENS, 2_000)
-        self.assertNotEqual(temporary_context.items, context.items)
-        self.assertIn("CONTEXT CHECKPOINT COMPACTION", temporary_context[-1].content)
-
-        metadata = result.context_items()[-1]
-        self.assertEqual(
-            metadata,
-            CompactionMetadata(
-                usage=usage,
-                protocol="prompt_summarization",
-                provider_session_id="provider-session",
-                provider_turn_id="provider-turn",
-                provider_turn_state="provider-state",
-                elapsed_seconds=12.5,
-                request_attempts=2,
-                recovery=("credential_reload",),
-            ),
-        )
+        self.assertEqual(result.context_items()[-1], CompactionMetadata(
+            usage=TokenUsage(80, 20, 100, 10),
+            protocol="pi",
+            provider_session_id="provider-session",
+            provider_turn_id="provider-turn",
+            provider_turn_state="provider-state",
+            elapsed_seconds=12.5,
+            request_attempts=2,
+            recovery=("credential_reload",),
+        ))
         context.extend(result.context_items())
         self.assertEqual(context.model_items(), checkpoint.prefix_items)
-        self.assertEqual(context.items[: len(before)], before)
+        self.assertEqual(context.items[:len(before)], before)
+        self.assertTrue(is_compaction_summary(checkpoint.prefix_items[1]))
 
-    def test_prompt_compactor_fits_only_temporary_request(self):
+    def test_split_turn_sends_two_requests_and_merges_them(self):
         model = _ScriptedModel(
-            ModelContextWindowError("too large"),
-            ModelSample(
-                items=(Message(role="assistant", content="summary"),),
+            _summary(
+                "History summary.",
+                usage=TokenUsage(10, 2, 12, 3),
+                provider_turn_id="first",
+                recovery=("http_500_retry",),
+            ),
+            _summary(
+                "Turn summary.",
+                usage=TokenUsage(20, 4, 24, 5),
+                provider_turn_id="second",
+                request_attempts=2,
+                recovery=("connection_retry", "http_429_retry"),
             ),
         )
-        context = InteractionContext(
-            [
-                Message(role="system", content="instructions"),
-                Message(role="user", content="old"),
-                Message(role="assistant", content="old answer"),
-                Message(role="user", content="new"),
-                Message(role="assistant", content="new answer"),
-            ]
-        )
-        before = context.items
-        compactor = PromptSummarizingCompactor(model)
+        # The budget is reached at call-1's result, so the cut falls on the
+        # next sample's first output item, inside the second turn.
+        result = PiCompactor(model, keep_recent_tokens=40).compact(_two_turns())
 
-        result = compactor.compact(context)
-
-        self.assertEqual(context.items, before)
         self.assertEqual(len(model.calls), 2)
-        self.assertLess(len(model.calls[1][0]), len(model.calls[0][0]))
-        self.assertIsInstance(result.items[0], ContextPrefix)
-        self.assertEqual(result.request_attempts, 2)
-        self.assertEqual(result.recovery, ("context_window_trim",))
-
-    def test_prompt_compactor_rejects_tool_calls(self):
-        model = _ScriptedModel(
-            ModelSample(
-                items=(
-                    ToolCall(
-                        name="unexpected",
-                        call_id="call-1",
-                        arguments_json="{}",
-                    ),
-                ),
-            )
+        history, turn = (_prompt(call) for call in model.calls)
+        self.assertTrue(history.startswith("<conversation>\n[User]: First request."))
+        self.assertTrue(history.endswith(SUMMARIZATION_PROMPT))
+        self.assertNotIn("Second request.", history)
+        self.assertEqual(turn, (
+            "# Conversation\n"
+            "[User]: Second request.\n\n"
+            '[Assistant tool calls]: exec_command(cmd="ls")\n\n'
+            f"[Tool result]: {_text(30, 'r')}\n\n"
+            "# Instructions\n" + TURN_PREFIX_SUMMARIZATION_PROMPT
+        ))
+        checkpoint, = result.items
+        self.assertEqual(checkpoint.prefix_items, (
+            Instructions("Be brief."),
+            Message("user", _wrapped(
+                "History summary.\n\n---\n\n**Turn Context (split turn):**\n\n"
+                "Turn summary."
+            )),
+            Message("assistant", "Working."),
+            ToolCall("exec_command", "call-2", '{"cmd":"pwd"}'),
+            ModelSampleBoundary(),
+            ToolResult("call-2", _text(30, "s")),
+        ))
+        self.assertEqual(result.usage, TokenUsage(30, 6, 36, 8))
+        self.assertEqual(result.request_attempts, 3)
+        self.assertEqual(
+            result.recovery,
+            ("http_500_retry", "connection_retry", "http_429_retry"),
         )
-        compactor = PromptSummarizingCompactor(model)
+        self.assertEqual(result.provider_turn_id, "second")
+        InteractionContext(result.context_items())
 
-        with self.assertRaisesRegex(CompactionError, "must not contain tool calls"):
-            compactor.compact(
-                InteractionContext([Message(role="user", content="hello")])
-            )
+    def test_split_turn_without_history_uses_previous_summary_or_placeholder(self):
+        for previous, history_text in ((None, "No prior history."), ("Old.", "Old.")):
+            with self.subTest(previous=previous):
+                items = [Instructions("Rules.")]
+                if previous is not None:
+                    items.append(Message("user", _wrapped(previous)))
+                items.extend((
+                    Message("user", "Only request."),
+                    ToolCall("t", "call-1", "{}"),
+                    ModelSampleBoundary(),
+                    ToolResult("call-1", _text(10)),
+                    ToolCall("t", "call-2", "{}"),
+                    ModelSampleBoundary(),
+                    ToolResult("call-2", _text(10)),
+                ))
+                model = _ScriptedModel(_summary("Turn summary."))
+                result = PiCompactor(model, keep_recent_tokens=10).compact(
+                    InteractionContext(items),
+                    instructions="  the parser  ",
+                )
+                self.assertEqual(len(model.calls), 1)
+                prompt = _prompt(model.calls[0])
+                self.assertTrue(prompt.startswith("# Conversation\n[User]: Only request."))
+                # Without a history request, focus goes to the turn prefix.
+                self.assertTrue(prompt.endswith(
+                    TURN_PREFIX_SUMMARIZATION_PROMPT + "\n\nAdditional focus: the parser"
+                ))
+                self.assertEqual(result.items[0].prefix_items[:2], (
+                    Instructions("Rules."),
+                    Message("user", _wrapped(
+                        f"{history_text}\n\n---\n\n**Turn Context (split turn):**"
+                        "\n\nTurn summary."
+                    )),
+                ))
+
+    def test_budget_reached_inside_tool_results_keeps_their_sample(self):
+        model = _ScriptedModel(_summary("History."), _summary("Turn."))
+        result = PiCompactor(model, keep_recent_tokens=100).compact(InteractionContext((
+            Message("user", "Earlier."),
+            Message("assistant", "Earlier answer."),
+            ModelSampleBoundary(),
+            Message("user", "Run it."),
+            ToolCall("t", "call-1", "{}"),
+            ModelSampleBoundary(),
+            ToolResult("call-1", _text(500)),
+        )))
+        self.assertEqual(result.items[0].prefix_items, (
+            Message("user", _wrapped(
+                "History.\n\n---\n\n**Turn Context (split turn):**\n\nTurn."
+            )),
+            ToolCall("t", "call-1", "{}"),
+            ModelSampleBoundary(),
+            ToolResult("call-1", _text(500)),
+        ))
+
+    def test_zero_keep_summarizes_everything(self):
+        model = _ScriptedModel(_summary("All of it."))
+        result = PiCompactor(model, keep_recent_tokens=0).compact(_two_turns())
+        prompt = _prompt(model.calls[0])
+        self.assertIn("[User]: Second request.", prompt)
+        self.assertIn('exec_command(cmd="pwd")', prompt)
+        self.assertEqual(result.items[0].prefix_items, (
+            Instructions("Be brief."),
+            Message("user", _wrapped("All of it.")),
+        ))
+
+    def test_nothing_to_compact_sends_no_request(self):
+        model = _ScriptedModel()
+        for keep, context, reason in (
+            (DEFAULT_KEEP_RECENT_TOKENS, _two_turns(), "fits"),
+            (10, InteractionContext((Message("user", _text(50)),)), "precedes"),
+            (0, InteractionContext((Instructions("Rules."), Message("user", _wrapped("Old.")))), "nothing new"),
+        ):
+            with self.subTest(reason=reason):
+                with self.assertRaisesRegex(NothingToCompact, reason):
+                    PiCompactor(model, keep_recent_tokens=keep).compact(context)
+        self.assertEqual(model.calls, [])
+        self.assertTrue(issubclass(NothingToCompact, CompactionError))
+
+    def test_repeated_compaction_summarizes_previously_kept_items(self):
+        model = _ScriptedModel(_summary("First summary."), _summary("Second summary."))
+        context = _two_turns()
+        context.extend(PiCompactor(model, keep_recent_tokens=78).compact(context).context_items())
+        context.extend((
+            Message("assistant", "Done."),
+            SampleMetadata(TokenUsage(total_tokens=40)),
+            ModelSampleBoundary(),
+            Message("user", "Third request."),
+            UserInteractionBoundary(),
+            Message("assistant", _text(60, "t")),
+            ModelSampleBoundary(),
+        ))
+
+        # 60 + 4 tokens reach the budget at the third request.
+        result = PiCompactor(model, keep_recent_tokens=62).compact(context)
+
+        # The window moved past the previously kept second turn, which is
+        # summarized now, into the previous summary.
+        self.assertEqual(_prompt(model.calls[1]), (
+            "<conversation>\n"
+            "[User]: Second request.\n\n"
+            '[Assistant tool calls]: exec_command(cmd="ls")\n\n'
+            f"[Tool result]: {_text(30, 'r')}\n\n"
+            "[Assistant]: Working.\n\n"
+            '[Assistant tool calls]: exec_command(cmd="pwd")\n\n'
+            f"[Tool result]: {_text(30, 's')}\n\n"
+            "[Assistant]: Done.\n"
+            "</conversation>\n\n"
+            "<previous-summary>\nFirst summary.\n</previous-summary>\n\n"
+            + UPDATE_SUMMARIZATION_PROMPT
+        ))
+        self.assertEqual(result.items[0].prefix_items, (
+            Instructions("Be brief."),
+            Message("user", _wrapped("Second summary.")),
+            Message("user", "Third request."),
+            UserInteractionBoundary(),
+            Message("assistant", _text(60, "t")),
+            ModelSampleBoundary(),
+        ))
+
+    def test_previous_summary_sources(self):
+        tail = (
+            Message("user", "Next request."),
+            Message("assistant", "Next answer."),
+            ModelSampleBoundary(),
+        )
+        for label, source, previous in (
+            ("new-style", Message("user", _wrapped("Pi summary.")), "Pi summary."),
+            (
+                "old-style",
+                Message("user", f"{_LEGACY_SUMMARY_PREFIX}\nPrompt summary."),
+                "Prompt summary.",
+            ),
+        ):
+            with self.subTest(label=label):
+                model = _ScriptedModel(_summary("Updated."))
+                context = InteractionContext((
+                    Instructions("Rules."),
+                    ContextPrefix((Instructions("Rules."), source)),
+                    *tail,
+                ))
+                result = PiCompactor(model, keep_recent_tokens=0).compact(context)
+                prompt = _prompt(model.calls[0])
+                self.assertEqual(prompt, (
+                    "<conversation>\n[User]: Next request.\n\n"
+                    "[Assistant]: Next answer.\n</conversation>\n\n"
+                    f"<previous-summary>\n{previous}\n</previous-summary>\n\n"
+                    + UPDATE_SUMMARIZATION_PROMPT
+                ))
+                self.assertEqual(result.items[0].prefix_items, (
+                    Instructions("Rules."),
+                    Message("user", _wrapped("Updated.")),
+                ))
+                self.assertTrue(is_compaction_summary(source))
+        self.assertFalse(is_compaction_summary(Message("user", "An ordinary request.")))
+        self.assertFalse(is_compaction_summary(Message("assistant", _wrapped("Not user."))))
+
+    def test_messages_compaction_block_is_the_previous_summary(self):
+        model = _ScriptedModel(_summary("Updated."))
+        context = InteractionContext((
+            Instructions("Rules."),
+            Message("user", "Ignored by Anthropic."),
+            Message("assistant", "Also ignored."),
+            ModelSampleBoundary(),
+            Message("user", "Current request."),
+            OpaqueCompaction.from_messages("Server summary."),
+            Message("assistant", "Continued."),
+            ModelSampleBoundary(),
+            Message("user", "Follow up."),
+            Message("assistant", _text(30)),
+            ModelSampleBoundary(),
+        ))
+        # 30 + 3 tokens reach the budget at "Follow up.", a turn boundary.
+        result = PiCompactor(model, keep_recent_tokens=32).compact(context)
+        prompt = _prompt(model.calls[0])
+        self.assertEqual(prompt, (
+            "<conversation>\n[Assistant]: Continued.\n</conversation>\n\n"
+            "<previous-summary>\nServer summary.\n</previous-summary>\n\n"
+            + UPDATE_SUMMARIZATION_PROMPT
+        ))
+        self.assertEqual(result.items[0].prefix_items, (
+            Instructions("Rules."),
+            Message("user", _wrapped("Updated.")),
+            Message("user", "Follow up."),
+            Message("assistant", _text(30)),
+            ModelSampleBoundary(),
+        ))
+
+    def test_responses_checkpoints_are_carried_verbatim(self):
+        model = _ScriptedModel(_summary("Summary."))
+        checkpoint = OpaqueCompaction.from_responses("encrypted-checkpoint")
+        context = InteractionContext((
+            Instructions("Rules."),
+            ContextPrefix((
+                Instructions("Rules."),
+                Message("user", "Retained request."),
+                checkpoint,
+            )),
+            Message("assistant", "Continued."),
+            ModelSampleBoundary(),
+            Message("user", "Next request."),
+            Message("assistant", _text(30)),
+            ModelSampleBoundary(),
+        ))
+        result = PiCompactor(model, keep_recent_tokens=32).compact(context)
+        self.assertEqual(_prompt(model.calls[0]), (
+            "<conversation>\n[User]: Retained request.\n\n"
+            "[Assistant]: Continued.\n</conversation>\n\n" + SUMMARIZATION_PROMPT
+        ))
+        self.assertEqual(result.items[0].prefix_items, (
+            Instructions("Rules."),
+            checkpoint,
+            Message("user", _wrapped("Summary.")),
+            Message("user", "Next request."),
+            Message("assistant", _text(30)),
+            ModelSampleBoundary(),
+        ))
+
+    def test_transcript_labels_grouping_arguments_truncation_and_media(self):
+        model = _ScriptedModel(_summary())
+        PiCompactor(model, keep_recent_tokens=0).compact(InteractionContext((
+            Init("session"),
+            Instructions("Rules."),
+            Message("developer", "Leading note stays in the prefix."),
+            Message("user", (
+                TextPart("Look at this:"),
+                MediaPart("data:image/png;base64,AAAA"),
+            )),
+            UserInteractionBoundary(),
+            Reasoning("", summary=("Summary one.", "Summary two.")),
+            Reasoning("", content_signature="signature-only"),
+            Message("assistant", "Let me check."),
+            ToolCall(
+                "exec_command", "call-1",
+                '{"cmd":"echo ü","yield_time_ms":10000,"env":{"A":[1,2]}}',
+            ),
+            ToolCall("apply_patch", "call-2", "*** Begin Patch"),
+            SampleMetadata(TokenUsage(total_tokens=5)),
+            ModelSampleBoundary(),
+            ToolResult("call-1", "a" * 2_050),
+            ToolResult("call-2", "", success=False),
+            Message("system", "Mid-span system note."),
+            Message("developer", "Mid-span developer note."),
+            Reasoning("Direct thinking."),
+            Message("assistant", "Part one."),
+            Message("assistant", "Part two."),
+            ModelFailure(category="stream_closed", message="stream closed"),
+            ModelSampleBoundary(),
+            TurnSummary(sample_count=2),
+        )))
+        self.assertEqual(_prompt(model.calls[0]), (
+            "<conversation>\n"
+            "[User]: Look at this:\n[image]\n\n"
+            "[Assistant thinking]: Summary one.\nSummary two.\n\n"
+            "[Assistant]: Let me check.\n\n"
+            '[Assistant tool calls]: exec_command(cmd="echo ü", '
+            'yield_time_ms=10000, env={"A":[1,2]}); '
+            "apply_patch(*** Begin Patch)\n\n"
+            f"[Tool result]: {'a' * 2_000}\n\n[... 50 more characters truncated]\n\n"
+            "[System]: Mid-span system note.\n\n"
+            "[Developer]: Mid-span developer note.\n\n"
+            "[Assistant thinking]: Direct thinking.\n\n"
+            "[Assistant]: Part one.\nPart two.\n"
+            "</conversation>\n\n" + SUMMARIZATION_PROMPT
+        ))
+
+    def test_request_replaces_the_effective_context_and_inherits_turn_params(self):
+        turn = SampleParams(
+            max_output_tokens=900, temperature=0.3, top_p=0.9, stop=("END",),
+            seed=7, enable_auto_compaction=True, auto_compact_tokens=5_000,
+            extra={"thinking": {"type": "adaptive"}},
+        )
+        for budget, sample_params, expected in (
+            (None, turn, SampleParams(
+                max_output_tokens=900, temperature=0.3, top_p=0.9, stop=("END",),
+                seed=7, enable_auto_compaction=False,
+                extra={"thinking": {"type": "adaptive"}},
+            )),
+            (321, turn, SampleParams(
+                max_output_tokens=321, temperature=0.3, top_p=0.9, stop=("END",),
+                seed=7, enable_auto_compaction=False,
+                extra={"thinking": {"type": "adaptive"}},
+            )),
+            (None, None, SampleParams(enable_auto_compaction=False)),
+        ):
+            with self.subTest(budget=budget, sample_params=sample_params):
+                model = _ScriptedModel(_summary())
+                context = _two_turns()
+                PiCompactor(model, keep_recent_tokens=78, max_output_tokens=budget).compact(
+                    context,
+                    tools=(ToolSpec("exec_command", "Run.", {"type": "object"}),),
+                    sample_params=sample_params,
+                )
+                request, tools, params = model.calls[0]
+                self.assertEqual(params, expected)
+                self.assertEqual(tools, ())
+                # The raw log is kept, so Init and metadata still identify
+                # the provider session; the model sees only the request.
+                self.assertEqual(request.items[:-1], context.items)
+                self.assertIsInstance(request.items[-1], ContextPrefix)
+                self.assertEqual(request.model_items(), (
+                    Instructions(SUMMARIZATION_SYSTEM_PROMPT),
+                    Message("user", _prompt(model.calls[0])),
+                ))
+
+    def test_focus_text_goes_to_the_history_request(self):
+        model = _ScriptedModel(_summary("History."), _summary("Turn."))
+        PiCompactor(model, keep_recent_tokens=40).compact(
+            _two_turns(), instructions="Keep file paths.",
+        )
+        history, turn = (_prompt(call) for call in model.calls)
+        self.assertTrue(history.endswith(
+            SUMMARIZATION_PROMPT + "\n\nAdditional focus: Keep file paths."
+        ))
+        self.assertNotIn("Additional focus", turn)
+        with self.assertRaises(TypeError):
+            PiCompactor(model).compact(_two_turns(), instructions=3)
+
+    def test_response_checks_reject_incomplete_summaries(self):
+        for label, sample, pattern in (
+            ("tool calls", ModelSample(items=(
+                Message("assistant", "Summary."), ToolCall("t", "call", "{}"),
+            )), "returned tool calls"),
+            ("max_tokens", _summary(stop_reason="max_tokens"), "stop_reason max_tokens"),
+            ("refusal", _summary(stop_reason="refusal"), "stop_reason refusal"),
+            ("empty", ModelSample(items=(
+                Reasoning("thinking only"), Message("assistant", "  "),
+            )), "returned no text"),
+        ):
+            with self.subTest(label=label):
+                model = _ScriptedModel(sample)
+                with self.assertRaisesRegex(CompactionError, pattern) as raised:
+                    PiCompactor(model, keep_recent_tokens=0).compact(_two_turns())
+                self.assertIn("summary request for the history", str(raised.exception))
+                self.assertNotIsInstance(raised.exception, NothingToCompact)
+
+    def test_all_text_blocks_are_joined(self):
+        model = _ScriptedModel(ModelSample(items=(
+            Message("assistant", "## Goal"),
+            Reasoning("aside"),
+            Message("assistant", "Finish it."),
+        ), stop_reason="end_turn"))
+        result = PiCompactor(model, keep_recent_tokens=0).compact(_two_turns())
+        self.assertEqual(
+            result.items[0].prefix_items[1],
+            Message("user", _wrapped("## Goal\nFinish it.")),
+        )
+
+    def test_context_window_errors_name_the_part_and_the_settings(self):
+        provider_text = "prompt is too long: 1234567 tokens > 1000000 maximum"
+        for failing, part, count in (
+            (0, "the history", 3),
+            (1, "the earlier part of the current turn", 3),
+        ):
+            with self.subTest(part=part):
+                error = ModelContextWindowError(provider_text)
+                outcomes = [_summary("History."), _summary("Turn.")]
+                outcomes[failing] = error
+                model = _ScriptedModel(*outcomes)
+                with self.assertRaises(CompactionContextWindowError) as raised:
+                    PiCompactor(model, keep_recent_tokens=40).compact(_two_turns())
+                message = str(raised.exception)
+                self.assertIs(raised.exception.__cause__, error)
+                self.assertIsInstance(raised.exception, CompactionError)
+                tokens = (len(SUMMARIZATION_SYSTEM_PROMPT) + len(_prompt(model.calls[failing])) + 3) // 4
+                self.assertTrue(message.startswith(
+                    f"summary request for {part} ({count} items, ~{tokens:,} "
+                    "estimated tokens) exceeded the model's context window"
+                ), message)
+                self.assertIn("compaction_max_output_tokens", message)
+                self.assertIn("compaction_keep_recent_tokens", message)
+                self.assertNotIn("1234567", message)
+                self.assertNotIn("\n", message)
+                self.assertLessEqual(len(message), 512)
+                self.assertEqual(len(model.calls), failing + 1)
+
+    def test_rejects_unready_contexts_and_invalid_arguments(self):
+        compactor = PiCompactor(_ScriptedModel())
+        with self.assertRaisesRegex(CompactionError, "unresolved tool calls"):
+            compactor.compact(InteractionContext((ToolCall("t", "pending", "{}"),)))
+        with self.assertRaises(TypeError):
+            compactor.compact(_two_turns().items)
+        with self.assertRaises(TypeError):
+            compactor.compact(_two_turns(), sample_params={})
+
+    def test_non_sample_response_is_rejected(self):
+        model = _ScriptedModel(object())
+        with self.assertRaisesRegex(CompactionError, "expected ModelSample"):
+            PiCompactor(model, keep_recent_tokens=0).compact(_two_turns())
 
 
 if __name__ == "__main__":

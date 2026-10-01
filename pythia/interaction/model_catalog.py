@@ -201,6 +201,8 @@ class EndpointSpec:
 class ModelLimits:
     """Context policy and known ceilings for one catalogued model."""
 
+    # TODO: Add a per-model ``compaction_keep_recent_tokens`` default (pi's
+    # ``compaction.modelOverrides``); the runtime key defaults to 20,000.
     auto_compact_context_tokens: Optional[int] = None
     max_context_tokens: Optional[int] = None
     max_output_tokens: Optional[int] = None

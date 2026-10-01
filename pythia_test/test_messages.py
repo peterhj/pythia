@@ -12,28 +12,41 @@ from typing import Any
 from unittest import mock
 
 from pythia.interaction import ANTHROPIC_MESSAGES_API_URL
+from pythia.interaction import COMPACTION_SUMMARY_PREFIX
+from pythia.interaction import COMPACTION_SUMMARY_SUFFIX
+from pythia.interaction import CompactionSettings
 from pythia.interaction import DEFAULT_REQUEST_TIMEOUT_SECONDS
 from pythia.interaction import Environment
+from pythia.interaction import Init
+from pythia.interaction import Instructions
+from pythia.interaction import InteractionConfig
 from pythia.interaction import MESSAGES_COMPACTION_BETA
 from pythia.interaction import Message
 from pythia.interaction import MessagesEndpoint
 from pythia.interaction import MessagesModel
+from pythia.interaction import MessagesPromptCaching
 from pythia.interaction import MessagesServerCompaction
 from pythia.interaction import ModelConfigurationError
 from pythia.interaction import InteractionContext
 from pythia.interaction import ModelContextWindowError
 from pythia.interaction import ModelResponseError
 from pythia.interaction import ModelSample
+from pythia.interaction import ModelSampleBoundary
 from pythia.interaction import ModelTimeoutError
 from pythia.interaction import ModelTransportError
 from pythia.interaction import OpaqueCompaction
 from pythia.interaction import Reasoning
+from pythia.interaction import SampleMetadata
 from pythia.interaction import SampleParams
+from pythia.interaction import SUMMARIZATION_SYSTEM_PROMPT
+from pythia.interaction import TokenUsage
 from pythia.interaction import ToolCall
 from pythia.interaction import ToolResult
 from pythia.interaction import ToolSpec
 from pythia.interaction import UserInteractionBoundary
 from pythia.interaction import USER_AGENT
+from pythia.interaction import create_default_compactor
+from pythia.interaction import uses_host_auto_compaction
 from pythia.interaction.demo import _build_model
 from pythia.interaction.demo import _build_parser
 from pythia.interaction.demo import run
@@ -298,21 +311,20 @@ class MessagesEndpointTests(unittest.TestCase):
         )
         self.assertNotIn("context_management", disabled)
 
-        runtime_enabled = MessagesModel(_endpoint(
+        # Enabling per call never creates a policy: without one, the host
+        # owns automatic compaction (pi mode).
+        without_policy = MessagesModel(_endpoint(
             api_url="https://api.anthropic.com",
             model="claude-fable-5.1",
             api_key="test-key",
         ))
-        enabled_after_startup = runtime_enabled._build_request_payload(
+        enabled = without_policy._build_request_payload(
             InteractionContext((Message("user", "Hello."),)),
             (),
             SampleParams(enable_auto_compaction=True),
         )
-        self.assertEqual(
-            enabled_after_startup["context_management"],
-            payload["context_management"],
-        )
-        self.assertIsNone(runtime_enabled.endpoint.server_compaction)
+        self.assertNotIn("context_management", enabled)
+        self.assertIsNone(without_policy.endpoint.server_compaction)
 
         response = _FakeResponse({
             "type": "message",
@@ -328,6 +340,95 @@ class MessagesEndpointTests(unittest.TestCase):
         )
         request, _ = opener.calls[0]
         self.assertIsNone(request.get_header("Anthropic-beta"))
+
+
+    def test_auto_compaction_owner_follows_server_compaction(self):
+        host = MessagesModel(_endpoint(api_url="http://localhost:8000", model="model"))
+        server = MessagesModel(_endpoint(
+            api_url="http://localhost:8000",
+            model="model",
+            server_compaction=MessagesServerCompaction(),
+        ))
+        self.assertEqual(host.auto_compaction_owner, "host")
+        self.assertEqual(server.auto_compaction_owner, "server")
+        self.assertTrue(uses_host_auto_compaction(host))
+        self.assertFalse(uses_host_auto_compaction(server))
+
+
+class MessagesSummaryRequestTests(unittest.TestCase):
+    def test_pi_summary_request_payload(self):
+        context = InteractionContext((
+            Init("session"),
+            Instructions("Agent system prompt."),
+            Message("user", "Fix the bug."),
+            UserInteractionBoundary(),
+            Reasoning("", content_signature="signature-1"),
+            ToolCall("exec_command", "toolu_1", '{"cmd":"ls"}'),
+            SampleMetadata(TokenUsage(total_tokens=50)),
+            ModelSampleBoundary(),
+            ToolResult("toolu_1", "bug.py"),
+            Message("assistant", "Fixed."),
+            SampleMetadata(TokenUsage(total_tokens=60)),
+            ModelSampleBoundary(),
+        ))
+        for budget, max_tokens in ((None, 128_000), (4_096, 4_096)):
+            with self.subTest(budget=budget):
+                opener = _Opener(_FakeResponse({
+                    "type": "message",
+                    "role": "assistant",
+                    "stop_reason": "end_turn",
+                    "content": [
+                        {"type": "thinking", "thinking": "", "signature": "sig"},
+                        {"type": "text", "text": "## Goal\nFix the bug."},
+                    ],
+                    "usage": {"input_tokens": 10, "output_tokens": 5},
+                }))
+                model = MessagesModel(messages_endpoint(
+                    "https://api.anthropic.com",
+                    "claude-opus-5.5-max",
+                    api_key="test-key",
+                    prompt_caching=MessagesPromptCaching(),
+                ), opener=opener)
+                snapshot = InteractionConfig.from_model(model).snapshot()
+                self.assertEqual(snapshot.compaction_mode, "pi")
+                settings = CompactionSettings(keep_recent_tokens=0, max_output_tokens=budget)
+                result = create_default_compactor(model, settings).compact(
+                    context,
+                    tools=(ToolSpec("exec_command", "Run.", {"type": "object"}),),
+                    sample_params=snapshot.sample_params(),
+                )
+                payload = _payload(opener)
+                self.assertEqual(
+                    payload["system"],
+                    [{"type": "text", "text": SUMMARIZATION_SYSTEM_PROMPT}],
+                )
+                [message] = payload["messages"]
+                self.assertEqual(message["role"], "user")
+                [block] = message["content"]
+                self.assertEqual(block["type"], "text")
+                self.assertTrue(block["text"].startswith(
+                    "<conversation>\n[User]: Fix the bug.\n\n"
+                    '[Assistant tool calls]: exec_command(cmd="ls")'
+                ))
+                for key in ("tools", "temperature", "context_management"):
+                    self.assertNotIn(key, payload)
+                self.assertNotIn("tool_use", json.dumps(payload))
+                self.assertEqual(payload["max_tokens"], max_tokens)
+                self.assertEqual(payload["thinking"], {"type": "adaptive"})
+                self.assertEqual(payload["output_config"], {"effort": "max"})
+                # Summary requests still carry cache_control (plan 9.1 TODO).
+                self.assertEqual(payload["cache_control"], {"type": "ephemeral", "ttl": "5m"})
+                request, _ = opener.calls[0]
+                self.assertIsNone(request.get_header("Anthropic-beta"))
+                self.assertEqual(result.protocol, "pi")
+                self.assertEqual(result.items[0].prefix_items, (
+                    Instructions("Agent system prompt."),
+                    Message(
+                        "user",
+                        f"{COMPACTION_SUMMARY_PREFIX}## Goal\nFix the bug."
+                        f"{COMPACTION_SUMMARY_SUFFIX}",
+                    ),
+                ))
 
 
 class MessagesModelTests(unittest.TestCase):
@@ -1014,7 +1115,7 @@ class MessagesDemoTests(unittest.TestCase):
         )
         self.assertNotIn("secret-key", repr(model.endpoint))
 
-    def test_auto_compaction_flag_configures_messages_server_policy(self):
+    def test_compaction_mode_configures_messages_server_policy(self):
         base = [
             "--endpoint-api",
             "messages",
@@ -1024,17 +1125,33 @@ class MessagesDemoTests(unittest.TestCase):
             "100",
             "--endpoint-auth", "none",
         ]
-        enabled = _build_model(_build_parser().parse_args(base))
-        disabled = _build_model(_build_parser().parse_args([
-            *base,
-            "--enable-auto-compaction=False",
-        ]))
-
-        self.assertEqual(
-            enabled.endpoint.server_compaction,
-            MessagesServerCompaction(),
-        )
-        self.assertIsNone(disabled.endpoint.server_compaction)
+        context = InteractionContext((Message("user", "Hello."),))
+        for flags in ([], ["--enable-auto-compaction=False"]):
+            with self.subTest(flags=flags):
+                # Pi, the default, never attaches server compaction.
+                pi = _build_model(_build_parser().parse_args([*base, *flags]))
+                self.assertIsNone(pi.endpoint.server_compaction)
+                self.assertEqual(pi.auto_compaction_owner, "host")
+                # Provider mode always attaches it; the config's per-call
+                # enable_auto_compaction suppresses it.
+                provider = _build_model(_build_parser().parse_args([
+                    *base, *flags, "--compaction-mode", "provider",
+                ]))
+                self.assertEqual(
+                    provider.endpoint.server_compaction,
+                    MessagesServerCompaction(),
+                )
+                self.assertEqual(provider.auto_compaction_owner, "server")
+                self.assertIn(
+                    "context_management",
+                    provider._build_request_payload(context, (), None),
+                )
+                self.assertNotIn(
+                    "context_management",
+                    provider._build_request_payload(
+                        context, (), SampleParams(enable_auto_compaction=False),
+                    ),
+                )
 
         for removed in (
             "--messages-server-compaction",

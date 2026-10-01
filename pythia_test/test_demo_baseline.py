@@ -52,6 +52,9 @@ DEMO_ARGUMENT_DEFAULTS = {
     "enable_workspace": True,
     "enable_experimental_media": False,
     "auto_compact_tokens": None,
+    "compaction_mode": None,
+    "compaction_keep_recent_tokens": None,
+    "compaction_max_output_tokens": None,
     "max_context_tokens": None,
     "max_samples": None,
     "max_output_tokens": None,
@@ -232,6 +235,22 @@ class DemoStartupBaselineTests(unittest.TestCase):
             "workspace path restrictions are disabled" in text
             for text in printed
         ))
+
+    def test_compaction_flags_are_resolved_and_forwarded(self):
+        for argv, forwarded in (
+            ([], {"compaction_mode": "pi", "compaction_keep_recent_tokens": 20_000,
+                  "compaction_max_output_tokens": None}),
+            (["--compaction-keep-recent-tokens", "0", "--compaction-max-output-tokens", "64"],
+             {"compaction_mode": "pi", "compaction_keep_recent_tokens": 0,
+              "compaction_max_output_tokens": 64}),
+        ):
+            with self.subTest(argv=argv):
+                with mock.patch.object(demo, "run", return_value="Done.") as run:
+                    status, _model, _printed = self._run_demo(argv)
+                self.assertEqual(status, 0)
+                self.assertEqual(
+                    {key: run.call_args.kwargs[key] for key in forwarded}, forwarded,
+                )
 
     def test_one_shot_default_query_is_still_injected(self):
         status, model, _printed = self._run_demo()

@@ -21,6 +21,8 @@ from urllib.request import urlopen
 from pythia.interaction import DisplayItem, Environment, Message, ModelSample, ModelSampleBoundary, Tool, ToolCall
 from pythia.interaction import ToolOutcome, ToolSpec, ToolResult, TurnSummary
 from pythia.interaction import ModelFailure, ModelTransportError, Reasoning, OpaqueCompaction
+from pythia.interaction import CompactionContextWindowError, CompactionResult, CompactionSettings
+from pythia.interaction import ContextPrefix, ModelContextWindowError, NothingToCompact
 from pythia.interaction import load_interaction_save
 from pythia.interaction import auto
 from pythia.interaction import SampleParams
@@ -191,7 +193,7 @@ class ConfigTests(unittest.TestCase):
 
             def write():
                 path.write_text(json.dumps({
-                    "version": 1,
+                    "version": 2,
                     "contexts": {str(index): value for index, value in snapshot.items()},
                 }))
 
@@ -213,6 +215,31 @@ class ConfigTests(unittest.TestCase):
                         with self.assertRaises(ValueError):
                             auto.load_saved_config(path)
                 snapshot[1][key] = original
+
+    def test_saved_config_version_1_loads_with_compaction_defaults(self):
+        compaction = ("compaction_mode", "compaction_keep_recent_tokens",
+                      "compaction_max_output_tokens")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.json"
+            current = resolve_config(overrides={"cwd": tmp, "model": "saved-model"})
+            old = {str(i): {k: v for k, v in s.items() if k not in compaction}
+                   for i, s in current.items()}
+            path.write_text(json.dumps({"version": 1, "contexts": old}))
+            saved = auto.load_saved_config(path)
+            self.assertEqual(saved, current)
+            for settings in saved.values():
+                self.assertEqual({key: settings[key] for key in compaction},
+                                 dict.fromkeys(compaction))
+            # Each version requires its exact key set.
+            for version, contexts in (
+                (1, {str(i): dict(s) for i, s in current.items()}),
+                (2, old),
+                (3, {str(i): dict(s) for i, s in current.items()}),
+            ):
+                with self.subTest(version=version):
+                    path.write_text(json.dumps({"version": version, "contexts": contexts}))
+                    with self.assertRaisesRegex(ValueError, "Invalid saved"):
+                        auto.load_saved_config(path)
 
     def test_saved_settings_are_base_for_explicit_resume_overrides(self):
         saved = resolve_config(overrides={"model": "saved-model", "cwd": str(Path.cwd())})
@@ -748,6 +775,81 @@ class RuntimeTests(unittest.TestCase):
         self.assertFalse(any(isinstance(i, Message) and i.role == "assistant" for i in saved))
         self.assertFalse(any(e.kind == "debug" for e in session.drain_events()))
 
+    def test_saved_config_is_version_2(self):
+        session = self.session({})
+        document = json.loads((self.path / "config.json").read_text())
+        self.assertEqual(document["version"], 2)
+        for settings in document["contexts"].values():
+            self.assertIn("compaction_mode", settings)
+            self.assertIn("compaction_keep_recent_tokens", settings)
+            self.assertIn("compaction_max_output_tokens", settings)
+        session.close()
+
+    def compactor(self, **kwargs):
+        compactor = mock.Mock()
+        compactor.compact.return_value = CompactionResult(
+            (ContextPrefix((Message("user", "summary"),)),), protocol="pi",
+        )
+        for name, value in kwargs.items():
+            setattr(compactor.compact, name, value)
+        return compactor
+
+    def test_threshold_compaction_uses_the_turn_params_and_settings(self):
+        compactor = self.compactor()
+        with mock.patch.object(auto, "create_default_compactor", return_value=compactor) as create:
+            session = self.session({1: [answer()]}, settings_overrides={
+                "auto_compact_tokens": 1, "compaction_keep_recent_tokens": 0,
+                "compaction_max_output_tokens": 64,
+            })
+            source = session.submit("compact first")
+            self.assertTrue(self.finished(session, source["thread_id"]))
+        create.assert_called_once()
+        self.assertEqual(create.call_args.args[1], CompactionSettings(
+            mode="pi", keep_recent_tokens=0, max_output_tokens=64,
+        ))
+        self.assertEqual(compactor.compact.call_args.kwargs["sample_params"], self.options[1][0])
+        self.assertEqual(self.calls[1][0].model_items(), (Message("user", "summary"),))
+
+    def test_threshold_nothing_to_compact_samples_normally(self):
+        compactor = self.compactor(side_effect=NothingToCompact("nothing precedes the recent tail"))
+        with mock.patch.object(auto, "create_default_compactor", return_value=compactor):
+            session = self.session({1: [answer()]}, settings_overrides={"auto_compact_tokens": 1})
+            source = session.submit("nothing to compact")
+            self.assertTrue(self.finished(session, source["thread_id"]))
+        compactor.compact.assert_called_once()
+        self.assertEqual(len(self.calls[1]), 1)
+
+    def test_overflow_compacts_once_and_retries_the_sample(self):
+        compactor = self.compactor()
+        overflow = ModelContextWindowError("prompt is too long", failure=ModelFailure(
+            "context_window", "Messages HTTP 400: context window exceeded"))
+        with mock.patch.object(auto, "create_default_compactor", return_value=compactor):
+            session = self.session({1: [overflow, answer("recovered")]},
+                                   settings_overrides={"max_samples": 1})
+            source = session.submit("too long")
+            self.assertTrue(self.finished(session, source["thread_id"]))
+        compactor.compact.assert_called_once()
+        # The failed attempt does not count against max_samples.
+        self.assertEqual(len(self.calls[1]), 2)
+        self.assertEqual(self.calls[1][1].model_items(), (Message("user", "summary"),))
+        context = load_interaction_save(self.path / "contexts" / "1.jsonl")
+        failure = next(i for i, item in enumerate(context) if isinstance(item, ModelFailure))
+        self.assertIsInstance(context[failure + 2], ContextPrefix)
+
+    def test_failed_overflow_compaction_is_reported_by_class_name(self):
+        compactor = self.compactor(side_effect=CompactionContextWindowError(
+            "summary request for the history (3 items, ~9 estimated tokens) exceeded"))
+        overflow = ModelContextWindowError("prompt is too long")
+        with mock.patch.object(auto, "create_default_compactor", return_value=compactor):
+            session = self.session({1: [overflow]})
+            source = session.submit("too long")
+            self.assertFalse(self.finished(session, source["thread_id"]))
+        errors = [item.text for event in session.drain_events() if event.kind == "error"
+                  for item in event.items]
+        self.assertIn("Task failed (CompactionContextWindowError); effects may have occurred. "
+                      "Details withheld.", errors)
+        self.assertEqual(len(self.calls[1]), 1)
+
     def test_compaction_continuation_is_not_an_end_of_turn(self):
         reached, release = threading.Event(), threading.Event()
         def final(_context):
@@ -1164,7 +1266,7 @@ class RuntimeTests(unittest.TestCase):
     def test_resume_lock_and_corrupt_context_fail_without_replacing_data(self):
         session = self.session({})
         config = (self.path / "config.json").read_bytes()
-        settings = resolve_config(self.path / "config.json")
+        settings = resolve_config(saved=auto.load_saved_config(self.path / "config.json"))
         with self.assertRaisesRegex(RuntimeError, "already in use"):
             auto._Session(self.path, settings, resume=True,
                           model_factory=lambda *_: self.fail("model initialized"),
@@ -1182,7 +1284,7 @@ class RuntimeTests(unittest.TestCase):
         session = self.session({})
         alias = self.path.parent / "alias"
         alias.symlink_to(self.path, target_is_directory=True)
-        settings = resolve_config(self.path / "config.json")
+        settings = resolve_config(saved=auto.load_saved_config(self.path / "config.json"))
         before = {path.relative_to(self.path): path.read_bytes()
                   for path in self.path.rglob("*") if path.is_file()}
         with self.assertRaisesRegex(RuntimeError, "already in use"):
@@ -1216,7 +1318,7 @@ class RuntimeTests(unittest.TestCase):
         )
         before = {path.relative_to(self.path): path.read_bytes()
                   for path in self.path.rglob("*") if path.is_file()}
-        settings = resolve_config(self.path / "config.json")
+        settings = resolve_config(saved=auto.load_saved_config(self.path / "config.json"))
         with self.assertRaisesRegex(ValueError, "initialization metadata"):
             auto._Session(self.path, settings, resume=True,
                           model_factory=lambda *_: self.fail("model initialized"),

@@ -14,6 +14,7 @@ from typing import Optional
 from typing import Set
 from typing import Tuple
 
+from .compaction import _compaction_summary_text
 from .items import CompactionMetadata
 from .items import ContextPrefix
 from .items import Init
@@ -218,11 +219,7 @@ class InteractionItemRenderer:
                 blocks = ("[compaction] opaque checkpoint",)
             elif isinstance(item, ContextPrefix):
                 label = "context prefix"
-                item_count = len(item.prefix_items)
-                noun = "item" if item_count == 1 else "items"
-                blocks = (
-                    f"[context prefix] {item_count} {noun}",
-                )
+                blocks = _render_context_prefix(item)
             else:
                 raise TypeError(
                     f"unsupported interaction item: {type(item).__name__}"
@@ -238,10 +235,11 @@ class InteractionItemRenderer:
                                 self.color
                                 and block_index in diff_block_indices
                             ),
-                            # Extra tool-call blocks are literal payloads, even
-                            # when their text happens to start with [a label].
+                            # Extra tool-call and context-prefix blocks are
+                            # literal payloads, even when their text happens
+                            # to start with [a label].
                             label=(None if block_index > 0 and isinstance(
-                                item, (ToolCall, UserToolCall)
+                                item, (ToolCall, UserToolCall, ContextPrefix)
                             ) else label),
                         )
                     )
@@ -415,6 +413,22 @@ def _render_instructions(item: Instructions) -> Tuple[str, ...]:
     if not item.text.strip():
         return ("[instructions]",)
     return (f"[instructions] {item.text}",)
+
+
+def _render_context_prefix(item: ContextPrefix) -> Tuple[str, ...]:
+    """The item count, then the compaction summary text if there is one.
+
+    The kept items were already shown where they first appeared.
+    """
+    item_count = len(item.prefix_items)
+    noun = "item" if item_count == 1 else "items"
+    blocks = [f"[context prefix] {item_count} {noun}"]
+    for prefix_item in reversed(item.prefix_items):
+        summary = _compaction_summary_text(prefix_item)
+        if summary is not None:
+            blocks.append(summary)
+            break
+    return tuple(blocks)
 
 
 def _render_sample_metadata(item: SampleMetadata) -> Tuple[str, ...]:

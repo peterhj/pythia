@@ -282,6 +282,8 @@ class MessagesPromptCachingCLITests(unittest.TestCase):
                 ["--enable-auto-compaction=False"],
                 ["--resume"],
                 ["--endpoint-url", "http://localhost/v1/messages"],
+                ["--compaction-mode", "provider"],
+                ["--compaction-mode", "provider", "--enable-auto-compaction=False"],
             ):
                 with self.subTest(frontend=frontend.__name__, flags=flags):
                     args = frontend._build_parser().parse_args([
@@ -291,11 +293,13 @@ class MessagesPromptCachingCLITests(unittest.TestCase):
                     model = build_model(args)
                     self.assertEqual(model.endpoint.prompt_caching, MessagesPromptCaching())
                     self.assertEqual(model.endpoint.prompt_caching.ttl, "5m")
+                    # Server compaction belongs to provider mode only; the
+                    # config's per-call flag suppresses it there.
                     self.assertEqual(
                         model.endpoint.server_compaction,
                         (
                             MessagesServerCompaction()
-                            if args.enable_auto_compaction
+                            if args.compaction_mode == "provider"
                             else None
                         ),
                     )

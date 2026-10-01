@@ -11,6 +11,8 @@ from pathlib import Path
 from ._prompt import add_prompt_arguments
 from .chat_completions import ChatCompletionsEndpoint
 from .chat_completions import ChatCompletionsModel
+from .compaction import COMPACTION_MODES
+from .compaction import DEFAULT_KEEP_RECENT_TOKENS
 from .messages import MessagesEndpoint
 from .messages import MessagesModel
 from .messages import MessagesPromptCaching
@@ -194,6 +196,10 @@ def build_model(
     """
     args = prepare_namespace(args, catalog)
     binding = args.model_binding
+    from .runtime_config import InteractionConfig
+    from .runtime_config import resolve_compaction_mode
+
+    mode = resolve_compaction_mode(binding, getattr(args, "compaction_mode", None))
     for name in ("auto_compact_tokens", "max_context_tokens"):
         value = getattr(args, name, None)
         if value is not None and (
@@ -202,6 +208,20 @@ def build_model(
             raise ValueError(
                 f"--{name.replace('_', '-')} must be a positive integer"
             )
+    keep = getattr(args, "compaction_keep_recent_tokens", None)
+    if keep is not None and (
+        isinstance(keep, bool) or not isinstance(keep, int) or keep < 0
+    ):
+        raise ValueError(
+            "--compaction-keep-recent-tokens must be a nonnegative integer"
+        )
+    budget = getattr(args, "compaction_max_output_tokens", None)
+    if budget is not None and (
+        isinstance(budget, bool) or not isinstance(budget, int) or budget <= 0
+    ):
+        raise ValueError(
+            "--compaction-max-output-tokens must be a positive integer"
+        )
 
     if args.model_api == "chat-completions":
         if args.codex_home is not None or args.codex_auth_file is not None:
@@ -224,21 +244,22 @@ def build_model(
             raise ValueError("--model is required with --endpoint-api messages")
         auto_compact_tokens = getattr(args, "auto_compact_tokens", None)
         if (
-            auto_compact_tokens is not None
+            mode == "provider"
+            and auto_compact_tokens is not None
             and auto_compact_tokens < MESSAGES_MIN_COMPACTION_TRIGGER_TOKENS
         ):
             raise ValueError(
                 "--auto-compact-tokens must be at least "
                 f"{MESSAGES_MIN_COMPACTION_TRIGGER_TOKENS} for "
-                "--endpoint-api messages"
+                "--endpoint-api messages with --compaction-mode provider"
             )
+        # In provider mode the endpoint always carries server compaction; the
+        # config's per-call enable_auto_compaction suppresses it, so a later
+        # /config change applies to the next turn. Pi mode attaches none.
         compaction_options = (
-            MessagesServerCompaction()
-            if args.enable_auto_compaction
-            else None
+            MessagesServerCompaction() if mode == "provider" else None
         )
         # Validate required budgets before touching credential sources.
-        from .runtime_config import InteractionConfig
         output_budget = InteractionConfig.from_namespace(args).get("max_output_tokens")
         endpoint = MessagesEndpoint(
             binding=binding,
@@ -311,9 +332,11 @@ def build_parser(description: str, *, allow_prompt_file: bool = False) -> argpar
         type=_boolean_argument,
         metavar="{False,True}",
         help=(
-            "enable automatic remote compaction (Responses threshold triggers "
-            "and Messages server edits); a bare flag means True "
-            "(default: %(default)s)"
+            "enable automatic compaction: a pi summary, or Codex remote "
+            "compaction in provider mode, when the context reaches "
+            "auto_compact_tokens, with one compact-and-retry when a sample "
+            "exceeds the context window; Messages server edits in provider "
+            "mode. A bare flag means True (default: %(default)s)"
         ),
     )
     parser.add_argument(
@@ -351,6 +374,40 @@ def build_parser(description: str, *, allow_prompt_file: bool = False) -> argpar
             "catalog value and is tunable at runtime with "
             "/config auto_compact_tokens (default: catalog value, if known; "
             "setting null restores that value)"
+        ),
+    )
+    parser.add_argument(
+        "--compaction-mode",
+        choices=COMPACTION_MODES,
+        default=None,
+        help=(
+            "pi summarizes older context on the host and keeps recent items "
+            "verbatim; provider uses Codex remote compaction or Anthropic "
+            "server-side compaction. Launch-only (default: provider on the "
+            "official ChatGPT/Codex route, pi elsewhere)"
+        ),
+    )
+    parser.add_argument(
+        "--compaction-keep-recent-tokens",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "estimated tokens of recent context that pi compaction keeps "
+            "verbatim; 0 keeps nothing. Tunable with "
+            "/config compaction_keep_recent_tokens "
+            f"(default: {DEFAULT_KEEP_RECENT_TOKENS})"
+        ),
+    )
+    parser.add_argument(
+        "--compaction-max-output-tokens",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "output budget of each pi summary request; tunable with "
+            "/config compaction_max_output_tokens "
+            "(default: the turn's max_output_tokens)"
         ),
     )
     parser.add_argument(

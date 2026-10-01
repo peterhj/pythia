@@ -8,6 +8,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from pythia.interaction import COMPACTION_SUMMARY_PREFIX
+from pythia.interaction import COMPACTION_SUMMARY_SUFFIX
 from pythia.interaction import CompactionMetadata
 from pythia.interaction import ContextPrefix
 from pythia.interaction import DefaultEnvironment
@@ -19,6 +21,7 @@ from pythia.interaction import ModelFailure
 from pythia.interaction import ModelSample
 from pythia.interaction import ModelSampleBoundary
 from pythia.interaction import OpaqueCompaction
+from pythia.interaction import PiCompactor
 from pythia.interaction import Reasoning
 from pythia.interaction import SaveError
 from pythia.interaction import TokenUsage
@@ -32,7 +35,9 @@ from pythia.interaction import UserToolResult
 from pythia.interaction import interaction_item_from_dict
 from pythia.interaction import interaction_item_to_dict
 from pythia.interaction import load_interaction_save
+from pythia.interaction import render_interaction_items
 from pythia.interaction import save_interaction_save
+from pythia.interaction.compaction import _LEGACY_SUMMARY_PREFIX
 from pythia.interaction.demo import run_repository_summary
 
 
@@ -178,6 +183,71 @@ class SessionTests(unittest.TestCase):
                 ],
             },
         )
+
+    def test_prompt_summarization_save_loads_and_compacts_again(self):
+        legacy = f"{_LEGACY_SUMMARY_PREFIX}\nOld summary."
+        records = (
+            {"type": "init", "prefix_id": "session-old", "model": "model-1"},
+            {"type": "instructions", "text": "Rules."},
+            {"type": "message", "role": "user", "content": "first request"},
+            {"type": "user_interaction_boundary"},
+            {"type": "message", "role": "assistant", "content": "first answer"},
+            {"type": "context_prefix", "prefix_items": [
+                {"type": "instructions", "text": "Rules."},
+                {"type": "message", "role": "user", "content": "first request"},
+                {"type": "message", "role": "user", "content": legacy},
+            ]},
+            {"type": "compaction_metadata", "usage": {
+                "input_tokens": 10, "output_tokens": 2, "total_tokens": 12,
+                "cached_input_tokens": 0,
+            }, "protocol": "prompt_summarization"},
+            {"type": "message", "role": "user", "content": "second request"},
+            {"type": "user_interaction_boundary"},
+            {"type": "message", "role": "assistant", "content": "second answer"},
+            {"type": "model_sample_boundary"},
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "interaction.jsonl"
+            path.write_text(
+                "".join(json.dumps(record) + "\n" for record in records),
+                encoding="utf-8",
+            )
+            context = load_interaction_save(path)
+
+        self.assertEqual(context.items[6].protocol, "prompt_summarization")
+        self.assertEqual(context.model_items()[:3], (
+            Instructions("Rules."),
+            Message("user", "first request"),
+            Message("user", legacy),
+        ))
+        self.assertIn("[context prefix] 3 items\nOld summary.", "\n".join(
+            item.text for item in render_interaction_items(context.items)
+        ))
+
+        class Model:
+            def __init__(self):
+                self.prompts = []
+
+            def sample(self, request, *, tools=(), sample_params=None):
+                self.prompts.append(request.model_items()[-1].content)
+                return ModelSample((Message("assistant", "New summary."),))
+
+        model = Model()
+        result = PiCompactor(model, keep_recent_tokens=0).compact(context)
+        [prompt] = model.prompts
+        # The old summary is the previous summary; its retained user message
+        # is conversation again.
+        self.assertTrue(prompt.startswith(
+            "<conversation>\n[User]: first request\n\n[User]: second request\n\n"
+            "[Assistant]: second answer\n</conversation>\n\n"
+            "<previous-summary>\nOld summary.\n</previous-summary>\n\n"
+        ))
+        self.assertEqual(result.items[0].prefix_items, (
+            Instructions("Rules."),
+            Message("user", f"{COMPACTION_SUMMARY_PREFIX}New summary.{COMPACTION_SUMMARY_SUFFIX}"),
+        ))
+        context.extend(result.context_items())
+        self.assertEqual(context.items[-1].protocol, "pi")
 
     def test_legacy_context_compaction_forms_load_as_context_prefix(self):
         for field_name in ("replacement_items", "prefix_items"):

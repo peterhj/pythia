@@ -38,8 +38,8 @@ def parse_user_tool(text: str) -> UserToolIntent:
         "/quota",
     }:
         raise ValueError(
-            "Unsupported command. Use /retry, /compact, /config, /config.json, "
-            "/login, /quota, /quit, or /exit."
+            "Unsupported command. Use /retry, /compact [focus], /config, "
+            "/config.json, /login, /quota, /quit, or /exit."
         )
     command = words[0]
     if command in {"/config", "/config.json"}:
@@ -66,7 +66,12 @@ def parse_user_tool(text: str) -> UserToolIntent:
         )
 
     name = command[1:]
-    if name in {"compact", "quota"}:
+    if name == "compact":
+        # The rest of the line is focus text for the summary, as in pi.
+        rest = text.split(maxsplit=1)
+        focus = rest[1].strip() if len(rest) == 2 else ""
+        arguments = {"instructions": focus} if focus else {}
+    elif name == "quota":
         if len(words) != 1:
             raise ValueError(f"Usage: /{name} (no arguments).")
         arguments = {}

@@ -7,15 +7,28 @@ from .codex_auth import CodexAuthError
 from .codex_auth import CodexAuthUnavailable
 from .codex_auth import load_codex_auth
 from .codex_auth import load_codex_credentials
+from .compaction import COMPACTION_SUMMARY_PREFIX
+from .compaction import COMPACTION_SUMMARY_SUFFIX
+from .compaction import CompactionContextWindowError
 from .compaction import CompactionError
 from .compaction import CompactionResult
+from .compaction import CompactionSettings
 from .compaction import Compactor
-from .compaction import DEFAULT_COMPACTION_MAX_OUTPUT_TOKENS
-from .compaction import DEFAULT_COMPACTION_PROMPT
-from .compaction import DEFAULT_SUMMARY_PREFIX
-from .compaction import PromptSummarizingCompactor
+from .compaction import DEFAULT_KEEP_RECENT_TOKENS
+from .compaction import ESTIMATED_IMAGE_CHARS
+from .compaction import NothingToCompact
+from .compaction import PiCompactor
+from .compaction import SUMMARIZATION_PROMPT
+from .compaction import SUMMARIZATION_SYSTEM_PROMPT
+from .compaction import TOOL_RESULT_MAX_CHARS
+from .compaction import TURN_PREFIX_SUMMARIZATION_PROMPT
+from .compaction import UPDATE_SUMMARIZATION_PROMPT
+from .compaction import auto_compaction_due
 from .compaction import create_default_compactor
+from .compaction import estimate_context_tokens
+from .compaction import is_compaction_summary
 from .compaction import should_auto_compact
+from .compaction import uses_host_auto_compaction
 from .context import ContextValidationError
 from .context import InteractionContext
 from .default_environment import DefaultEnvironment
@@ -117,9 +130,13 @@ __all__ = [
     "CODEX_RESPONSES_API_URL",
     "CodexResponsesModel",
     "CommandRuntime",
+    "COMPACTION_SUMMARY_PREFIX",
+    "COMPACTION_SUMMARY_SUFFIX",
+    "CompactionContextWindowError",
     "CompactionError",
     "CompactionMetadata",
     "CompactionResult",
+    "CompactionSettings",
     "Compactor",
     "CONFIG_KEYS",
     "ConfigError",
@@ -128,15 +145,14 @@ __all__ = [
     "ContextValidationError",
     "DefaultEnvironment",
     "DEFAULT_ANTHROPIC_VERSION",
-    "DEFAULT_COMPACTION_MAX_OUTPUT_TOKENS",
-    "DEFAULT_COMPACTION_PROMPT",
+    "DEFAULT_KEEP_RECENT_TOKENS",
     "DEFAULT_LOGIN_TIMEOUT_SECONDS",
     "DEFAULT_REQUEST_TIMEOUT_SECONDS",
-    "DEFAULT_SUMMARY_PREFIX",
     "DisplayItem",
     "Environment",
     "EnvironmentError",
     "EnvironmentResult",
+    "ESTIMATED_IMAGE_CHARS",
     "InteractionItem",
     "InteractionItemRenderer",
     "InteractionConfig",
@@ -164,18 +180,21 @@ __all__ = [
     "ModelSpec",
     "ModelTimeoutError",
     "ModelTransportError",
+    "NothingToCompact",
     "OpaqueCompaction",
     "OPENAI_RESPONSES_API_URL",
+    "PiCompactor",
     "PlanState",
     "PlanStep",
     "PlanStore",
-    "PromptSummarizingCompactor",
     "Reasoning",
     "REMOTE_COMPACTION_V2_RETAINED_USER_MESSAGE_TOKENS",
     "ResponsesDefaults",
     "ResponsesOpaqueCompactor",
     "StreamingResponsesEndpoint",
     "SampleParams",
+    "SUMMARIZATION_PROMPT",
+    "SUMMARIZATION_SYSTEM_PROMPT",
     "ModelCatalog",
     "ModelBinding",
     "EndpointSpec",
@@ -187,6 +206,7 @@ __all__ = [
     "SaveError",
     "TextPart",
     "TokenUsage",
+    "TOOL_RESULT_MAX_CHARS",
     "Tool",
     "ToolCall",
     "ToolHandler",
@@ -196,17 +216,22 @@ __all__ = [
     "UserToolResult",
     "ToolSpec",
     "SampleMetadata",
+    "TURN_PREFIX_SUMMARIZATION_PROMPT",
     "TurnSummary",
+    "UPDATE_SUMMARIZATION_PROMPT",
     "UserInteraction",
     "UserInteractionBoundary",
     "USER_AGENT",
     "X_CODEX_TURN_STATE_HEADER",
+    "auto_compaction_due",
     "create_apply_patch_tool",
     "create_default_compactor",
     "create_exec_command_tool",
     "create_update_plan_tool",
     "create_write_stdin_tool",
+    "estimate_context_tokens",
     "get_model_spec",
+    "is_compaction_summary",
     "list_model_specs",
     "render_interaction_items",
     "interaction_item_from_dict",
@@ -217,4 +242,5 @@ __all__ = [
     "save_interaction_save",
     "should_auto_compact",
     "summarize_turn_usage",
+    "uses_host_auto_compaction",
 ]

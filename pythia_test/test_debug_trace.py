@@ -21,7 +21,7 @@ import urllib.request
 from pythia.interaction import (
     CODEX_RESPONSES_API_URL, ChatCompletionsModel, CodexAuth, Environment, Init,
     InteractionContext, Message, MessagesModel, ModelError, ModelTransportError,
-    PromptSummarizingCompactor, ResponsesOpaqueCompactor, ToolResult, cli,
+    PiCompactor, ResponsesOpaqueCompactor, ToolCall, ToolResult, cli,
     codex_quota, load_interaction_save,
 )
 from pythia.interaction import _debug_trace
@@ -490,15 +490,33 @@ class CompactionTraceTests(_TraceTestCase):
         self.assertIn(["X-codex-beta-features", "remote_compaction_v2"], request["headers"])
         self.assertEqual(reply["status"], 200)
 
-    def test_prompt_summary_compaction_requests_are_tagged_compact(self):
+    def test_pi_summary_requests_are_tagged_compact(self):
         summary = {"choices": [{"finish_reason": "stop",
                                 "message": {"role": "assistant", "content": "Summary."}}]}
         model, _ = self.chat_model(_JSONResponse(summary))
         with trace_operation("compact"):
-            PromptSummarizingCompactor(model).compact(self.context)
+            PiCompactor(model, keep_recent_tokens=0).compact(self.context)
         [(request, reply)] = self.pairs()
         self.assertEqual((request["op"], request["retry"]), ("compact", 0))
         self.assertEqual(json.loads(reply["payload"]), summary)
+
+    def test_split_turn_summary_requests_share_the_compact_tag(self):
+        summary = {"choices": [{"finish_reason": "stop",
+                                "message": {"role": "assistant", "content": "Summary."}}]}
+        model, _ = self.chat_model(_JSONResponse(summary), _JSONResponse(summary))
+        self.context.extend((
+            Message("assistant", "Earlier answer."),
+            Message("user", "Current request."),
+            ToolCall("exec_command", "call-1", "{}"),
+            ToolResult("call-1", "x" * 400),
+        ))
+        with trace_operation("compact"):
+            PiCompactor(model, keep_recent_tokens=50).compact(self.context)
+        # Sequential history and turn-prefix requests: retry counts start order.
+        self.assertEqual(
+            [(request["op"], request["retry"]) for request, _ in self.pairs()],
+            [("compact", 0), ("compact", 1)],
+        )
 
 
 class AccountTraceTests(_TraceTestCase):

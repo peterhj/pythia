@@ -16,10 +16,11 @@ from unittest import mock
 
 from pythia.interaction import (
     ChatCompletionsEndpoint, ChatCompletionsModel, CodexAuth, CodexAuthUnavailable,
-    CodexResponsesModel, CompactionError, CompactionMetadata, CompactionResult, ContextPrefix,
+    CodexResponsesModel, CompactionContextWindowError, CompactionError, CompactionMetadata,
+    CompactionResult, CompactionSettings, ContextPrefix,
     ContextValidationError, DefaultEnvironment, Environment,
     Instructions, InteractionConfig, Message, MessagesEndpoint, MessagesModel, InteractionContext, ModelSample,
-    ModelSampleBoundary, OpaqueCompaction, PromptSummarizingCompactor, SampleParams, Init,
+    ModelSampleBoundary, NothingToCompact, OpaqueCompaction, PiCompactor, SampleParams, Init,
     TokenUsage, ToolCall, ToolResult, SampleMetadata, TurnSummary, UserInteraction,
     UserInteractionBoundary, UserToolCall, UserToolResult, load_interaction_save,
     render_interaction_items, save_interaction_save,
@@ -107,6 +108,9 @@ class UserToolValueTests(unittest.TestCase):
             "enable_auto_compaction = True",
             "auto_compact_tokens = None",
             "max_context_tokens = None",
+            "compaction_mode = 'pi'",
+            "compaction_keep_recent_tokens = 20000",
+            "compaction_max_output_tokens = None",
             "extra_sample_params = {}",
         )))
         json_dump = execute("/config.json")
@@ -275,9 +279,13 @@ class UserToolValueTests(unittest.TestCase):
         model = mock.Mock()
         model.sample.return_value = _answer("summary")
         context = InteractionContext((Message("user", "hello"), *_records()))
-        result = PromptSummarizingCompactor(model).compact(context)
-        submitted = model.sample.call_args.args[0]
+        result = PiCompactor(model, keep_recent_tokens=0).compact(context)
+        # The request keeps the raw log for provider continuity, but the model
+        # sees only the summary request, whose transcript omits user tools.
+        submitted = model.sample.call_args.args[0].model_items()
         self.assertFalse(any(isinstance(i, (UserToolCall, UserToolResult)) for i in submitted))
+        self.assertIn("[User]: hello", submitted[-1].content)
+        self.assertNotIn("private account", repr(submitted))
         context.extend(result.context_items())
         self.assertNotIn("private account", repr(context.model_items()))
         self.assertIn("private account", "\n".join(i.text for i in render_interaction_items(context.items)))
@@ -287,7 +295,7 @@ class UserToolValueTests(unittest.TestCase):
                          '{"workspace_id": "workspace"}')
         self.assertEqual(user_tools.parse_user_tool("/compact").arguments_json, "{}")
         for text in ("/login secret.code", "/quota secret-token",
-                     "/compact secret-token", "/login\ncode", "/unknown-secret"):
+                     "/compact\nsecret-token", "/login\ncode", "/unknown-secret"):
             with self.subTest(text=text), self.assertRaises(ValueError) as error:
                 user_tools.parse_user_tool(text)
             self.assertNotIn("secret", str(error.exception))
@@ -295,6 +303,23 @@ class UserToolValueTests(unittest.TestCase):
             result = Environment().execute_tool_calls((ToolCall(name, "model", "{}"),))
             self.assertFalse(result.items[0].success)
             self.assertIn("Unknown tool", result.items[0].output)
+
+    def test_compact_takes_optional_single_line_focus_text(self):
+        for command, arguments in (
+            ("/compact", {}),
+            ("  /compact   ", {}),
+            ("/compact keep the parser changes", {"instructions": "keep the parser changes"}),
+            ("/compact   spaced   focus  ", {"instructions": "spaced   focus"}),
+        ):
+            with self.subTest(command=command):
+                intent = user_tools.parse_user_tool(command)
+                self.assertEqual(intent.name, "compact")
+                self.assertEqual(json.loads(intent.arguments_json), arguments)
+                self.assertEqual(cli._compact_focus(intent), arguments.get("instructions"))
+        with self.assertRaisesRegex(ValueError, "single line"):
+            user_tools.parse_user_tool("/compact first\nsecond")
+        with self.assertRaisesRegex(ValueError, r"/compact \[focus\]"):
+            user_tools.parse_user_tool("/compactify")
 
     def test_auth_needed_editor_blocks_only_model_submissions_and_quit_bypasses_queue(self):
         state = cli._UIState(ready=True, auth_required=True, editor=Editor("hello", 5))
@@ -431,26 +456,22 @@ class UserToolControllerTests(unittest.IsolatedAsyncioTestCase):
         ]
         self.assertEqual(len(config_calls), 2)
         self.assertEqual(len(config_results), 2)
+        # The official Codex route defaults to provider compaction.
+        defaults = {
+            "enable_workspace": True,
+            "max_samples": None,
+            "max_output_tokens": None,
+            "enable_auto_compaction": True,
+            "auto_compact_tokens": None,
+            "max_context_tokens": None,
+            "compaction_mode": "provider",
+            "compaction_keep_recent_tokens": 20000,
+            "compaction_max_output_tokens": None,
+            "extra_sample_params": {},
+        }
         self.assertEqual(
             json.loads(config_results[0].result.output),
-            {
-                "enable_workspace": True,
-                "max_samples": None,
-                "max_output_tokens": None,
-                "enable_auto_compaction": True,
-                "auto_compact_tokens": None,
-                "max_context_tokens": None,
-                "extra_sample_params": {},
-                "__init__": {
-                    "enable_workspace": True,
-                    "max_samples": None,
-                    "max_output_tokens": None,
-                    "enable_auto_compaction": True,
-                    "auto_compact_tokens": None,
-                    "max_context_tokens": None,
-                    "extra_sample_params": {},
-                },
-            },
+            {**defaults, "__init__": defaults},
         )
         self.assertEqual(config_results[1].result.output,
                          "# init: max_output_tokens = None\nmax_output_tokens = 17")
@@ -984,11 +1005,13 @@ class UserToolControllerTests(unittest.IsolatedAsyncioTestCase):
         self.args.resume = True
         model = _Model(self.path)
         observations = []
+        parameters = []
 
         class FakeCompactor:
-            def compact(inner_self, source, *, tools=()):
+            def compact(inner_self, source, *, tools=(), sample_params=None, instructions=None):
                 persisted = load_interaction_save(self.path)
                 observations.append((source.items, tuple(tools), persisted.items))
+                parameters.append((sample_params, instructions))
                 return CompactionResult(
                     items=(ContextPrefix((
                         Message("user", "retained request"),
@@ -1014,7 +1037,9 @@ class UserToolControllerTests(unittest.IsolatedAsyncioTestCase):
         compactor = FakeCompactor()
         with mock.patch.object(cli, "create_default_compactor", return_value=compactor) as create:
             self.assertEqual(await self.run_cli(model, terminal), 0)
-        create.assert_called_once_with(model)
+        # The official Codex route defaults to provider compaction.
+        create.assert_called_once_with(model, CompactionSettings(mode="provider"))
+        self.assertEqual(parameters, [(SampleParams(enable_auto_compaction=True), None)])
         self.assertEqual(len(observations), 1)
         source_items, tools, persisted_items = observations[0]
         self.assertEqual(source_items, original)
@@ -1076,6 +1101,93 @@ class UserToolControllerTests(unittest.IsolatedAsyncioTestCase):
             for item in replay.items
         ))
 
+    def compact_frame(self, command):
+        submitted = False
+
+        def frame(t, editor, status):
+            nonlocal submitted
+            if status == "idle" and not submitted:
+                submitted = True
+                t.submit(command)
+            elif status == "idle" and submitted and self.path.exists():
+                items = load_interaction_save(self.path).items
+                if isinstance(items[-1], (CompactionMetadata, UserToolResult)):
+                    t.key("c-d")
+        return frame
+
+    async def test_compact_focus_reaches_a_pi_summary_request(self):
+        original = (
+            Init("old"),
+            Message("user", "old request"),
+            UserInteractionBoundary(),
+            Message("assistant", "previous answer"),
+            SampleMetadata(TokenUsage(total_tokens=10)),
+            ModelSampleBoundary(),
+            TurnSummary(sample_count=1),
+        )
+        save_interaction_save(self.path, InteractionContext(original))
+        self.args.resume = True
+        self.args.compaction_mode = "pi"
+        self.args.compaction_keep_recent_tokens = 0
+        self.args.compaction_max_output_tokens = 512
+        model = _Model(self.path, _answer("## Goal\nShip it."))
+        terminal = _Terminal(self.compact_frame("/compact keep file paths"))
+        self.assertEqual(await self.run_cli(model, terminal), 0)
+
+        [(request, tools, params)] = model.calls
+        self.assertEqual(tools, ())
+        self.assertEqual(params, SampleParams(max_output_tokens=512, enable_auto_compaction=False))
+        prompt = request.model_items()[-1].content
+        self.assertTrue(prompt.startswith("<conversation>\n[User]: old request"))
+        self.assertTrue(prompt.endswith("\n\nAdditional focus: keep file paths"))
+        saved = load_interaction_save(self.path)
+        call, result, checkpoint, metadata = saved.items[-4:]
+        self.assertEqual(json.loads(call.call.arguments_json), {"instructions": "keep file paths"})
+        self.assertTrue(result.result.success)
+        self.assertEqual(result.result.output, "Context compacted using a pi summary checkpoint.")
+        self.assertIsInstance(checkpoint, ContextPrefix)
+        self.assertEqual(metadata.protocol, "pi")
+        texts = [item.text for item in terminal.items]
+        self.assertIn("[context prefix] 1 item", texts)
+        self.assertIn("## Goal\nShip it.", texts)
+
+    async def test_compact_reports_nothing_to_compact_as_unsuccessful(self):
+        original = (Init("old"), Message("assistant", "previous answer"), TurnSummary(sample_count=1))
+        save_interaction_save(self.path, InteractionContext(original))
+        self.args.resume = True
+        self.args.compaction_mode = "pi"
+        model = _Model(self.path)
+        self.assertEqual(await self.run_cli(model, _Terminal(self.compact_frame("/compact"))), 0)
+        self.assertEqual(model.calls, [])
+        saved = load_interaction_save(self.path)
+        self.assertIsInstance(saved.items[-1], UserToolResult)
+        self.assertFalse(saved.items[-1].result.success)
+        self.assertEqual(
+            saved.items[-1].result.output,
+            "Nothing to compact: the context fits in compaction_keep_recent_tokens.",
+        )
+        self.assertFalse(any(isinstance(item, ContextPrefix) for item in saved))
+
+    async def test_compact_shows_a_context_window_failure(self):
+        original = (Init("old"), Message("assistant", "previous answer"), TurnSummary(sample_count=1))
+        save_interaction_save(self.path, InteractionContext(original))
+        self.args.resume = True
+        message = (
+            "summary request for the history (412 items, ~905,000 estimated tokens) "
+            "exceeded the model's context window; pi compaction sends each part in one "
+            "request and does not split it. Lower compaction_max_output_tokens, or raise "
+            "compaction_keep_recent_tokens to summarize less."
+        )
+        compactor = mock.Mock()
+        compactor.compact.side_effect = CompactionContextWindowError(message)
+        with mock.patch.object(cli, "create_default_compactor", return_value=compactor):
+            self.assertEqual(
+                await self.run_cli(_Model(self.path), _Terminal(self.compact_frame("/compact"))), 0,
+            )
+        result = load_interaction_save(self.path).items[-1]
+        self.assertFalse(result.result.success)
+        self.assertEqual(result.result.output, f"Compaction failed: {message}")
+
     async def test_compact_busy_status_is_compacting_with_live_elapsed_time(self):
         original = (
             Init("old"),
@@ -1089,14 +1201,14 @@ class UserToolControllerTests(unittest.IsolatedAsyncioTestCase):
         statuses = []
 
         class BlockingCompactor:
-            def compact(inner_self, source, *, tools=()):
-                del source, tools
+            def compact(inner_self, source, *, tools=(), sample_params=None, instructions=None):
+                del source, tools, sample_params, instructions
                 entered.set()
                 if not release.wait(2):
                     raise AssertionError("test did not release compaction")
                 return CompactionResult(
                     (ContextPrefix((Message("user", "summary"),)),),
-                    protocol="prompt_summarization",
+                    protocol="pi",
                 )
 
         submitted = False

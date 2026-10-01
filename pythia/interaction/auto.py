@@ -22,13 +22,13 @@ from typing import Optional
 import uuid
 
 from ._auto_board import Board, BoardError, BoardService, atomic_text
-from ._auto_config import DEFAULTS, NAMES, build_parser, load_saved_config, namespace, resolve_config
+from ._auto_config import DEFAULTS, NAMES, SAVED_CONFIG_VERSION, build_parser, load_saved_config, namespace, resolve_config
 from ._model_binding_debug import save_debug_model_bindings
 from ._cli_editor import Editor, safe_text
 from ._cli_terminal import PosixTerminal
 from ._prompt import load_prompt
-from .compaction import CompactionResult, create_default_compactor, should_auto_compact
-from .compaction import uses_host_auto_compaction
+from .compaction import CompactionResult, NothingToCompact, auto_compaction_due
+from .compaction import create_default_compactor, uses_host_auto_compaction
 from .context import InteractionContext
 from .default_environment import DefaultEnvironment
 from .display import DisplayItem, render_interaction_items
@@ -36,7 +36,7 @@ from .environment import Environment, Tool, ToolOutcome, ToolSpec
 from .items import Init, Instructions, Message, ModelSampleBoundary, ToolCall, ToolResult
 from .items import UserToolResult
 from .items import summarize_turn_usage
-from .model import ModelError, ModelSample
+from .model import ModelContextWindowError, ModelError, ModelSample
 from .model_config import build_model
 from .model_config import frontend_catalog, render_model_catalog
 from .model_catalog import BUILTIN_MODEL_CATALOG
@@ -184,6 +184,22 @@ def _environment_factory(index, args, tools):
                               extra_tools=tools)
 
 
+def _compact(session, index, model, environment, config, context, sample_params):
+    """Install one automatic compaction; False when there is nothing to compact."""
+    session._phase(index, "compacting")
+    compactor = create_default_compactor(model, config.compaction_settings())
+    try:
+        result = compactor.compact(context.copy(), tools=environment.tool_specs,
+                                   sample_params=sample_params)
+    except NothingToCompact:
+        return False
+    if not isinstance(result, CompactionResult):
+        raise TypeError("Expected CompactionResult.")
+    session._checkpoint(index, context, result.context_items())
+    session._emit(index, result.display_items())
+    return True
+
+
 class _Session:
     """Private fixed-role runtime; no dynamic manager/template API."""
     def __init__(self, path, settings, *, board_port=0,
@@ -288,7 +304,8 @@ class _Session:
             else:
                 (self.path / "contexts").mkdir(mode=0o700)
             atomic_text(self.path / "config.json", json.dumps({
-                "version": 1, "contexts": {str(i): s for i, s in self.settings.items()}
+                "version": SAVED_CONFIG_VERSION,
+                "contexts": {str(i): s for i, s in self.settings.items()},
             }, indent=2, ensure_ascii=False) + "\n")
             self.service = BoardService(
                 self.path, port=self._port, restored=restored,
@@ -517,21 +534,14 @@ class _Session:
         started = time.perf_counter()
         sample_params = config.sample_params()
         samples = 0
+        # Pi's overflow recovery: one compact-and-retry per turn.
+        overflow_recovered = False
         while config.max_samples is None or samples < config.max_samples:
             self._check_running()
-            threshold = config.auto_compact_tokens
-            if (config.enable_auto_compaction and uses_host_auto_compaction(model)
-                    and threshold is not None
-                    and should_auto_compact(context, threshold)):
-                self._phase(index, "compacting")
-                result = create_default_compactor(model).compact(context.copy(), tools=environment.tool_specs)
-                if not isinstance(result, CompactionResult):
-                    raise TypeError("Expected CompactionResult.")
-                self._checkpoint(index, context, result.context_items())
-                self._emit(index, result.display_items())
+            if auto_compaction_due(model, context, config):
+                _compact(self, index, model, environment, config, context, sample_params)
                 self._check_running()
             self._phase(index, "sampling")
-            samples += 1
             try:
                 sample = model.sample(
                     context.copy(), tools=environment.tool_specs,
@@ -547,7 +557,16 @@ class _Session:
                     results = tuple(ToolResult(c.call_id, "Not executed: the model response did not complete.", success=False) for c in calls)
                     self._checkpoint(index, context, results)
                     self._emit(index, render_interaction_items(results, source_calls=calls))
+                if (isinstance(exc, ModelContextWindowError) and not overflow_recovered
+                        and config.enable_auto_compaction and uses_host_auto_compaction(model)):
+                    overflow_recovered = True
+                    # A failed compaction fails the task; nothing to compact
+                    # leaves the sampling error.
+                    if _compact(self, index, model, environment, config, context, sample_params):
+                        continue
                 raise
+            # The failed attempt before an overflow retry does not count.
+            samples += 1
             if not isinstance(sample, ModelSample):
                 raise TypeError("Expected ModelSample.")
             self._checkpoint(index, context, sample.context_items())

@@ -6,6 +6,7 @@ from pythia_test.interaction_helpers import responses_endpoint
 from pythia_test.interaction_helpers import codex_model
 
 from contextlib import redirect_stdout
+from dataclasses import replace
 import io
 import json
 from pathlib import Path
@@ -120,7 +121,40 @@ class ConfigSeedingTests(unittest.TestCase):
             api_url="https://api.openai.com/v1", model="codex-gpt-6-astra", bearer_token="FAKE",
         ))
         config = InteractionConfig.from_model(model)
-        self.assertEqual(config.snapshot(), InteractionConfigSnapshot())
+        self.assertEqual(config.snapshot(), InteractionConfigSnapshot(compaction_mode="pi"))
+
+    def test_python_models_infer_the_compaction_mode(self):
+        official = codex_model(model="codex-gpt-6-astra", auth=CodexAuth("FAKE"))
+        self.assertTrue(official.supports_remote_compaction)
+        self.assertEqual(InteractionConfig.from_model(official).get("compaction_mode"), "provider")
+        # A snapshot may request pi on Codex.
+        self.assertEqual(InteractionConfig.from_model(
+            official, InteractionConfigSnapshot(compaction_mode="pi"),
+        ).get("compaction_mode"), "pi")
+        server = CaptureMessages(trigger=150_000)
+        self.assertEqual(InteractionConfig.from_model(server).get("compaction_mode"), "provider")
+        plain = MessagesModel(messages_endpoint(
+            api_url="https://api.anthropic.com", model="claude-fable-5.1",
+        ))
+        self.assertEqual(InteractionConfig.from_model(plain).get("compaction_mode"), "pi")
+
+        class Custom:
+            def sample(self, context, *, tools=(), sample_params=None):
+                raise AssertionError("not sampled")
+
+        self.assertEqual(InteractionConfig.from_model(Custom()).get("compaction_mode"), "pi")
+        for model, requested in (
+            (plain, "provider"), (server, "pi"), (Custom(), "provider"),
+            (ChatCompletionsModel(chat_endpoint(api_url="http://localhost:8000")), "provider"),
+            (codex_model(responses_endpoint(
+                api_url="https://api.openai.com/v1", model="m", bearer_token="FAKE",
+            )), "provider"),
+        ):
+            with self.subTest(model=type(model).__name__, requested=requested):
+                with self.assertRaises(ConfigError):
+                    InteractionConfig.from_model(
+                        model, InteractionConfigSnapshot(compaction_mode=requested),
+                    )
 
     def test_python_endpoint_preferences_seed_but_do_not_override_runtime_config(self):
         model = CaptureMessages(trigger=150_000)
@@ -157,7 +191,8 @@ class ConfigSeedingTests(unittest.TestCase):
     def test_messages_validation_is_atomic_even_while_disabled(self):
         for enabled in (False, True):
             with self.subTest(enabled=enabled):
-                args = arguments("messages", "claude-fable-5.1", enable_auto_compaction=enabled)
+                args = arguments("messages", "claude-fable-5.1", enable_auto_compaction=enabled,
+                                 compaction_mode="provider")
                 config = InteractionConfig.from_namespace(args)
                 before = config.snapshot()
                 with self.assertRaisesRegex(ConfigError, "50000"):
@@ -240,18 +275,19 @@ class SampleParamsPrecedenceTests(unittest.TestCase):
             )
 
     def test_enabling_messages_compaction_without_endpoint_policy(self):
+        # Enabling never creates a server policy: without one, the host owns
+        # automatic compaction (pi mode).
         model = MessagesModel(messages_endpoint(
             api_url="https://api.anthropic.com", model="claude-fable-5.1",
         ))
-        payload = model._build_request_payload(previous_context(), (), SampleParams(
-            max_output_tokens=77, enable_auto_compaction=True,
-        ))
-        self.assertEqual(payload["context_management"]["edits"], [{
-            "type": "compact_20260112",
-            "trigger": {"type": "input_tokens", "value": 872_000},
-        }])
+        self.assertEqual(model.auto_compaction_owner, "host")
+        for params in (None, SampleParams(max_output_tokens=77, enable_auto_compaction=True)):
+            with self.subTest(params=params):
+                payload = model._build_request_payload(previous_context(), (), params)
+                self.assertNotIn("context_management", payload)
         uncatalogued = MessagesModel(messages_endpoint(
             api_url="https://api.anthropic.com", model="custom-claude", max_output_tokens=77,
+            server_compaction=MessagesServerCompaction(),
         ))
         payload = uncatalogued._build_request_payload(previous_context(), (), SampleParams(
             enable_auto_compaction=True,
@@ -276,12 +312,12 @@ class SampleParamsPrecedenceTests(unittest.TestCase):
 
 
 class FrontendPolicyTests(unittest.IsolatedAsyncioTestCase):
-    async def test_cli_messages_has_only_server_compaction(self):
+    async def test_cli_messages_provider_mode_has_only_server_compaction(self):
         for threshold, enabled in ((None, True), (100_000, True), (100_000, False)):
             with self.subTest(threshold=threshold, enabled=enabled), tempfile.TemporaryDirectory() as directory:
                 config = InteractionConfig.from_namespace(arguments(
                     "messages", "claude-fable-5.1", auto_compact_tokens=threshold,
-                    enable_auto_compaction=enabled,
+                    enable_auto_compaction=enabled, compaction_mode="provider",
                 ))
                 model = CaptureMessages(trigger=150_000)
                 with mock.patch.object(cli, "create_default_compactor", side_effect=AssertionError("host compaction")):
@@ -293,6 +329,25 @@ class FrontendPolicyTests(unittest.IsolatedAsyncioTestCase):
                                      config.get("auto_compact_tokens"))
                 else:
                     self.assertNotIn("context_management", model.payloads[0])
+
+    async def test_cli_messages_pi_mode_compacts_on_the_host(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = InteractionConfig.from_namespace(arguments(
+                "messages", "claude-fable-5.1", auto_compact_tokens=100,
+            ))
+            self.assertEqual(config.get("compaction_mode"), "pi")
+            model = CaptureMessages()
+            model.endpoint = replace(model.endpoint, server_compaction=None)
+            compactor = mock.Mock()
+            compactor.compact.return_value = CompactionResult((ContextPrefix((Message("user", "summary"),)),))
+            with mock.patch.object(cli, "create_default_compactor", return_value=compactor) as create:
+                await cli._turn(previous_context(), model, Environment(), cli._UIState(headless=True),
+                                Path(directory) / "log.jsonl", config)
+            create.assert_called_once_with(model, config.snapshot().compaction_settings())
+            self.assertEqual(compactor.compact.call_args.kwargs["sample_params"],
+                             config.snapshot().sample_params())
+            self.assertEqual(len(model.payloads), 1)
+            self.assertNotIn("context_management", model.payloads[0])
 
     async def test_cli_host_uses_only_config_including_none(self):
         for threshold in (None, 100):
@@ -397,20 +452,26 @@ class AutoSeedingTests(unittest.TestCase):
             configs[1].set("auto_compact_tokens", 100_000)
             self.assertEqual(configs[2].get("auto_compact_tokens"), 872_000)
             saved = Path(directory) / "saved.json"
-            saved.write_text(json.dumps({"version": 1, "contexts": {str(i): s for i, s in raw.items()}}))
+            saved.write_text(json.dumps({"version": 2, "contexts": {str(i): s for i, s in raw.items()}}))
             resumed = resolve_config(saved=load_saved_config(saved))
             self.assertEqual(resumed, raw)
 
     def test_saved_config_rejects_missing_current_keys(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "saved.json"
-            raw = resolve_config(overrides={"model_api": "codex", "model": "codex-gpt-6-astra"})
-            for settings in raw.values():
-                del settings["auto_compact_tokens"], settings["max_context_tokens"]
-            document = {"version": 1, "contexts": {str(i): s for i, s in raw.items()}}
-            path.write_text(json.dumps(document))
-            with self.assertRaisesRegex(ValueError, "Invalid saved"):
-                load_saved_config(path)
+            for version, missing in (
+                (1, ("auto_compact_tokens", "max_context_tokens")),
+                (2, ("compaction_mode",)),
+            ):
+                with self.subTest(version=version):
+                    raw = resolve_config(overrides={"model_api": "codex", "model": "codex-gpt-6-astra"})
+                    for settings in raw.values():
+                        for key in missing:
+                            del settings[key]
+                    document = {"version": version, "contexts": {str(i): s for i, s in raw.items()}}
+                    path.write_text(json.dumps(document))
+                    with self.assertRaisesRegex(ValueError, "Invalid saved"):
+                        load_saved_config(path)
 
     def test_new_cli_defaults_are_suppressed_and_values_are_validated_per_context(self):
         args = build_parser().parse_args([])
@@ -421,7 +482,17 @@ class AutoSeedingTests(unittest.TestCase):
                     resolve_config(overrides={key: value})
         with self.assertRaisesRegex(ValueError, "50000"):
             resolve_config(overrides={"model_api": "messages", "model": "claude-fable-5.1",
+                                      "compaction_mode": "provider",
                                       "auto_compact_tokens": 49_999})
+        # The minimum binds only Anthropic's server compaction.
+        resolve_config(overrides={"model_api": "messages", "model": "claude-fable-5.1",
+                                  "auto_compact_tokens": 49_999})
+        for key, value in (("compaction_mode", "remote"), ("compaction_keep_recent_tokens", -1),
+                           ("compaction_max_output_tokens", 0)):
+            with self.subTest(key=key, value=value), self.assertRaises(ValueError):
+                resolve_config(overrides={key: value})
+        with self.assertRaisesRegex(ValueError, "no provider compaction"):
+            resolve_config(overrides={"model": "muse-spark-1.3", "compaction_mode": "provider"})
 
 
 if __name__ == "__main__":

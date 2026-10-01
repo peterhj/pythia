@@ -804,8 +804,6 @@ def _close_response(response: Any) -> None:
 
 
 class MessagesModel:
-    auto_compaction_owner = "server"
-
     def __init__(
         self,
         endpoint: MessagesEndpoint,
@@ -821,6 +819,11 @@ class MessagesModel:
         self.binding = endpoint.binding
         self._opener = opener or urllib.request.urlopen
         self._retry_sleep = time.sleep if retry_sleep is None else retry_sleep
+
+    @property
+    def auto_compaction_owner(self) -> str:
+        """``server`` with configured server compaction, else ``host``."""
+        return "server" if self.endpoint.server_compaction is not None else "host"
 
     @property
     def max_context_tokens(self) -> Optional[int]:
@@ -867,17 +870,22 @@ class MessagesModel:
         if self.endpoint.prompt_caching is not None:
             # Let the API place and advance the breakpoint. In particular,
             # do not attach explicit cache controls to thinking/empty blocks.
+            # TODO: Add a per-call ``SampleParams.enable_prompt_caching``
+            # (None inherits this policy, False omits cache_control, True
+            # creates no policy), and set it to False for pi summary requests:
+            # nothing reads their cache entries, and 5-minute writes cost
+            # 1.25x base input (pi sends summaries with cacheRetention "none").
             payload["cache_control"] = (
                 self.endpoint.prompt_caching.request_cache_control()
             )
         compaction = self.endpoint.server_compaction
-        auto_compaction_override = (
-            None if sample_params is None else sample_params.enable_auto_compaction
+        # A per-call False suppresses configured server compaction; None and
+        # True leave it as configured and never create a policy.
+        suppressed = (
+            sample_params is not None
+            and sample_params.enable_auto_compaction is False
         )
-        if compaction is None and auto_compaction_override is True:
-            compaction = MessagesServerCompaction()
-        enable_auto_compaction = auto_compaction_override is not False
-        if compaction is not None and enable_auto_compaction:
+        if compaction is not None and not suppressed:
             # Per-call > endpoint > catalog; if none is known, omit the
             # trigger so the server uses its default.
             auto_compact_context = (

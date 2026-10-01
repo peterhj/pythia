@@ -3,11 +3,14 @@ from __future__ import annotations
 import json
 import unittest
 
+from pythia.interaction import COMPACTION_SUMMARY_PREFIX
+from pythia.interaction import COMPACTION_SUMMARY_SUFFIX
 from pythia.interaction import CompactionMetadata
 from pythia.interaction import CompactionResult
 from pythia.interaction import ContextPrefix
 from pythia.interaction import DisplayItem
 from pythia.interaction import EnvironmentResult
+from pythia.interaction import Instructions
 from pythia.interaction import InteractionItemRenderer
 from pythia.interaction import Message
 from pythia.interaction import ModelFailure
@@ -22,6 +25,7 @@ from pythia.interaction import SampleMetadata
 from pythia.interaction import UserInteraction
 from pythia.interaction import UserInteractionBoundary
 from pythia.interaction import render_interaction_items
+from pythia.interaction.compaction import _LEGACY_SUMMARY_PREFIX
 
 
 ANSI_GREEN = "\x1b[32m"
@@ -193,6 +197,42 @@ class InteractionItemRendererTests(unittest.TestCase):
             ("reasoning",) * 3,
         )
         self.assertNotIn(signature, "\n".join(str(item) for item in rendered))
+
+    def test_context_prefix_shows_its_compaction_summary(self):
+        kept = (
+            Message("user", "Kept request."),
+            Message("assistant", "Kept answer."),
+            ModelSampleBoundary(),
+        )
+        for label, summary in (
+            ("new-style", f"{COMPACTION_SUMMARY_PREFIX}## Goal\nShip it.{COMPACTION_SUMMARY_SUFFIX}"),
+            ("old-style", f"{_LEGACY_SUMMARY_PREFIX}\n## Goal\nShip it."),
+        ):
+            with self.subTest(label=label):
+                rendered = render_interaction_items((ContextPrefix((
+                    Instructions("Rules."),
+                    OpaqueCompaction.from_responses("carried-checkpoint"),
+                    Message("user", summary),
+                    *kept,
+                )),))
+                # The kept items were shown where they first appeared.
+                self.assertEqual(tuple(item.text for item in rendered), (
+                    "[context prefix] 6 items",
+                    "## Goal\nShip it.",
+                ))
+                self.assertEqual(tuple(item.label for item in rendered), ("context prefix", None))
+        # Summaries are literal payloads, even when they start like a label.
+        literal = render_interaction_items((ContextPrefix((
+            Message("user", f"{COMPACTION_SUMMARY_PREFIX}[user] quoted{COMPACTION_SUMMARY_SUFFIX}"),
+        )),))
+        self.assertEqual(literal[1], DisplayItem("[user] quoted"))
+        self.assertIsNone(literal[1].label)
+        # Remote checkpoints render as before.
+        remote = render_interaction_items((ContextPrefix((
+            Message("user", "Retained request."),
+            OpaqueCompaction.from_responses("secret"),
+        )),))
+        self.assertEqual(tuple(item.text for item in remote), ("[context prefix] 2 items",))
 
     def test_message_label_retains_the_full_role(self):
         rendered = render_interaction_items((Message("  custom] role  ", "body"),))

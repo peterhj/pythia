@@ -15,6 +15,7 @@ from contextlib import contextmanager
 from contextlib import nullcontext
 from dataclasses import dataclass
 from dataclasses import field
+import json
 import os
 from pathlib import Path
 import queue
@@ -38,8 +39,9 @@ from ._prompt import load_prompt
 from .codex_auth import CodexAuthUnavailable
 from .compaction import CompactionError
 from .compaction import CompactionResult
+from .compaction import NothingToCompact
+from .compaction import auto_compaction_due
 from .compaction import create_default_compactor
-from .compaction import should_auto_compact
 from .compaction import uses_host_auto_compaction
 from .context import InteractionContext
 from .default_environment import DefaultEnvironment
@@ -68,6 +70,7 @@ from .media import AttachmentError
 from .media import parse_user_prompt
 from .model import Model
 from .model import ModelAuthenticationError
+from .model import ModelContextWindowError
 from .model import ModelError
 from .model import SampleParams
 from .model_config import DEFAULT_SAVE_PATH
@@ -352,12 +355,23 @@ def _compaction_failure_output(exc: BaseException) -> str:
 def _compaction_success_output(result: CompactionResult) -> str:
     checkpoint = result.items[0]
     assert isinstance(checkpoint, ContextPrefix)
-    opaque = any(
+    # A pi prefix can carry an earlier Responses checkpoint verbatim.
+    remote = result.protocol != "pi" and any(
         isinstance(item, OpaqueCompaction)
         for item in checkpoint.prefix_items
     )
-    mode = "a remote opaque checkpoint" if opaque else "a prompt summary checkpoint"
+    mode = "a remote opaque checkpoint" if remote else "a pi summary checkpoint"
     return f"Context compacted using {mode}."
+
+
+def _compact_focus(intent: UserToolIntent) -> Optional[str]:
+    """The optional focus text of ``/compact [focus]``."""
+    try:
+        arguments = json.loads(intent.arguments_json)
+    except ValueError:
+        return None
+    focus = arguments.get("instructions") if isinstance(arguments, dict) else None
+    return focus if isinstance(focus, str) else None
 
 
 async def _compact_user_tool(
@@ -367,11 +381,13 @@ async def _compact_user_tool(
     model_environment: Environment,
     state: _UIState,
     path: Path,
+    config: InteractionConfig,
 ) -> Optional[Model]:
     # A pending UserToolCall deliberately makes a context non-sampleable. Take
     # the immutable compaction source first, then durably record authorization
     # for the effect before starting it.
     source_context = context.copy()
+    snapshot = config.snapshot()
     call = UserToolCall(
         ToolCall(
             intent.name,
@@ -414,18 +430,31 @@ async def _compact_user_tool(
             contribution: tuple[InteractionItem, ...] = (result_item,)
         else:
             try:
-                compactor = create_default_compactor(model)
+                compactor = create_default_compactor(
+                    model, snapshot.compaction_settings(),
+                )
                 with _traced_operation(state, "compact"):
                     compaction = await asyncio.to_thread(
                         compactor.compact,
                         source_context,
                         tools=model_environment.tool_specs,
+                        sample_params=snapshot.sample_params(),
+                        instructions=_compact_focus(intent),
                     )
                 if not isinstance(compaction, CompactionResult):
                     raise TypeError(
                         "compactor must return CompactionResult, got "
                         f"{type(compaction).__name__}"
                     )
+            except NothingToCompact as exc:
+                result_item = UserToolResult(
+                    ToolResult(
+                        call.call.call_id,
+                        f"Nothing to compact: {exc}.",
+                        success=False,
+                    )
+                )
+                contribution = (result_item,)
             except Exception as exc:
                 if isinstance(exc, ModelAuthenticationError):
                     _mark_auth_required(state, exc)
@@ -477,6 +506,7 @@ async def _user_tool(
             model_environment,
             state,
             path,
+            config,
         )
     expected_account = state.bound_account_id
     call = UserToolCall(ToolCall(intent.name, "user_" + uuid.uuid4().hex, intent.arguments_json))
@@ -538,6 +568,79 @@ async def _user_tool(
     return model
 
 
+async def _record_sample_failure(
+    context: InteractionContext,
+    exc: ModelError,
+    state: _UIState,
+    path: Path,
+) -> None:
+    """Durably close a failed sample: its completed output and failure."""
+    contribution = (
+        *exc.completed_items,
+        *((exc.failure,) if exc.failure is not None else ()),
+    )
+    if not contribution:
+        return
+    recovered = (*contribution, ModelSampleBoundary())
+    await _append(context, recovered, state, path)
+    state.displays.extend(render_interaction_items(contribution))
+    recovered_calls = tuple(
+        item for item in exc.completed_items
+        if isinstance(item, ToolCall)
+    )
+    if recovered_calls:
+        results = tuple(
+            ToolResult(
+                call_id=call.call_id,
+                output=(
+                    "Not executed because the model response did "
+                    "not complete."
+                ),
+                success=False,
+            )
+            for call in recovered_calls
+        )
+        await _append(context, results, state, path)
+        state.displays.extend(
+            render_interaction_items(
+                results,
+                source_calls=recovered_calls,
+            )
+        )
+
+
+async def _auto_compact(
+    context: InteractionContext,
+    model: Model,
+    environment: Environment,
+    state: _UIState,
+    path: Path,
+    turn_config,
+    sample_params: SampleParams,
+) -> bool:
+    """Install one automatic compaction; False when there is nothing to compact."""
+    state.set_phase("compacting")
+    compactor = create_default_compactor(model, turn_config.compaction_settings())
+    try:
+        with _traced_operation(state, "compact"):
+            compaction = await asyncio.to_thread(
+                compactor.compact,
+                context.copy(),
+                tools=environment.tool_specs,
+                sample_params=sample_params,
+            )
+    except NothingToCompact:
+        return False
+    if not isinstance(compaction, CompactionResult):
+        raise TypeError(
+            "compactor must return CompactionResult, got "
+            f"{type(compaction).__name__}"
+        )
+    await _append(context, compaction.context_items(), state, path)
+    state.displays.extend(compaction.display_items())
+    return True
+
+
 async def _turn(
     context: InteractionContext,
     model: Model,
@@ -553,6 +656,8 @@ async def _turn(
     sample_params = turn_config.sample_params()
     turn_started = time.perf_counter()
     samples = 0
+    # Pi's overflow recovery: one compact-and-retry per turn.
+    overflow_recovered = False
     while not state.closing:
         if (
             turn_config.max_samples is not None
@@ -562,33 +667,11 @@ async def _turn(
                 "model did not produce a final answer within "
                 f"{turn_config.max_samples} samples"
             )
-        threshold = turn_config.auto_compact_tokens
-        if (
-            turn_config.enable_auto_compaction
-            and uses_host_auto_compaction(model)
-            and threshold is not None
-            and should_auto_compact(context, threshold)
-        ):
-            state.set_phase("compacting")
-            compactor = create_default_compactor(model)
-            with _traced_operation(state, "compact"):
-                compaction = await asyncio.to_thread(
-                    compactor.compact,
-                    context.copy(),
-                    tools=environment.tool_specs,
-                )
-            if not isinstance(compaction, CompactionResult):
-                raise TypeError(
-                    "compactor must return CompactionResult, got "
-                    f"{type(compaction).__name__}"
-                )
-            await _append(
-                context,
-                compaction.context_items(),
-                state,
-                path,
+        if auto_compaction_due(model, context, turn_config):
+            await _auto_compact(
+                context, model, environment, state, path,
+                turn_config, sample_params,
             )
-            state.displays.extend(compaction.display_items())
             if state.closing:
                 return
         state.set_phase("sampling")
@@ -601,37 +684,32 @@ async def _turn(
                     sample_params=sample_params,
                 )
         except ModelError as exc:
-            contribution = (
-                *exc.completed_items,
-                *((exc.failure,) if exc.failure is not None else ()),
-            )
-            if contribution:
-                recovered = (*contribution, ModelSampleBoundary())
-                await _append(context, recovered, state, path)
-                state.displays.extend(render_interaction_items(contribution))
-                recovered_calls = tuple(
-                    item for item in exc.completed_items
-                    if isinstance(item, ToolCall)
+            await _record_sample_failure(context, exc, state, path)
+            if (
+                isinstance(exc, ModelContextWindowError)
+                and not overflow_recovered
+                and turn_config.enable_auto_compaction
+                and uses_host_auto_compaction(model)
+                and not state.closing
+            ):
+                overflow_recovered = True
+                state.notice(
+                    "Model context window exceeded; compacting before one retry."
                 )
-                if recovered_calls:
-                    results = tuple(
-                        ToolResult(
-                            call_id=call.call_id,
-                            output=(
-                                "Not executed because the model response did "
-                                "not complete."
-                            ),
-                            success=False,
-                        )
-                        for call in recovered_calls
+                try:
+                    compacted = await _auto_compact(
+                        context, model, environment, state, path,
+                        turn_config, sample_params,
                     )
-                    await _append(context, results, state, path)
-                    state.displays.extend(
-                        render_interaction_items(
-                            results,
-                            source_calls=recovered_calls,
-                        )
-                    )
+                except Exception:
+                    # The turn fails as it does for a sampling error.
+                    state.retry = _RetryIntent()
+                    raise
+                if compacted:
+                    if state.closing:
+                        return
+                    continue
+                # Nothing to compact: the sampling error stands.
             state.retry = _RetryIntent()
             raise
         except Exception:
@@ -1089,7 +1167,7 @@ async def _run(
         trace=trace,
     )
     state.notice(
-        "pythia.interaction — /retry, /compact, /config, /config.json, /login, /quota; "
+        "pythia.interaction — /retry, /compact [focus], /config, /config.json, /login, /quota; "
         "/quit or /exit; Ctrl-C/Ctrl-D exit."
     )
     _startup_notices(state, args, path)

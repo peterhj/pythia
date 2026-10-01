@@ -8,8 +8,10 @@ import unittest
 from unittest import mock
 
 from pythia.interaction import (
-    CompactionResult, ContextPrefix, Environment, Init, InteractionContext,
-    Message, ModelAuthenticationError, ModelFailure, ModelResponseError,
+    CompactionContextWindowError, CompactionMetadata, CompactionResult,
+    CompactionSettings, ContextPrefix, Environment, Init, InteractionContext,
+    Message, ModelAuthenticationError, ModelContextWindowError, ModelFailure,
+    ModelResponseError, NothingToCompact,
     ModelSample, ModelSampleBoundary, ModelTimeoutError, OpaqueCompaction,
     Reasoning, SampleParams, SaveError, Tool, ToolCall, ToolOutcome,
     ToolResult, ToolSpec, TurnSummary, UserInteractionBoundary, UserToolCall,
@@ -242,7 +244,7 @@ class RetryControllerTests(_ControllerTestCase):
                 compactor.compact.side_effect = ModelTimeoutError("compaction failed")
                 terminal = _Terminal(frame)
                 with mock.patch.object(environment, "execute_tool_calls", side_effect=RuntimeError("lost tool result")) as execute, \
-                        mock.patch.object(cli, "should_auto_compact", return_value=kind == "compaction"), \
+                        mock.patch.object(cli, "auto_compaction_due", return_value=kind == "compaction"), \
                         mock.patch.object(cli, "create_default_compactor", return_value=compactor):
                     self.assertEqual(await self._run(model, terminal, [
                         "--prompt", "hello", "--max-samples", "1", "--auto-compact-tokens", "100",
@@ -430,6 +432,130 @@ class RetryAuthenticationTests(_ControllerTestCase):
             release.set()
         self.assertTrue(entered.is_set())
         self.assertEqual(replacement.calls, [])
+
+
+OVERFLOW = ModelFailure(category="context_window", message="Messages HTTP 400: context window exceeded")
+OVERFLOW_NOTICE = "[cli] Model context window exceeded; compacting before one retry."
+
+
+def overflow():
+    return ModelContextWindowError("prompt is too long", failure=OVERFLOW)
+
+
+def quit_when_settled(terminal, editor, status):
+    if status in {"idle", "failed"}:
+        terminal.key("c-d")
+
+
+class OverflowRecoveryTests(_ControllerTestCase):
+    def compactor(self, **kwargs):
+        compactor = mock.Mock()
+        compactor.compact.return_value = CompactionResult(
+            (ContextPrefix((Message("user", "summary"),)),), protocol="pi",
+        )
+        for name, value in kwargs.items():
+            setattr(compactor.compact, name, value)
+        return compactor
+
+    async def test_context_window_error_compacts_once_and_retries_the_sample(self):
+        model = _Model(self.path, overflow(), _answer("recovered"))
+        compactor = self.compactor()
+        terminal = _Terminal(quit_when_settled)
+        with mock.patch.object(cli, "create_default_compactor", return_value=compactor) as create:
+            self.assertEqual(await self._run(model, terminal, ["--prompt", "hello"]), 0)
+        create.assert_called_once_with(model, CompactionSettings())
+        compactor.compact.assert_called_once()
+        self.assertEqual(compactor.compact.call_args.kwargs["sample_params"], model.calls[0][2])
+        self.assertEqual(len(model.calls), 2)
+        self.assertEqual(model.calls[1][0].model_items(), (Message("user", "summary"),))
+        saved = load_interaction_save(self.path)
+        # The failure is recorded before the compaction that recovers it.
+        failure_index = saved.items.index(OVERFLOW)
+        self.assertIsInstance(saved.items[failure_index + 1], ModelSampleBoundary)
+        self.assertIsInstance(saved.items[failure_index + 2], ContextPrefix)
+        self.assertIsInstance(saved.items[failure_index + 3], CompactionMetadata)
+        self.assertIsInstance(saved.items[-1], TurnSummary)
+        texts = [item.text for item in terminal.items]
+        self.assertIn(OVERFLOW_NOTICE, texts)
+        self.assertNotIn(HINT, texts)
+
+    async def test_second_overflow_in_a_turn_fails_and_arms_retry(self):
+        model = _Model(self.path, overflow(), overflow(), _answer("after retry"))
+        compactor = self.compactor()
+        with mock.patch.object(cli, "create_default_compactor", return_value=compactor):
+            self.assertEqual(await self._run(model, _Terminal(retry_then_quit()), ["--prompt", "hello"]), 1)
+        # One recovery per turn; the explicit /retry starts a new attempt.
+        compactor.compact.assert_called_once()
+        self.assertEqual(len(model.calls), 3)
+
+    async def test_nothing_to_compact_keeps_the_sampling_error(self):
+        model = _Model(self.path, overflow())
+        compactor = self.compactor(side_effect=NothingToCompact(
+            "the context fits in compaction_keep_recent_tokens",
+        ))
+        terminal = _Terminal(quit_when_settled)
+        with mock.patch.object(cli, "create_default_compactor", return_value=compactor):
+            self.assertEqual(await self._run(model, terminal, ["--prompt", "hello"]), 1)
+        self.assertEqual(len(model.calls), 1)
+        texts = [item.text for item in terminal.items]
+        self.assertIn("[cli] ModelContextWindowError: prompt is too long", texts)
+        self.assertIn(HINT, texts)
+        self.assertFalse(any(isinstance(item, ContextPrefix) for item in load_interaction_save(self.path)))
+
+    async def test_failed_recovery_compaction_fails_the_turn_with_retry(self):
+        message = (
+            "summary request for the history (412 items, ~905,000 estimated tokens) "
+            "exceeded the model's context window"
+        )
+        model = _Model(self.path, overflow(), _answer("after retry"))
+        compactor = self.compactor(side_effect=CompactionContextWindowError(message))
+        terminal = _Terminal(retry_then_quit())
+        with mock.patch.object(cli, "create_default_compactor", return_value=compactor):
+            self.assertEqual(await self._run(model, terminal, ["--prompt", "hello"]), 1)
+        texts = [item.text for item in terminal.items]
+        self.assertIn(f"[cli] CompactionContextWindowError: {message}", texts)
+        self.assertIn(HINT, texts)
+        self.assertEqual(len(model.calls), 2)
+
+    async def test_no_recovery_without_host_owned_automatic_compaction(self):
+        for argv, owner in (
+            (["--enable-auto-compaction=False"], "host"),
+            ([], "server"),
+        ):
+            with self.subTest(argv=argv, owner=owner):
+                model = _Model(self.path, overflow())
+                model.auto_compaction_owner = owner
+                compactor = self.compactor()
+                terminal = _Terminal(quit_when_settled)
+                with mock.patch.object(cli, "create_default_compactor", return_value=compactor) as create:
+                    self.assertEqual(await self._run(model, terminal, ["--prompt", "hello", *argv]), 1)
+                create.assert_not_called()
+                self.assertIn(HINT, [item.text for item in terminal.items])
+
+    async def test_threshold_nothing_to_compact_samples_normally(self):
+        model = _Model(self.path, _answer("done"))
+        compactor = self.compactor(side_effect=NothingToCompact("nothing precedes the recent tail"))
+        with mock.patch.object(cli, "create_default_compactor", return_value=compactor):
+            self.assertEqual(await self._run(model, _Terminal(quit_when_settled), [
+                "--prompt", "hello", "--auto-compact-tokens", "1",
+            ]), 0)
+        compactor.compact.assert_called_once()
+        self.assertEqual(len(model.calls), 1)
+        self.assertFalse(any(isinstance(item, CompactionMetadata) for item in load_interaction_save(self.path)))
+
+    async def test_failed_threshold_compaction_fails_the_turn_without_retry(self):
+        message = "summary request for the history (3 items, ~9 estimated tokens) exceeded the model's context window"
+        model = _Model(self.path)
+        compactor = self.compactor(side_effect=CompactionContextWindowError(message))
+        terminal = _Terminal(quit_when_settled)
+        with mock.patch.object(cli, "create_default_compactor", return_value=compactor):
+            self.assertEqual(await self._run(model, terminal, [
+                "--prompt", "hello", "--auto-compact-tokens", "1",
+            ]), 1)
+        self.assertEqual(model.calls, [])
+        texts = [item.text for item in terminal.items]
+        self.assertIn(f"[cli] CompactionContextWindowError: {message}", texts)
+        self.assertNotIn(HINT, texts)
 
 
 if __name__ == "__main__":

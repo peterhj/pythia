@@ -20,11 +20,12 @@ from pythia.interaction import CODEX_RESPONSES_API_URL
 from pythia.interaction import ChatCompletionsModel
 from pythia.interaction import CodexAuth
 from pythia.interaction import CodexResponsesModel
+from pythia.interaction import COMPACTION_SUMMARY_PREFIX
+from pythia.interaction import COMPACTION_SUMMARY_SUFFIX
 from pythia.interaction import CompactionError
 from pythia.interaction import CompactionMetadata
+from pythia.interaction import CompactionSettings
 from pythia.interaction import ContextPrefix
-from pythia.interaction import DEFAULT_COMPACTION_MAX_OUTPUT_TOKENS
-from pythia.interaction import DEFAULT_SUMMARY_PREFIX
 from pythia.interaction import DEFAULT_REQUEST_TIMEOUT_SECONDS
 from pythia.interaction import Environment
 from pythia.interaction import Init
@@ -35,9 +36,10 @@ from pythia.interaction import ModelAuthenticationError
 from pythia.interaction import ModelConfigurationError
 from pythia.interaction import InteractionContext
 from pythia.interaction import ModelResponseError
+from pythia.interaction import ModelSampleBoundary
 from pythia.interaction import ModelTransportError
 from pythia.interaction import OpaqueCompaction
-from pythia.interaction import PromptSummarizingCompactor
+from pythia.interaction import PiCompactor
 from pythia.interaction import Reasoning
 from pythia.interaction import REMOTE_COMPACTION_V2_RETAINED_USER_MESSAGE_TOKENS
 from pythia.interaction import ResponsesOpaqueCompactor
@@ -55,6 +57,7 @@ from pythia.interaction import X_CODEX_TURN_STATE_HEADER
 from pythia.interaction import create_default_compactor
 from pythia.interaction import load_interaction_save
 from pythia.interaction import save_interaction_save
+from pythia.interaction.compaction import _LEGACY_SUMMARY_PREFIX
 from pythia.interaction.demo import DEFAULT_PROMPT
 from pythia.interaction.demo import EXPERIMENTAL_USER_MESSAGE_PROMPT
 from pythia.interaction.demo import _build_model
@@ -727,7 +730,8 @@ class CodexResponsesModelTests(unittest.TestCase):
         )
         context = InteractionContext((
             Message("user", "old-user"),
-            Message("user", f"{DEFAULT_SUMMARY_PREFIX}\nold local summary"),
+            Message("user", f"{_LEGACY_SUMMARY_PREFIX}\nold local summary"),
+            Message("user", f"{COMPACTION_SUMMARY_PREFIX}pi summary{COMPACTION_SUMMARY_SUFFIX}"),
             Message("assistant", "old assistant output"),
             Message("user", "new-user"),
         ))
@@ -747,6 +751,12 @@ class CodexResponsesModelTests(unittest.TestCase):
         request_text = json.dumps(_request_payload(opener)["input"])
         self.assertIn("old-user", request_text)
         self.assertIn("old local summary", request_text)
+        self.assertIn("pi summary", request_text)
+        # Neither summary style is retained as a user message.
+        retained = ResponsesOpaqueCompactor(model)._is_retained_user_message
+        self.assertFalse(retained(context[1]))
+        self.assertFalse(retained(context[2]))
+        self.assertTrue(retained(context[0]))
 
     def test_extra_sample_params_extend_samples_and_remote_v2_compaction(self):
         binding = BUILTIN_MODEL_CATALOG.bind(
@@ -921,18 +931,91 @@ class CodexResponsesModelTests(unittest.TestCase):
         self.assertTrue(official.supports_remote_compaction)
         self.assertFalse(custom.supports_remote_compaction)
         self.assertFalse(meta.supports_remote_compaction)
+        provider = CompactionSettings(mode="provider")
         self.assertIsInstance(
-            create_default_compactor(official),
+            create_default_compactor(official, provider),
             ResponsesOpaqueCompactor,
         )
+        # Pi mode, the default settings, uses pi even on the official route.
+        for settings in (CompactionSettings(), CompactionSettings(mode="pi")):
+            self.assertIsInstance(create_default_compactor(official, settings), PiCompactor)
         for model in (custom, meta):
-            compactor = create_default_compactor(model)
-            self.assertIsInstance(compactor, PromptSummarizingCompactor)
-            self.assertIsNone(compactor._sample_params.temperature)
-            self.assertEqual(
-                compactor._sample_params.max_output_tokens,
-                DEFAULT_COMPACTION_MAX_OUTPUT_TOKENS,
-            )
+            for settings in (CompactionSettings(), provider):
+                with self.subTest(model=model.endpoint.url, mode=settings.mode):
+                    self.assertIsInstance(
+                        create_default_compactor(model, settings), PiCompactor,
+                    )
+
+    def test_remote_compactor_forwards_only_the_turn_extra_and_rejects_focus(self):
+        opener = _ScriptedOpener(_FakeSSEResponse(_compaction_event(0), _completed_event()))
+        model = codex_model(
+            responses_endpoint(
+                api_url=CODEX_RESPONSES_API_URL,
+                model="codex-test",
+                bearer_token="token",
+                api_provider="codex",
+            ),
+            opener=opener,
+        )
+        context = InteractionContext((Message("user", "compact me"),))
+        compactor = ResponsesOpaqueCompactor(model)
+        with self.assertRaisesRegex(CompactionError, "focus text"):
+            compactor.compact(context, instructions="keep paths")
+        self.assertEqual(opener.calls, [])
+        compactor.compact(
+            context,
+            sample_params=SampleParams(
+                max_output_tokens=77,
+                enable_auto_compaction=True,
+                auto_compact_tokens=100,
+                extra={"service_tier": "flex"},
+            ),
+            instructions="   ",
+        )
+        payload = _request_payload(opener)
+        self.assertEqual(payload["service_tier"], "flex")
+        self.assertNotIn("max_output_tokens", payload)
+        self.assertEqual(payload["input"][-1], {"type": "compaction_trigger"})
+
+    def test_pi_mode_on_the_codex_route_keeps_session_and_turn_headers(self):
+        opener = _ScriptedOpener(_FakeSSEResponse(_message_event(0, "Summary."), _completed_event()))
+        model = codex_model(
+            responses_endpoint(
+                api_url=CODEX_RESPONSES_API_URL,
+                model="codex-test",
+                bearer_token="token",
+                api_provider="codex",
+            ),
+            opener=opener,
+            identifier_factory=lambda: "unexpected-new-identifier",
+        )
+        context = InteractionContext((
+            Init("session-1"),
+            Message("user", "request"),
+            UserInteractionBoundary(),
+            Message("assistant", "answer"),
+            SampleMetadata(
+                TokenUsage(total_tokens=10),
+                provider_turn_id="turn-1",
+                provider_turn_state="state-1",
+            ),
+            ModelSampleBoundary(),
+        ))
+
+        result = create_default_compactor(model, CompactionSettings(keep_recent_tokens=0)).compact(
+            context, sample_params=SampleParams(),
+        )
+
+        headers = _request_headers(opener)
+        payload = _request_payload(opener)
+        self.assertEqual(headers["session_id"], "session-1")
+        self.assertEqual(json.loads(headers["x-codex-turn-metadata"])["turn_id"], "turn-1")
+        self.assertEqual(headers[X_CODEX_TURN_STATE_HEADER], "state-1")
+        self.assertEqual(payload["prompt_cache_key"], "session-1")
+        self.assertEqual(payload["tools"], [])
+        self.assertEqual([item["role"] for item in payload["input"]], ["developer", "user"])
+        self.assertNotIn("x-codex-beta-features", headers)
+        self.assertEqual(result.protocol, "pi")
 
     def test_remote_compactor_rejects_pending_calls_without_network(self):
         opener = _ScriptedOpener()

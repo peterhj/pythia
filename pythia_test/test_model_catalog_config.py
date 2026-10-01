@@ -14,7 +14,7 @@ import unittest
 from unittest import mock
 
 from pythia.interaction import (
-    BUILTIN_MODEL_CATALOG, CodexResponsesModel, ConfigError, Environment, Init,
+    BUILTIN_MODEL_CATALOG, CodexResponsesModel, CompactionSettings, ConfigError, Environment, Init,
     Instructions, InteractionConfig, InteractionConfigSnapshot, InteractionContext, Message, ModelCatalog,
     ModelConfigurationError, ModelSample, SampleParams,
     StreamingResponsesEndpoint, ToolSpec, LATEST_MODEL_CATALOG_VERSION,
@@ -411,8 +411,11 @@ class BoundRequestTests(unittest.TestCase):
         self.assertNotIn("reasoning_effort", empty)
 
     def test_user_messages_limits_defaults_and_wire_model_do_not_lookup_builtins(self):
+        # Pi mode, the default, uses the catalog threshold on the host.
         args = args_for(catalog(MESSAGE), "--model", "worker")
         cfg = InteractionConfig.from_namespace(args)
+        self.assertEqual(cfg.get("compaction_mode"), "pi")
+        self.assertEqual(cfg.get("auto_compact_tokens"), 60000)
         model = build_model(args)
         self.assertIsInstance(model, MessagesModel)
         self.assertEqual(model.endpoint.max_output_tokens, 8000)
@@ -422,8 +425,15 @@ class BoundRequestTests(unittest.TestCase):
         )
         self.assertEqual(payload["model"], "served-messages")
         self.assertEqual(payload["output_config"], {"effort": "high"})
-        self.assertEqual(payload["context_management"]["edits"][0]["trigger"]["value"], 60000)
+        self.assertNotIn("context_management", payload)
         self.assertEqual(payload["max_tokens"], 8000)
+        # Provider mode sends it as the server-compaction trigger.
+        args = args_for(catalog(MESSAGE), "--model", "worker", "--compaction-mode", "provider")
+        cfg = InteractionConfig.from_namespace(args)
+        payload = build_model(args)._build_request_payload(
+            context(), (), cfg.snapshot().sample_params(),
+        )
+        self.assertEqual(payload["context_management"]["edits"][0]["trigger"]["value"], 60000)
 
     def test_user_responses_route_credentials_and_presets_are_bound(self):
         args = args_for(catalog(CODEX), "--model", "code-env")
@@ -448,7 +458,7 @@ class BoundRequestTests(unittest.TestCase):
     def test_user_messages_extra_sample_params_extend_every_request(self):
         registry = catalog(MESSAGE + 'extra_sample_params.thinking = {"type": "enabled", "budget_tokens": 1024}\n'
                            + "extra_sample_params.top_k = 5\n")
-        args = args_for(registry, "--model", "worker",
+        args = args_for(registry, "--model", "worker", "--compaction-mode", "provider",
                         "--extra-sample-params", '{"metadata": {"user_id": "catalog-test"}}')
         cfg = InteractionConfig.from_namespace(args)
         model = build_model(args)
@@ -531,7 +541,9 @@ class BoundRequestTests(unittest.TestCase):
         model = build_model(args)
         model._opener = opener
         model.sample(context(), sample_params=cfg.snapshot().sample_params())
-        create_default_compactor(model).compact(context())
+        create_default_compactor(model, CompactionSettings(keep_recent_tokens=0)).compact(
+            context(), sample_params=cfg.snapshot().sample_params(),
+        )
         expected = {"thinking": {"type": "enabled", "budget_tokens": 1000},
                     "reasoning_effort": "max", "custom": True}
         self.assertEqual(len(requests), 2)
@@ -738,14 +750,14 @@ class AutoCatalogTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "config.json"
             settings = resolve_config(overrides={"model": "local-max"}, catalog=registry)
-            document = {"version": 1, "contexts": {str(i): dict(s) for i, s in settings.items()}}
+            document = {"version": 2, "contexts": {str(i): dict(s) for i, s in settings.items()}}
             for row in document["contexts"].values():
                 row.pop("extra_sample_params")
             path.write_text(json.dumps(document))
             with self.assertRaisesRegex(ValueError, "Invalid saved"):
                 load_saved_config(path)
             path.write_text(json.dumps({
-                "version": 1,
+                "version": 2,
                 "contexts": {str(i): dict(s) for i, s in settings.items()},
             }))
             saved = load_saved_config(path)

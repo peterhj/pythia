@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 
 from ._auto_board import parse_json
 from ._prompt import add_prompt_arguments
+from .compaction import COMPACTION_MODES
 from .model import SampleParams
 from .model_config import _boolean_argument
 from .model_config import add_catalog_arguments, add_endpoint_arguments, prepare_namespace
@@ -26,8 +27,19 @@ DEFAULTS = {
     "request_timeout_seconds": DEFAULT_REQUEST_TIMEOUT_SECONDS,
     "enable_workspace": True, "enable_auto_compaction": True,
     "auto_compact_tokens": None, "max_context_tokens": None,
+    "compaction_mode": None, "compaction_keep_recent_tokens": None,
+    "compaction_max_output_tokens": None,
     "extra_sample_params": None,
     "instructions": None,
+}
+# Saved config.json versions and their exact per-context key sets. Version 1
+# predates the compaction keys, which load with their defaults.
+SAVED_CONFIG_VERSION = 2
+_COMPACTION_KEYS = ("compaction_mode", "compaction_keep_recent_tokens",
+                    "compaction_max_output_tokens")
+_SAVED_KEYS = {
+    1: frozenset(DEFAULTS).difference(_COMPACTION_KEYS) | {"name"},
+    2: frozenset(DEFAULTS) | {"name"},
 }
 _APIS = {"chat-completions", "messages", "codex"}
 _PROVIDER_FIELDS = ("model", "endpoint_url", "endpoint_model", "endpoint_auth",
@@ -154,17 +166,19 @@ def load_saved_config(path):
         document = parse_json(path.read_text(encoding="utf-8"))
     except (OSError, ValueError, RecursionError):
         raise ValueError("Could not load saved auto configuration.") from None
-    expected = set(DEFAULTS) | {"name"}
     contexts = document.get("contexts") if isinstance(document, dict) else None
+    version = document.get("version") if isinstance(document, dict) else None
+    expected = _SAVED_KEYS.get(version) if type(version) is int else None
     if (not isinstance(document, dict)
             or set(document) != {"version", "contexts"}
-            or type(document.get("version")) is not int or document["version"] != 1
+            or expected is None
             or not isinstance(contexts, dict) or set(contexts) != {"1", "2", "-1"}
             or any(not isinstance(value, dict) or set(value) != expected
                    for value in contexts.values())):
         raise ValueError("Invalid saved auto configuration.")
     return {
-        index: _layer(contexts[str(index)], path.parent)
+        index: _layer({**{key: DEFAULTS[key] for key in _COMPACTION_KEYS},
+                       **contexts[str(index)]}, path.parent)
         for index in NAMES
     }
 
@@ -262,6 +276,13 @@ def build_parser():
                         help="Optional output-token limit; uses model/API defaults when unset.")
     parser.add_argument("--auto-compact-tokens", type=int, default=argparse.SUPPRESS,
                         help="Common initial compaction threshold; defaults to each context's catalog.")
+    parser.add_argument("--compaction-mode", choices=COMPACTION_MODES, default=argparse.SUPPRESS,
+                        help=("Common compaction procedure: pi, or provider for Codex remote or "
+                              "Anthropic server-side compaction; defaults to each context's route."))
+    parser.add_argument("--compaction-keep-recent-tokens", type=int, default=argparse.SUPPRESS,
+                        help="Common recent context kept verbatim by pi compaction (default: 20000).")
+    parser.add_argument("--compaction-max-output-tokens", type=int, default=argparse.SUPPRESS,
+                        help="Common pi summary output budget; defaults to each turn's budget.")
     parser.add_argument("--max-context-tokens", type=int, default=argparse.SUPPRESS,
                         help="Common informational context ceiling; defaults to each context's catalog.")
     parser.add_argument("--request-timeout-seconds", type=float, default=argparse.SUPPRESS)

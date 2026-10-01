@@ -16,7 +16,9 @@ from unittest import mock
 
 from pythia.interaction import DefaultEnvironment
 from pythia.interaction import CompactionMetadata
+from pythia.interaction import CompactionContextWindowError
 from pythia.interaction import CompactionResult
+from pythia.interaction import CompactionSettings
 from pythia.interaction import ContextPrefix
 from pythia.interaction import DisplayItem
 from pythia.interaction import Environment
@@ -192,7 +194,9 @@ for module in (cli, demo):
              "--prompt", "/quit\nA literal query", "--instructions", "",
              "--max-samples", "3", "--max-output-tokens", "77", "--cwd", "work",
              "--save", "chosen.jsonl", "--enable-auto-compaction=False",
-             "--enable-workspace=False"],
+             "--enable-workspace=False", "--compaction-mode", "pi",
+             "--compaction-keep-recent-tokens", "0",
+             "--compaction-max-output-tokens", "512"],
         ):
             demo_args = vars(demo._build_parser().parse_args(argv))
             self.assertFalse(demo_args.pop("experimental_user_message_injection"))
@@ -210,12 +214,34 @@ for module in (cli, demo):
             args = cli._build_parser().parse_args(["--model", "m", option, "0"])
             with self.assertRaisesRegex(ValueError, option.lstrip("-")):
                 cli.build_model(args)
+        # The minimum binds only Anthropic's server compaction.
         messages = cli._build_parser().parse_args([
             "--endpoint-api", "messages", "--model", "claude-fable-5.1",
-            "--auto-compact-tokens", "100",
+            "--auto-compact-tokens", "100", "--compaction-mode", "provider",
         ])
         with self.assertRaisesRegex(ValueError, "at least 50000"):
             cli.build_model(messages)
+        pi = cli._build_parser().parse_args([
+            "--endpoint-api", "messages", "--model", "claude-fable-5.1",
+            "--auto-compact-tokens", "100", "--endpoint-auth", "none",
+        ])
+        self.assertIsNone(cli.build_model(pi).endpoint.server_compaction)
+        for option, value, message in (
+            ("--compaction-keep-recent-tokens", "-1", "nonnegative"),
+            ("--compaction-max-output-tokens", "0", "positive"),
+        ):
+            args = cli._build_parser().parse_args(["--model", "m", option, value])
+            with self.assertRaisesRegex(ValueError, message):
+                cli.build_model(args)
+        # A route without provider compaction rejects it before any request.
+        for argv in (
+            ["--model", "m", "--compaction-mode", "provider"],
+            ["--endpoint-api", "codex", "--model", "muse-spark-1.3",
+             "--compaction-mode", "provider"],
+        ):
+            with self.subTest(argv=argv):
+                with self.assertRaisesRegex(ValueError, "no provider compaction"):
+                    cli.build_model(cli._build_parser().parse_args(argv))
 
     def test_enable_arguments_accept_bare_and_explicit_booleans(self):
         cases = (
@@ -878,8 +904,8 @@ class CLIControllerTests(_ControllerTestCase):
         compacted = []
 
         class Compactor:
-            def compact(inner_self, source, *, tools=()):
-                compacted.append((source.items, tuple(tools)))
+            def compact(inner_self, source, *, tools=(), sample_params=None, instructions=None):
+                compacted.append((source.items, tuple(tools), sample_params, instructions))
                 return CompactionResult(
                     (ContextPrefix((Message("user", "follow up"),)),),
                     usage=TokenUsage(100, 5, 105, 50),
@@ -904,9 +930,15 @@ class CLIControllerTests(_ControllerTestCase):
                 0,
             )
 
-        create.assert_called_once_with(model)
+        create.assert_called_once_with(model, CompactionSettings())
         self.assertEqual(len(compacted), 1)
         self.assertIn(Message("user", "follow up"), compacted[0][0])
+        # The turn's params, without focus text.
+        self.assertEqual(compacted[0][2], model.calls[0][2])
+        self.assertEqual(compacted[0][2], SampleParams(
+            enable_auto_compaction=True, auto_compact_tokens=100,
+        ))
+        self.assertIsNone(compacted[0][3])
         self.assertEqual(len(model.calls), 1)
         self.assertEqual(model.calls[0][0].model_items(), (
             Message("user", "follow up"),

@@ -9,8 +9,9 @@ from typing import Sequence
 from typing import Union
 
 from .compaction import CompactionResult
+from .compaction import NothingToCompact
+from .compaction import auto_compaction_due
 from .compaction import create_default_compactor
-from .compaction import should_auto_compact
 from .compaction import uses_host_auto_compaction
 from .context import InteractionContext
 from .default_environment import DefaultEnvironment
@@ -31,6 +32,7 @@ from .items import UserInteractionBoundary
 from .items import summarize_turn_usage
 from .media import parse_user_prompt
 from .model import Model
+from .model import ModelContextWindowError
 from .model import ModelError
 from .model import SampleParams
 from .model_config import DEFAULT_SAVE_PATH as DEFAULT_SAVE_PATH
@@ -86,6 +88,9 @@ def run(
     auto_compact_tokens: Optional[int] = None,
     max_context_tokens: Optional[int] = None,
     debug_save_model_binding: bool = False,
+    compaction_mode: Optional[str] = None,
+    compaction_keep_recent_tokens: Optional[int] = None,
+    compaction_max_output_tokens: Optional[int] = None,
 ) -> str:
     if not hasattr(model, "sample") or not callable(model.sample):
         raise TypeError("model must provide sample(...)")
@@ -157,6 +162,9 @@ def run(
             else base_params.auto_compact_tokens
         ),
         max_context_tokens=max_context_tokens,
+        compaction_mode=compaction_mode,
+        compaction_keep_recent_tokens=compaction_keep_recent_tokens,
+        compaction_max_output_tokens=compaction_max_output_tokens,
     )
     turn_config = InteractionConfig.from_model(model, inputs).snapshot()
     sample_params = turn_config.sample_params(base_params)
@@ -248,30 +256,35 @@ def run(
         for display_item in user_interaction.display_items():
             print(display_item)
 
-    turn_started = perf_counter()
-    sample_count = 0
-    while turn_config.max_samples is None or sample_count < turn_config.max_samples:
-        threshold = turn_config.auto_compact_tokens
-        if (
-            turn_config.enable_auto_compaction
-            and uses_host_auto_compaction(model)
-            and threshold is not None
-            and should_auto_compact(context, threshold)
-        ):
-            compaction = create_default_compactor(model).compact(
+    def _compact() -> bool:
+        """Install one automatic compaction; False when there is nothing to compact."""
+        compactor = create_default_compactor(model, turn_config.compaction_settings())
+        try:
+            compaction = compactor.compact(
                 context.copy(),
                 tools=environment.tool_specs,
+                sample_params=sample_params,
             )
-            if not isinstance(compaction, CompactionResult):
-                raise TypeError(
-                    "compactor must return CompactionResult, got "
-                    f"{type(compaction).__name__}"
-                )
-            context.extend(compaction.context_items())
-            _persist()
-            for display_item in compaction.display_items():
-                print(display_item)
-        sample_count += 1
+        except NothingToCompact:
+            return False
+        if not isinstance(compaction, CompactionResult):
+            raise TypeError(
+                "compactor must return CompactionResult, got "
+                f"{type(compaction).__name__}"
+            )
+        context.extend(compaction.context_items())
+        _persist()
+        for display_item in compaction.display_items():
+            print(display_item)
+        return True
+
+    turn_started = perf_counter()
+    sample_count = 0
+    # Pi's overflow recovery: one compact-and-retry per turn.
+    overflow_recovered = False
+    while turn_config.max_samples is None or sample_count < turn_config.max_samples:
+        if auto_compaction_due(model, context, turn_config):
+            _compact()
         try:
             sample = model.sample(
                 context,
@@ -311,7 +324,20 @@ def run(
                         source_calls=recovered_calls,
                     ):
                         print(display_item)
+            if (
+                isinstance(exc, ModelContextWindowError)
+                and not overflow_recovered
+                and turn_config.enable_auto_compaction
+                and uses_host_auto_compaction(model)
+            ):
+                overflow_recovered = True
+                # A failed compaction fails the run; nothing to compact
+                # leaves the sampling error.
+                if _compact():
+                    continue
             raise
+        # The failed attempt before an overflow retry does not count.
+        sample_count += 1
         context.extend(sample.context_items())
         _persist()
         for display_item in sample.display_items():
@@ -455,6 +481,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 auto_compact_tokens=config.auto_compact_tokens,
                 max_context_tokens=config.max_context_tokens,
                 debug_save_model_binding=args.debug_save_model_binding,
+                compaction_mode=config.compaction_mode,
+                compaction_keep_recent_tokens=config.compaction_keep_recent_tokens,
+                compaction_max_output_tokens=config.compaction_max_output_tokens,
             )
     except Exception as exc:
         print(f"demo failed: {exc}", file=sys.stderr)

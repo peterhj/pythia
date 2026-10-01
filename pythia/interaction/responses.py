@@ -36,10 +36,10 @@ from .codex_auth import load_codex_credentials
 from .codex_login import refresh_codex_credentials
 from .compaction import CompactionError
 from .compaction import CompactionResult
-from .compaction import DEFAULT_SUMMARY_PREFIX
 from .compaction import _leading_instruction_prefix
 from .compaction import _select_retained_user_messages
 from .compaction import _timed_compact
+from .compaction import is_compaction_summary
 from .context import ContextValidationError
 from .context import InteractionContext
 from .items import CompactionMetadata
@@ -1921,12 +1921,13 @@ class CodexResponsesModel:
         self,
         context: InteractionContext,
         tools: Sequence[Any],
+        sample_params: Optional[SampleParams] = None,
     ) -> _RemoteCompactionResponse:
         with self._credential_lock:
             payload, provider_state = self._build_request_payload(
                 context,
                 tools,
-                None,
+                sample_params,
             )
             payload["input"].append({"type": "compaction_trigger"})
             return self._execute_request_locked(
@@ -2263,7 +2264,7 @@ class ResponsesOpaqueCompactor:
     def _is_retained_user_message(self, message: Message) -> bool:
         if message.role != "user":
             return False
-        if message.content_text.startswith(f"{DEFAULT_SUMMARY_PREFIX}\n"):
+        if is_compaction_summary(message):
             return False
         if self._retain_user_message is not None:
             return bool(self._retain_user_message(message))
@@ -2275,9 +2276,21 @@ class ResponsesOpaqueCompactor:
         context: InteractionContext,
         *,
         tools: Sequence[Any] = (),
+        sample_params: Optional[SampleParams] = None,
+        instructions: Optional[str] = None,
     ) -> CompactionResult:
         if not isinstance(context, InteractionContext):
             raise TypeError("context must be InteractionContext")
+        if sample_params is not None and not isinstance(sample_params, SampleParams):
+            raise TypeError("sample_params must be SampleParams or None")
+        if instructions is not None and not isinstance(instructions, str):
+            raise TypeError("instructions must be a string or None")
+        if instructions is not None and instructions.strip():
+            # codex-rs sends CompactionTrigger {} without fields.
+            raise CompactionError(
+                "remote Responses compaction does not accept focus text; use "
+                "/compact without it, or --compaction-mode pi"
+            )
         try:
             context.assert_model_ready()
         except ContextValidationError as exc:
@@ -2291,7 +2304,14 @@ class ResponsesOpaqueCompactor:
             if isinstance(item, Message)
             and self._is_retained_user_message(item)
         )
-        remote = self._model._compact_responses_v2(context, tools)
+        # Only the turn's extra applies: a remote checkpoint has no output
+        # budget or sampling knobs.
+        extra = None if sample_params is None else sample_params.extra
+        remote = self._model._compact_responses_v2(
+            context,
+            tools,
+            SampleParams(extra=extra),
+        )
         retained_users = _select_retained_user_messages(
             user_messages,
             self._retained_user_message_tokens,

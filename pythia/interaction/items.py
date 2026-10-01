@@ -323,12 +323,14 @@ class SampleMetadata:
 class CompactionMetadata:
     """Durable metadata for one successful explicit compaction operation.
 
-    ``protocol`` identifies the compaction procedure (for example,
-    ``responses_compaction_v2``), while ``OpaqueCompaction.protocol`` identifies
-    only the provider wire family used to replay an opaque payload. The item is
-    operational metadata and is never encoded into a model request.
+    ``protocol`` identifies the compaction procedure (for example, ``pi`` or
+    ``responses_compaction_v2``), while ``OpaqueCompaction.protocol``
+    identifies only the provider wire family used to replay an opaque payload.
+    The item is operational metadata and is never encoded into a model request.
     """
 
+    # TODO: Record estimated context tokens before and after compaction (pi's
+    # ``tokensBefore`` and ``estimatedTokensAfter``).
     usage: TokenUsage
     protocol: str
     provider_session_id: Optional[str] = field(default=None, repr=False)

@@ -16,16 +16,20 @@ from pythia.interaction import ChatCompletionsEndpoint
 from pythia.interaction import ChatCompletionsModel
 from pythia.interaction import CompactionMetadata
 from pythia.interaction import CompactionResult
+from pythia.interaction import CompactionSettings
 from pythia.interaction import CodexResponsesModel
+from pythia.interaction import ConfigError
 from pythia.interaction import ContextPrefix
 from pythia.interaction import Environment
 from pythia.interaction import Message
 from pythia.interaction import MessagesEndpoint
 from pythia.interaction import MessagesModel
 from pythia.interaction import InteractionContext
+from pythia.interaction import ModelContextWindowError
 from pythia.interaction import ModelSample
 from pythia.interaction import ModelSampleBoundary
 from pythia.interaction import ModelTimeoutError
+from pythia.interaction import NothingToCompact
 from pythia.interaction import SampleMetadata
 from pythia.interaction import SaveError
 from pythia.interaction import SampleParams
@@ -425,6 +429,48 @@ class SampleMetadataTests(unittest.TestCase):
             len([item for item in saved if isinstance(item, CompactionMetadata)]),
             1,
         )
+
+    def test_demo_binds_compaction_keywords_and_recovers_from_overflow(self):
+        class Model:
+            def __init__(self, *outcomes):
+                self.outcomes = list(outcomes)
+                self.sample_params = []
+
+            def sample(self, context, *, tools=(), sample_params=None):
+                self.sample_params.append(sample_params)
+                outcome = self.outcomes.pop(0)
+                if isinstance(outcome, BaseException):
+                    raise outcome
+                return outcome
+
+        compactor = mock.Mock()
+        compactor.compact.return_value = CompactionResult(
+            (ContextPrefix((Message("user", "summary"),)),), protocol="pi",
+        )
+        model = Model(ModelContextWindowError("too long"), ModelSample((Message("assistant", "Done."),)))
+        with mock.patch("builtins.print"):
+            with mock.patch.object(demo, "create_default_compactor", return_value=compactor) as create:
+                answer = demo.run(
+                    model, Environment(), prompt="hello", max_samples=1,
+                    compaction_mode="pi", compaction_keep_recent_tokens=0,
+                    compaction_max_output_tokens=64,
+                )
+        self.assertEqual(answer, "Done.")
+        # One compact-and-retry; the failed attempt does not count.
+        create.assert_called_once_with(model, CompactionSettings(
+            mode="pi", keep_recent_tokens=0, max_output_tokens=64,
+        ))
+        self.assertEqual(compactor.compact.call_args.kwargs["sample_params"], model.sample_params[0])
+        self.assertEqual(len(model.sample_params), 2)
+
+        # Nothing to compact leaves the sampling error.
+        compactor.compact.side_effect = NothingToCompact("the context fits")
+        with mock.patch("builtins.print"):
+            with mock.patch.object(demo, "create_default_compactor", return_value=compactor):
+                with self.assertRaises(ModelContextWindowError):
+                    demo.run(Model(ModelContextWindowError("too long")), Environment(), prompt="hello")
+        with self.assertRaisesRegex(ConfigError, "no provider compaction"):
+            demo.run(Model(), Environment(), prompt="hello", compaction_mode="provider")
 
     def test_demo_auto_compaction_can_be_disabled(self):
         class Model:
