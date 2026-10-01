@@ -430,6 +430,73 @@ class MessagesSummaryRequestTests(unittest.TestCase):
                     ),
                 ))
 
+    def test_request_after_pi_compaction_sends_only_new_thinking(self):
+        # Anthropic rejects a thinking block whose preceding conversation
+        # changed (HTTP 400), so the kept tail loses its signed thinking.
+        # Thinking sampled after the compaction is still sent.
+        def response(text):
+            return _FakeResponse({
+                "type": "message",
+                "role": "assistant",
+                "stop_reason": "end_turn",
+                "content": [{"type": "text", "text": text}],
+                "usage": {"input_tokens": 10, "output_tokens": 5},
+            })
+
+        # History and split-turn summaries, then the next sample.
+        opener = _ScriptedOpener(
+            response("History."), response("Turn."), response("Done."),
+        )
+        model = MessagesModel(messages_endpoint(
+            "https://api.anthropic.com",
+            "claude-opus-5.5-max",
+            api_key="test-key",
+        ), opener=opener)
+        context = InteractionContext((
+            Message("user", "Earlier request."),
+            Message("assistant", "Earlier answer."),
+            ModelSampleBoundary(),
+            Message("user", "Fix the bug."),
+            UserInteractionBoundary(),
+            ToolCall("exec_command", "toolu_1", '{"cmd":"ls"}'),
+            ModelSampleBoundary(),
+            ToolResult("toolu_1", "x" * 2_000),
+            Reasoning("", content_signature="old-thinking"),
+            Reasoning("", content_signature="old-narration"),
+            ToolCall("exec_command", "toolu_2", '{"cmd":"cat bug.py"}'),
+            ModelSampleBoundary(),
+            ToolResult("toolu_2", "bug"),
+        ))
+        compactor = create_default_compactor(
+            model,
+            CompactionSettings(keep_recent_tokens=100),
+        )
+        context.extend(compactor.compact(context).context_items())
+        context.extend((
+            Reasoning("", content_signature="new-thinking"),
+            ToolCall("exec_command", "toolu_3", '{"cmd":"pytest"}'),
+            ModelSampleBoundary(),
+            ToolResult("toolu_3", "passed"),
+        ))
+
+        model.sample(context)
+
+        messages = _payload(opener)["messages"]
+        self.assertEqual(
+            [
+                [block["type"] for block in message["content"]]
+                for message in messages
+            ],
+            [
+                ["text"],
+                ["tool_use"],
+                ["tool_result"],
+                ["thinking", "tool_use"],
+                ["tool_result"],
+            ],
+        )
+        self.assertEqual(messages[3]["content"][0]["signature"], "new-thinking")
+
 
 class MessagesModelTests(unittest.TestCase):
     def test_encodes_context_tools_options_and_decodes_response(self):

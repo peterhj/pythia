@@ -2,10 +2,10 @@
 
 ``PiCompactor`` ports the coding agent's compaction from pi
 (``packages/coding-agent/src/core/compaction/``). It keeps the most recent
-context verbatim, summarizes the older span from a plain-text transcript under
-a dedicated summarizer system prompt, updates the previous summary
-iteratively, and summarizes the start of a split turn separately. The remote
-Responses compactor lives with its adapter
+context verbatim except signed thinking, summarizes the older span from a
+plain-text transcript under a dedicated summarizer system prompt, updates the
+previous summary iteratively, and summarizes the start of a split turn
+separately. The remote Responses compactor lives with its adapter
 (``responses.ResponsesOpaqueCompactor``).
 """
 
@@ -595,6 +595,11 @@ def _is_output_item(item: object) -> bool:
     return isinstance(item, Message) and item.role == "assistant"
 
 
+def _is_signed_thinking(item: object) -> bool:
+    """Messages thinking, which is valid only after its original history."""
+    return isinstance(item, Reasoning) and item.content_signature is not None
+
+
 def _has_content(items: Iterable[InteractionItem]) -> bool:
     return any(isinstance(item, _MODEL_VISIBLE_TYPES) for item in items)
 
@@ -914,11 +919,11 @@ class PiCompactor:
     """Pi's compaction: summarize older context and keep a recent tail.
 
     The new prefix is the instructions, any Responses checkpoints, the summary
-    as a user message, and the kept tail verbatim. ``keep_recent_tokens`` is
-    the estimated size of that tail; 0 keeps nothing (pi still keeps the last
-    unit). ``max_output_tokens`` overrides the turn's budget for summary
-    requests. ``tools`` are accepted for the protocol but never sent: the
-    requests carry the transcript as text.
+    as a user message, and the kept tail verbatim, minus signed thinking.
+    ``keep_recent_tokens`` is the estimated size of that tail; 0 keeps nothing
+    (pi still keeps the last unit). ``max_output_tokens`` overrides the turn's
+    budget for summary requests. ``tools`` are accepted for the protocol but
+    never sent: the requests carry the transcript as text.
     """
 
     def __init__(
@@ -998,10 +1003,24 @@ class PiCompactor:
         # Boundaries stay: the Messages and Chat Completions encoders flush
         # assistant blocks at them. The other items are log-only, and
         # ModelFailure is not allowed in prefixes.
+        # Signed thinking leaves too. Anthropic binds each thinking block to
+        # the conversation that preceded it, which the summary replaces, so
+        # the next request would fail with HTTP 400 ("Invalid `signature` in
+        # `thinking` block. The block is bound to a different conversation.").
+        # Responses reasoning (``encrypted_content``) stays.
+        # TODO: Preserve thinking across compaction if Anthropic adds a way;
+        # the binding has no keep option today. Its
+        # ``thinking-binding-controls-2026-08-01`` beta header, together with
+        # ``thinking.block_binding.prefix_mismatch_behavior: "drop_block"``
+        # (default ``"error"``), makes the server drop unbound blocks instead.
+        # That would also unstick saves whose prefix already kept them, but it
+        # was verified only on claude-opus-5-5 with adaptive thinking, and it
+        # would silently drop thinking after any other history bug too.
         tail = tuple(
             item
             for item in plan.tail
             if not isinstance(item, (SampleMetadata, TurnSummary, ModelFailure))
+            and not _is_signed_thinking(item)
         )
         checkpoint = ContextPrefix(
             prefix_items=(

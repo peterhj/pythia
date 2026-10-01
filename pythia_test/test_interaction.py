@@ -1744,6 +1744,45 @@ class CompactionTests(unittest.TestCase):
             ToolResult("call-1", _text(500)),
         ))
 
+    def test_kept_tail_drops_signed_thinking(self):
+        # The budget is reached at call-1's result, so the cut falls on the
+        # next sample's signed thinking, as in a mid-turn auto-compaction.
+        # Signed (Messages) thinking is bound to the history the summary
+        # replaces; Responses and plain reasoning stay.
+        model = _ScriptedModel(_summary("History."), _summary("Turn."))
+        result = PiCompactor(model, keep_recent_tokens=100).compact(InteractionContext((
+            Message("user", "Earlier."),
+            Message("assistant", "Earlier answer."),
+            ModelSampleBoundary(),
+            Message("user", "Run it."),
+            ToolCall("t", "call-1", "{}"),
+            ModelSampleBoundary(),
+            ToolResult("call-1", _text(500)),
+            Reasoning("", content_signature="omitted-thinking"),
+            Reasoning("Readable thinking.", content_signature="readable"),
+            Message("assistant", "Checking."),
+            ToolCall("t", "call-2", "{}"),
+            ModelSampleBoundary(),
+            ToolResult("call-2", "done"),
+            Reasoning("", summary=("Plan.",), encrypted_content="encrypted"),
+            Reasoning("Plain reasoning."),
+            Message("assistant", "Finished."),
+            ModelSampleBoundary(),
+        )))
+        self.assertEqual(result.items[0].prefix_items, (
+            Message("user", _wrapped(
+                "History.\n\n---\n\n**Turn Context (split turn):**\n\nTurn."
+            )),
+            Message("assistant", "Checking."),
+            ToolCall("t", "call-2", "{}"),
+            ModelSampleBoundary(),
+            ToolResult("call-2", "done"),
+            Reasoning("", summary=("Plan.",), encrypted_content="encrypted"),
+            Reasoning("Plain reasoning."),
+            Message("assistant", "Finished."),
+            ModelSampleBoundary(),
+        ))
+
     def test_zero_keep_summarizes_everything(self):
         model = _ScriptedModel(_summary("All of it."))
         result = PiCompactor(model, keep_recent_tokens=0).compact(_two_turns())
