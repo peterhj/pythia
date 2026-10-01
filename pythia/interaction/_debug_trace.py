@@ -1,9 +1,11 @@
 """Opt-in verbatim HTTP debug trace; never filtered, never resume authority.
 
-Each traced exchange appends one ``http_request`` line to ``SAVE.trace.req.jsonl``
+Each traced exchange appends one ``http_request`` line to ``STEM.trace.req.jsonl``
 before the request is sent, and one ``http_response`` line to
-``SAVE.trace.res.jsonl`` once the response is closed, fails, or is rejected
+``STEM.trace.res.jsonl`` once the response is closed, fails, or is rejected
 with an HTTP error status (the dual-log convention of contradex tracing).
+``STEM`` is the save path without its extension, so ``review.jsonl`` is traced
+to ``review.trace.req.jsonl`` and ``review.trace.res.jsonl``.
 Payloads and headers are recorded exactly as sent or read, including
 credentials. The logs are append-only and are never read back.
 
@@ -41,11 +43,15 @@ TRACE_RESPONSE_SUFFIX = ".trace.res.jsonl"
 
 
 def debug_trace_paths(save_path) -> tuple[Path, Path]:
-    """Return the request and response log paths derived from a save path."""
+    """Return the request and response log paths derived from a save path.
+
+    The trace suffixes replace the save's extension (``review.jsonl`` gives
+    ``review.trace.req.jsonl``); a save without an extension gets them appended.
+    """
     path = Path(save_path)
     return (
-        path.with_name(path.name + TRACE_REQUEST_SUFFIX),
-        path.with_name(path.name + TRACE_RESPONSE_SUFFIX),
+        path.with_suffix(TRACE_REQUEST_SUFFIX),
+        path.with_suffix(TRACE_RESPONSE_SUFFIX),
     )
 
 

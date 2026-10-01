@@ -1257,7 +1257,8 @@ def _build_parser() -> argparse.ArgumentParser:
         help=(
             "append every HTTP request and response (model sampling and "
             "compaction, /quota, and Codex OAuth) verbatim, including "
-            "credentials, to SAVE.trace.req.jsonl and SAVE.trace.res.jsonl; "
+            "credentials, to the --save path with its extension replaced by "
+            ".trace.req.jsonl and .trace.res.jsonl; "
             "never truncated, even when --resume=False replaces the save; launch-only"
         ),
     )

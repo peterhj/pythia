@@ -172,12 +172,19 @@ class _TraceTestCase(unittest.TestCase):
 
 
 class TraceFileTests(unittest.TestCase):
-    def test_paths_append_trace_suffixes_to_the_full_save_name(self):
-        self.assertEqual(
-            debug_trace_paths(Path("/work/review.jsonl")),
-            (Path("/work/review.jsonl.trace.req.jsonl"),
-             Path("/work/review.jsonl.trace.res.jsonl")),
-        )
+    def test_paths_replace_the_save_extension_with_trace_suffixes(self):
+        for save, stem in (
+            ("/work/review.jsonl", "/work/review"),
+            ("/work/review.json", "/work/review"),
+            ("/work/review", "/work/review"),  # No extension: the suffixes are appended.
+            ("/work/run.2026-10-01.jsonl", "/work/run.2026-10-01"),  # Only the last one.
+            ("logs/review.jsonl", "logs/review"),
+        ):
+            with self.subTest(save=save):
+                self.assertEqual(
+                    debug_trace_paths(save),
+                    (Path(stem + ".trace.req.jsonl"), Path(stem + ".trace.res.jsonl")),
+                )
 
     def test_open_creates_private_logs_and_never_truncates(self):
         with tempfile.TemporaryDirectory() as directory:
