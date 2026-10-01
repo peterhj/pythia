@@ -281,7 +281,8 @@ class PosixCLITests(unittest.IsolatedAsyncioTestCase):
         default.write_bytes(b"default sentinel\n")
         workspace_log = workspace / "interaction.jsonl"
         workspace_log.write_bytes(b"workspace sentinel\n")
-        self.start("--save", "logs/chosen file.jsonl", "--cwd", str(workspace), "--prompt", "first")
+        self.start("--save", "logs/chosen file.jsonl", "--resume=False", "--cwd", str(workspace),
+                   "--prompt", "first")
         await self.wait_output(b"[assistant] answer-1")
         await self.wait_output(b"idle")
         os.write(self.master, b"/quit\r")
@@ -385,7 +386,7 @@ class PosixCLITests(unittest.IsolatedAsyncioTestCase):
         path = self.root / "interaction.jsonl"
         original = b"old log not yet replaced\n"
         path.write_bytes(original)
-        self.start("--prompt", "hello", failure="initial-save")
+        self.start("--resume=False", "--prompt", "hello", failure="initial-save")
         await self.wait_output(b"unsaved state remains in memory")
         os.write(self.master, b"\x04")
         await self.wait_exit(expected=1)

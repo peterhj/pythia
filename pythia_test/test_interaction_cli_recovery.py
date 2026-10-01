@@ -374,6 +374,8 @@ class CLIPersistenceFailureTests(_ControllerTestCase):
                     argv = ["--prompt", "hello"]
                     if resume:
                         argv += ["--resume", "--instructions", "override"]
+                    else:
+                        argv += ["--resume=False"]
                     with mock.patch.object(cli, "_checkpoint", side_effect=checkpoint):
                         with mock.patch.object(cli, "save_interaction_save", side_effect=save):
                             self.assertEqual(await self._run(model, terminal, argv, environment), 1)

@@ -205,7 +205,28 @@ for module in (cli, demo):
             self.assertFalse(cli_args.pop("headless"))
             self.assertFalse(cli_args.pop("debug_trace"))
             self.assertIsNone(cli_args.pop("prompt_file"))
+            # Same option, different defaults: only the CLI resumes unless told otherwise.
+            self.assertTrue(cli_args.pop("resume"))
+            self.assertEqual(demo_args.pop("resume"), "--resume" in argv)
             self.assertEqual(cli_args, demo_args)
+
+    def test_resume_is_an_optional_boolean_defaulting_to_true_only_in_the_cli(self):
+        for frontend, default in ((cli, True), (demo, False)):
+            parser = frontend._build_parser()
+            for argv, expected in (([], default), (["--resume"], True), (["--resume=tRuE"], True),
+                                   (["--resume=False"], False), (["--resume", "fAlSe"], False)):
+                with self.subTest(frontend=frontend.__name__, argv=argv):
+                    self.assertIs(parser.parse_args(argv).resume, expected)
+            for value in ("", "0", "1", "yes", "no"):
+                with self.subTest(frontend=frontend.__name__, value=value):
+                    with mock.patch("sys.stderr", io.StringIO()), self.assertRaises(SystemExit) as error:
+                        parser.parse_args(["--resume=" + value])
+                    self.assertEqual(error.exception.code, 2)
+            help_text = " ".join(parser.format_help().split())
+            self.assertIn(
+                f"a missing file starts a new one. A bare flag means True (default: {default})",
+                help_text,
+            )
 
     def test_context_limit_arguments_validate(self):
         # Context-limit args are positive ints (or unset) and chat-completions
@@ -812,7 +833,7 @@ class CLIControllerTests(_ControllerTestCase):
                     save_interaction_save(self.path, InteractionContext((Init("old"),)))
                 terminal = _Terminal(lambda t, e, s: t.key("c-d") if s == "idle" else None)
                 model = _Model(self.path, _answer())
-                argv = ["--prompt", "fresh"] + (["--resume"] if resume else [])
+                argv = ["--prompt", "fresh"] + (["--resume"] if resume else ["--resume=False"])
                 self.assertEqual(await self._run(model, terminal, argv), 0)
                 self.assertIn(
                     "[cli] Warning: exec_command runs without a sandbox; use a trusted model and workspace.",
@@ -850,6 +871,17 @@ class CLIControllerTests(_ControllerTestCase):
         terminal = _Terminal(lambda t, e, s: t.submit("/exit") if s == "idle" else None)
         model = _Model(self.path)
         self.assertEqual(await self._run(model, terminal, ["--resume"]), 0)
+        self.assertEqual(load_interaction_save(self.path).items, original)
+        self.assertEqual([i.text for i in terminal.items].count("[assistant] previous"), 1)
+        self.assertEqual(model.calls, [])
+
+    async def test_resume_is_the_default(self):
+        original = (Init("saved"), Message("assistant", "previous"),
+                    ModelSampleBoundary(), TurnSummary(sample_count=1))
+        save_interaction_save(self.path, InteractionContext(original))
+        terminal = _Terminal(lambda t, e, s: t.submit("/exit") if s == "idle" else None)
+        model = _Model(self.path)
+        self.assertEqual(await self._run(model, terminal, []), 0)
         self.assertEqual(load_interaction_save(self.path).items, original)
         self.assertEqual([i.text for i in terminal.items].count("[assistant] previous"), 1)
         self.assertEqual(model.calls, [])

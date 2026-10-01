@@ -70,7 +70,7 @@ class HeadlessCLITests(unittest.TestCase):
             model.assert_not_called()
 
     def test_no_explicit_work_fails_before_effects_or_save_changes(self):
-        for argv in ([], ["--resume"], ["--instructions", "new instructions"]):
+        for argv in ([], ["--resume"], ["--resume=False", "--instructions", "new instructions"]):
             with self.subTest(argv=argv):
                 self.path.write_bytes(b"keep this save\n")
                 with mock.patch.object(cli, "build_model") as model, \
@@ -145,7 +145,7 @@ class HeadlessCLITests(unittest.TestCase):
     def test_save_failure_exits_without_waiting_for_quit(self):
         self.path.write_bytes(b"old save\n")
         with mock.patch.object(cli, "save_interaction_save", side_effect=OSError("disk failed")):
-            code, model, _, stderr = self.run_main(["--prompt", "hello"])
+            code, model, _, stderr = self.run_main(["--resume=False", "--prompt", "hello"])
         self.assertEqual(code, 1)
         self.assertEqual(model.calls, [])
         self.assertIn("No further work will run", stderr)
@@ -178,11 +178,13 @@ class HeadlessCLITests(unittest.TestCase):
 
     def test_instructions_only_continuation_requires_an_existing_save(self):
         old = (Init("old"), Message("user", "old task"), Message("assistant", "old answer"), TurnSummary())
-        save_interaction_save(self.path, InteractionContext(old))
-        code, model, _, stderr = self.run_main(["--resume", "--instructions", ""], _answer())
-        self.assertEqual(code, 0, stderr)
-        self.assertEqual(len(model.calls), 1)
-        self.assertEqual(model.calls[0][0].items, (*old, Instructions("")))
+        for resume in (["--resume"], []):  # resume is the default
+            with self.subTest(resume=resume):
+                save_interaction_save(self.path, InteractionContext(old))
+                code, model, _, stderr = self.run_main([*resume, "--instructions", ""], _answer())
+                self.assertEqual(code, 0, stderr)
+                self.assertEqual(len(model.calls), 1)
+                self.assertEqual(model.calls[0][0].items, (*old, Instructions("")))
 
     @unittest.skipUnless(os.name == "posix", "interactive CLI requires POSIX")
     def test_interactive_prompt_file_preloads_editor_and_submits_literal_text(self):

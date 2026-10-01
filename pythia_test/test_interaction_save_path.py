@@ -49,16 +49,17 @@ class _SavePathTestCase(unittest.TestCase):
 
 
 class SaveArgumentTests(_SavePathTestCase):
-    def test_shared_default_and_explicit_save_paths_do_not_imply_resume(self):
-        for frontend in (cli, demo):
+    def test_shared_default_and_explicit_save_paths_do_not_change_resume(self):
+        for frontend, resume_default in ((cli, True), (demo, False)):
             with self.subTest(frontend=frontend.__name__):
                 parser = frontend._build_parser()
                 self.assertEqual(parser.parse_args([]).save_path, DEFAULT_SAVE_PATH)
+                self.assertIs(parser.parse_args([]).resume, resume_default)
                 for raw in ("review.jsonl", "~/review.jsonl", str(self.selected), " spaced name "):
                     args = parser.parse_args(["--save", raw])
                     self.assertIsInstance(args.save_path, Path)
                     self.assertEqual(args.save_path, Path(raw))
-                    self.assertFalse(args.resume)
+                    self.assertIs(args.resume, resume_default)
                 help_text = " ".join(parser.format_help().split())
                 self.assertIn("--save PATH", help_text)
                 self.assertIn("default: interaction.jsonl", help_text)
@@ -155,7 +156,7 @@ class SaveEntrypointTests(_SavePathTestCase):
             with self.subTest(frontend=frontend.__name__):
                 self.selected.write_text("old selected file\n")
                 code, model, _terminal, _printed = self._main(
-                    frontend, ["--prompt", "fresh query"],
+                    frontend, ["--resume=False", "--prompt", "fresh query"],
                     samples=(ModelSample(items=(_PLAN_CALL,)), _answer()),
                 )
                 self.assertEqual(code, 0)
@@ -269,7 +270,9 @@ class SaveEntrypointTests(_SavePathTestCase):
             with self.subTest(frontend=frontend.__name__):
                 self.selected.write_bytes(b"previous selected contents\n")
                 with mock.patch.object(frontend, "save_interaction_save", side_effect=OSError("disk failure")) as save:
-                    code, model, terminal, printed = self._main(frontend, ["--prompt", "hello"], samples=())
+                    code, model, terminal, printed = self._main(
+                        frontend, ["--resume=False", "--prompt", "hello"], samples=(),
+                    )
                 self.assertEqual(code, 1)
                 self.assertEqual(model.calls, [])
                 save.assert_called_once()

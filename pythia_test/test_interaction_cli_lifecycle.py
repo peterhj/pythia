@@ -143,12 +143,13 @@ class CLIShutdownTests(_ControllerTestCase):
 
                 model = _Model(self.path, ModelSample(items=calls))
                 environment = Environment((Tool(ToolSpec("record", "", {}), record),))
+                argv = ["--resume=False", "--prompt", "hello"]  # each failure mode starts fresh
                 try:
                     if failure == "eof":
-                        self.assertEqual(await self._run(model, terminal, ["--prompt", "hello"], environment), 0)
+                        self.assertEqual(await self._run(model, terminal, argv, environment), 0)
                     else:
                         with self.assertRaisesRegex(OSError, failure + " failure"):
-                            await self._run(model, terminal, ["--prompt", "hello"], environment)
+                            await self._run(model, terminal, argv, environment)
                 finally:
                     release.set()
                 self.assertTrue(terminal.exited)

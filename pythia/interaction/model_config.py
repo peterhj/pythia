@@ -456,13 +456,21 @@ def build_parser(description: str, *, allow_prompt_file: bool = False) -> argpar
         help=(
             "interaction JSONL file to read/write (default: %(default)s); "
             "relative to the launch directory, not --cwd; parent must exist; "
-            "replaces the file unless --resume is used"
+            "replaces the file when --resume is False"
         ),
     )
     parser.add_argument(
         "--resume",
-        action="store_true",
-        help="resume the selected --save file instead of starting a new save",
+        nargs="?",
+        const=True,
+        default=False,
+        type=_boolean_argument,
+        metavar="{False,True}",
+        help=(
+            "resume the selected --save file instead of starting a new save; "
+            "a missing file starts a new one. A bare flag means True "
+            "(default: %(default)s)"
+        ),
     )
     return parser
 

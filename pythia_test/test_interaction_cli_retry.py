@@ -94,7 +94,7 @@ class RetryControllerTests(_ControllerTestCase):
                 terminal = _Terminal(retry_then_quit())
                 with mock.patch.object(cli, "build_model") as build:
                     self.assertEqual(await self._run(model, terminal, [
-                        "--prompt", "original", "--enable-default-tools=False",
+                        "--resume=False", "--prompt", "original", "--enable-default-tools=False",
                     ]), 1)  # Existing sticky failure exit status is unchanged.
                 build.assert_not_called()
                 self.assertEqual(len(model.calls), 2)

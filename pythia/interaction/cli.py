@@ -1226,6 +1226,9 @@ def _build_parser() -> argparse.ArgumentParser:
         "Interactive POSIX shell or headless task using Pythia's caller-owned interaction API.",
         allow_prompt_file=True,
     )
+    # Unlike the one-shot demo, the CLI continues its save by default;
+    # --resume=False starts a new save, replacing the file.
+    parser.set_defaults(resume=True)
     parser.add_argument(
         "--headless", nargs="?", const=True, default=False,
         type=_boolean_argument, metavar="{False,True}",
@@ -1244,7 +1247,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help=(
             "enable default model tools (exec_command, write_stdin, apply_patch, "
             "update_plan); user commands remain available when False. "
-            "Launch-only: repeat on --resume. A bare flag means True "
+            "Launch-only: repeat when resuming. A bare flag means True "
             "(default: %(default)s)"
         ),
     )
@@ -1255,7 +1258,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "append every HTTP request and response (model sampling and "
             "compaction, /quota, and Codex OAuth) verbatim, including "
             "credentials, to SAVE.trace.req.jsonl and SAVE.trace.res.jsonl; "
-            "never truncated, even without --resume; launch-only"
+            "never truncated, even when --resume=False replaces the save; launch-only"
         ),
     )
     return parser

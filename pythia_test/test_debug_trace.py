@@ -615,7 +615,7 @@ class CLITraceTests(unittest.TestCase):
                     "--endpoint-url", f"{server.url}/v1/chat/completions",
                     "--endpoint-auth", "none", "--endpoint-model", "test-model"]
         for prompt in ("first", "second"):
-            code, stderr = self.main("--debug-trace", *endpoint, "--prompt", prompt)
+            code, stderr = self.main("--debug-trace", *endpoint, "--resume=False", "--prompt", prompt)
             self.assertEqual(code, 0, stderr)
             self.assertIn(f"Debug trace: {self.request_log} and {self.response_log}", stderr)
         requests, responses = _rows(self.request_log), _rows(self.response_log)
