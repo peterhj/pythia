@@ -408,7 +408,7 @@ def _build_model(args: argparse.Namespace) -> Model:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = build_parser(
-        "Ask a Chat Completions, Messages, or Codex Responses model to "
+        "Ask a Chat Completions, Messages, Responses, or Codex model to "
         "summarize a repository using Pythia's default local tools."
     )
     parser.add_argument(

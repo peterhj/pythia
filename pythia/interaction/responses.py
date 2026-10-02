@@ -78,6 +78,9 @@ from .usage import TokenUsage
 X_CODEX_TURN_STATE_HEADER = "x-codex-turn-state"
 REMOTE_COMPACTION_V2_RETAINED_USER_MESSAGE_TOKENS = 64_000
 _RETRYABLE_HTTP_STATUSES = frozenset({408, 409, 425, 429, 500, 502, 503, 504})
+# Codes meaning the request exceeded the model's context window, whether in an
+# HTTP error body or in a ``response.failed`` or ``error`` stream event.
+_CONTEXT_WINDOW_ERROR_CODES = frozenset({"context_length_exceeded"})
 _MAX_TRANSIENT_RETRIES = DEFAULT_MAX_TRANSIENT_RETRIES
 _MAX_DIAGNOSTIC_VALUE_CHARS = 256
 _MAX_DIAGNOSTIC_EVENT_TYPES = 32
@@ -455,21 +458,34 @@ def _encode_tools(tools: Sequence[Any]) -> List[Dict[str, Any]]:
 def _apply_sample_params(
     payload: Dict[str, Any],
     sample_params: Optional[SampleParams],
+    *,
+    generic: bool = False,
 ) -> None:
     if sample_params is None:
         return
     unsupported = []
-    if sample_params.temperature is not None:
-        unsupported.append("temperature")
-    if sample_params.top_p is not None:
-        unsupported.append("top_p")
+    if generic:
+        # Public Responses parameters; a particular model may still reject them.
+        if sample_params.temperature is not None:
+            payload["temperature"] = sample_params.temperature
+        if sample_params.top_p is not None:
+            payload["top_p"] = sample_params.top_p
+    else:
+        if sample_params.temperature is not None:
+            unsupported.append("temperature")
+        if sample_params.top_p is not None:
+            unsupported.append("top_p")
     if sample_params.stop:
         unsupported.append("stop")
     if sample_params.seed is not None:
         unsupported.append("seed")
     if unsupported:
         raise ModelConfigurationError(
-            "Codex Responses does not support these sampling options yet: "
+            (
+                "Responses does not support these sampling options: "
+                if generic
+                else "Codex Responses does not support these sampling options yet: "
+            )
             + ", ".join(unsupported)
         )
     if sample_params.max_output_tokens is not None:
@@ -672,6 +688,48 @@ def _decode_text_entries(
     return tuple(decoded)
 
 
+def _decode_message_content(value: Any) -> str:
+    """Join ``output_text`` and public ``refusal`` parts of an output message."""
+    if value is None:
+        return ""
+    entries = _require_output_list(value, "message.content")
+    decoded: List[str] = []
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, Mapping):
+            raise ModelResponseError(f"message.content[{index}] must be an object")
+        entry_type = entry.get("type")
+        if entry_type == "output_text":
+            field_name = "text"
+        elif entry_type == "refusal":
+            field_name = "refusal"
+        else:
+            raise ModelResponseError(
+                f"unsupported message.content[{index}] type: {entry_type!r}"
+            )
+        decoded.append(
+            _require_output_string(
+                entry.get(field_name),
+                f"message.content[{index}].{field_name}",
+            )
+        )
+    return "".join(decoded)
+
+
+def _has_refusal_part(value: Any) -> bool:
+    """Whether an output item that decoded successfully is a refusal message."""
+    if not isinstance(value, Mapping) or value.get("type") != "message":
+        return False
+    content = value.get("content")
+    return (
+        isinstance(content, Sequence)
+        and not isinstance(content, (str, bytes, bytearray))
+        and any(
+            isinstance(entry, Mapping) and entry.get("type") == "refusal"
+            for entry in content
+        )
+    )
+
+
 def _decode_output_item(value: Any) -> InteractionItem:
     if not isinstance(value, Mapping):
         raise ModelResponseError("response output item must be an object")
@@ -683,13 +741,7 @@ def _decode_output_item(value: Any) -> InteractionItem:
             raise ModelResponseError(
                 f"Responses output message has unsupported role: {role!r}"
             )
-        text = "".join(
-            _decode_text_entries(
-                value.get("content"),
-                field_name="message.content",
-                expected_type="output_text",
-            )
-        )
+        text = _decode_message_content(value.get("content"))
         return Message(role="assistant", content=text)
 
     if item_type == "reasoning":
@@ -860,6 +912,9 @@ class _StreamTrace:
                 if isinstance(response, Mapping)
                 else payload.get("error")
             )
+            if event_type == "error" and not isinstance(error, Mapping):
+                # The public API's error event carries code/message at top level.
+                error = payload
             if isinstance(error, Mapping):
                 self.error_code = _safe_diagnostic_value(
                     error.get("code"),
@@ -1002,6 +1057,15 @@ def _stream_failure(
     headers: Any,
 ) -> ModelResponseError:
     completed = _ordered_output_items(output_items)
+    # An overflow can arrive as a failed response or error event (as from
+    # Codex) instead of an HTTP 400; classify it so overflow recovery runs.
+    context_window = (
+        category in {"response_failed", "response_error_event"}
+        and trace.error_code in _CONTEXT_WINDOW_ERROR_CODES
+    )
+    if context_window:
+        category = "context_window"
+        message = f"{message}: context window exceeded"
     failure = ModelFailure(
         category=category,
         message=message,
@@ -1032,7 +1096,8 @@ def _stream_failure(
         last_sequence_number=trace.last_sequence_number,
         recovery=recovery,
     )
-    return ModelResponseError(
+    error_type = ModelContextWindowError if context_window else ModelResponseError
+    return error_type(
         exception_message or message,
         failure=failure,
         completed_items=completed,
@@ -1056,6 +1121,7 @@ def _collect_sample(
     indexed_output_items: Dict[int, InteractionItem] = {}
     usage = TokenUsage()
     completed = False
+    refused = False
     trace = _StreamTrace(forbidden_values=forbidden_values)
     iterator = _iter_sse_payloads(response)
 
@@ -1155,6 +1221,7 @@ def _collect_sample(
                     continue
                 indexed_output_items[output_index] = decoded
             output_items.append((output_index, decoded))
+            refused = refused or _has_refusal_part(payload.get("item"))
             continue
 
         if event_type in {"response.completed", "response.done"}:
@@ -1233,7 +1300,8 @@ def _collect_sample(
     stop_reason = (
         "tool_use"
         if any(isinstance(item, ToolCall) for item in items)
-        else "end_turn"
+        # Pi treats a refused summary as incomplete and never installs it.
+        else "refusal" if refused else "end_turn"
     )
     return ModelSample(
         items=items,
@@ -1451,6 +1519,8 @@ def _read_http_error_body(exc: urllib.error.HTTPError) -> str:
 
 
 def _is_context_window_error(text: str) -> bool:
+    if _http_body_error_code(text, ()) in _CONTEXT_WINDOW_ERROR_CODES:
+        return True
     normalized = text.lower()
     return any(
         marker in normalized
@@ -1600,22 +1670,27 @@ def _response_header(response: Any, name: str) -> Optional[str]:
     return value
 
 
-class CodexResponsesModel:
-    """Codex-compatible Responses model with model and endpoint routing."""
+class _ResponsesModelBase:
+    """Shared Responses sampling, credentials, and transport.
+
+    The public classes differ only in construction: ``CodexResponsesModel``
+    also takes Codex credentials, an OAuth opener, and an identifier factory,
+    while ``ResponsesModel`` takes an API key and only ``responses`` routes.
+    """
 
     auto_compaction_owner = "host"
 
-    def __init__(
+    def _initialize(
         self,
-        endpoint: Optional[StreamingResponsesEndpoint] = None,
+        endpoint: Optional[StreamingResponsesEndpoint],
         *,
-        auth: Optional[CodexAuth] = None,
-        request_timeout_seconds: Optional[float] = None,
-        opener: Optional[Callable[..., Any]] = None,
-        auth_opener: Optional[Callable[..., Any]] = None,
-        identifier_factory: Optional[Callable[[], Any]] = None,
-        retry_sleep: Optional[Callable[[float], None]] = None,
-        binding: Optional[ModelBinding] = None,
+        auth: Optional[CodexAuth],
+        request_timeout_seconds: Optional[float],
+        opener: Optional[Callable[..., Any]],
+        auth_opener: Optional[Callable[..., Any]],
+        identifier_factory: Optional[Callable[[], Any]],
+        retry_sleep: Optional[Callable[[float], None]],
+        binding: Optional[ModelBinding],
     ) -> None:
         if endpoint is not None:
             if not isinstance(endpoint, StreamingResponsesEndpoint):
@@ -1746,19 +1821,29 @@ class CodexResponsesModel:
             provider_state = _ProviderState()
 
         spec = _resolve_model_spec(self.endpoint)
+        codex = self.endpoint.api_provider == "codex"
         payload: Dict[str, Any] = {
             "model": self.binding.endpoint.model,
             "input": _encode_context_items(
                 context.model_items(),
-                system_role="developer" if self.endpoint.api_provider == "codex" else "system",
+                system_role="developer" if codex else "system",
             ),
-            "tools": _encode_tools(tools),
-            "tool_choice": "auto",
-            "parallel_tool_calls": False,
-            "store": False,
-            "stream": True,
-            "include": ["reasoning.encrypted_content"],
         }
+        encoded_tools = _encode_tools(tools)
+        # Without tools (e.g. Pi summaries), generic Responses sends no tool
+        # fields, as the Chat Completions and Messages adapters do. Codex
+        # requests keep their established shape.
+        if encoded_tools or codex:
+            payload.update(
+                tools=encoded_tools,
+                tool_choice="auto",
+                parallel_tool_calls=False,
+            )
+        payload.update(
+            store=False,
+            stream=True,
+            include=["reasoning.encrypted_content"],
+        )
         reasoning: Dict[str, str] = {}
         defaults = None if spec is None else spec.responses
         if defaults is not None:
@@ -1772,7 +1857,7 @@ class CodexResponsesModel:
             payload["text"] = {"verbosity": defaults.text_verbosity}
         if provider_state.session_id is not None:
             payload["prompt_cache_key"] = provider_state.session_id
-        _apply_sample_params(payload, sample_params)
+        _apply_sample_params(payload, sample_params, generic=not codex)
         _apply_extra_sample_params(payload, self.binding, sample_params)
         return payload, provider_state
 
@@ -2233,6 +2318,115 @@ class CodexResponsesModel:
                 _close_response(response)
 
 
+class CodexResponsesModel(_ResponsesModelBase):
+    """Codex-compatible Responses model with model and endpoint routing."""
+
+    def __init__(
+        self,
+        endpoint: Optional[StreamingResponsesEndpoint] = None,
+        *,
+        auth: Optional[CodexAuth] = None,
+        request_timeout_seconds: Optional[float] = None,
+        opener: Optional[Callable[..., Any]] = None,
+        auth_opener: Optional[Callable[..., Any]] = None,
+        identifier_factory: Optional[Callable[[], Any]] = None,
+        retry_sleep: Optional[Callable[[float], None]] = None,
+        binding: Optional[ModelBinding] = None,
+    ) -> None:
+        self._initialize(
+            endpoint,
+            auth=auth,
+            request_timeout_seconds=request_timeout_seconds,
+            opener=opener,
+            auth_opener=auth_opener,
+            identifier_factory=identifier_factory,
+            retry_sleep=retry_sleep,
+            binding=binding,
+        )
+
+
+class ResponsesModel(_ResponsesModelBase):
+    """Public Responses API model with API-key or anonymous auth, never Codex auth.
+
+    Accepts only ``responses`` endpoints and bindings. ``api_key`` is the
+    credential for a binding whose auth is ``supplied``; ``env:NAME`` auth
+    rereads its variable before each sample, and ``none`` sends no credential.
+    There are no login files, OAuth refreshes, account pinning, Codex headers,
+    or remote compaction, so the default compaction mode is Pi.
+    """
+
+    def __init__(
+        self,
+        endpoint: Optional[StreamingResponsesEndpoint] = None,
+        *,
+        binding: Optional[ModelBinding] = None,
+        api_key: Optional[str] = None,
+        request_timeout_seconds: Optional[float] = None,
+        opener: Optional[Callable[..., Any]] = None,
+        retry_sleep: Optional[Callable[[float], None]] = None,
+    ) -> None:
+        auth = None
+        if endpoint is not None:
+            if not isinstance(endpoint, StreamingResponsesEndpoint):
+                raise TypeError(
+                    "endpoint must be StreamingResponsesEndpoint or None"
+                )
+            if endpoint.binding.api != "responses":
+                raise ModelConfigurationError(
+                    "ResponsesModel requires a responses endpoint; "
+                    "use CodexResponsesModel for Codex"
+                )
+            conflicting_options = [name for name, value in (
+                ("binding", binding),
+                ("api_key", api_key),
+                ("request_timeout_seconds", request_timeout_seconds),
+            ) if value is not None]
+            if conflicting_options:
+                raise ModelConfigurationError(
+                    "endpoint cannot be combined with endpoint-construction "
+                    "options: "
+                    + ", ".join(conflicting_options)
+                )
+        else:
+            if not isinstance(binding, ModelBinding):
+                raise TypeError("binding must be ModelBinding when endpoint is omitted")
+            if binding.api != "responses":
+                raise ModelConfigurationError(
+                    "ResponsesModel requires a responses binding; "
+                    "use CodexResponsesModel for Codex"
+                )
+            if api_key is not None:
+                if not isinstance(api_key, str):
+                    raise TypeError("api_key must be a string or None")
+                if binding.endpoint.auth != "supplied":
+                    raise ModelConfigurationError(
+                        "api_key requires endpoint auth 'supplied'"
+                    )
+                if not api_key.strip() or any(
+                    character.isspace() for character in api_key.strip()
+                ):
+                    raise ModelConfigurationError(
+                        "api_key must be nonempty and contain no whitespace"
+                    )
+                # CodexAuth is only the shared token value here; no Codex
+                # login or OAuth code runs for a responses binding.
+                auth = CodexAuth(api_key)
+            elif binding.endpoint.auth == "supplied":
+                raise ModelConfigurationError(
+                    "This endpoint uses supplied auth; pass api_key"
+                )
+        self._initialize(
+            endpoint,
+            auth=auth,
+            request_timeout_seconds=request_timeout_seconds,
+            opener=opener,
+            auth_opener=None,
+            identifier_factory=None,
+            retry_sleep=retry_sleep,
+            binding=binding,
+        )
+
+
 class ResponsesOpaqueCompactor:
     """Remote Responses V2 compactor with client-built prefix history."""
 
@@ -2339,6 +2533,7 @@ class ResponsesOpaqueCompactor:
 __all__ = [
     "CodexResponsesModel",
     "REMOTE_COMPACTION_V2_RETAINED_USER_MESSAGE_TOKENS",
+    "ResponsesModel",
     "ResponsesOpaqueCompactor",
     "StreamingResponsesEndpoint",
     "X_CODEX_TURN_STATE_HEADER",

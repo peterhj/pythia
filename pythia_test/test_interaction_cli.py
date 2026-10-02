@@ -26,6 +26,8 @@ from pythia.interaction import Init
 from pythia.interaction import Instructions
 from pythia.interaction import Message
 from pythia.interaction import InteractionContext
+from pythia.interaction import ModelAuthenticationError
+from pythia.interaction import ModelFailure
 from pythia.interaction import ModelSample
 from pythia.interaction import ModelSampleBoundary
 from pythia.interaction import OpaqueCompaction
@@ -1199,6 +1201,28 @@ class CLIControllerTests(_ControllerTestCase):
             self.assertEqual(await self._run(model, terminal, ["--prompt", "hello"]), 1)
         self.assertEqual(len(model.calls), 1)
         self.assertEqual(load_interaction_save(self.path).items[-1], UserInteractionBoundary())
+
+
+class AuthNoticeTests(unittest.TestCase):
+    def test_notice_follows_the_rejected_credential_source(self):
+        for source, expected in (
+            ("environment", "Environment credential rejected; update it and restart the process."),
+            ("static", "Configured static credential rejected; restart with updated credentials."),
+            ("none", "Endpoint rejected anonymous access; restart with "
+                     "--endpoint-auth env:NAME or supplied."),
+            ("codex_file", "Model authentication needed; use /login."),
+        ):
+            with self.subTest(source=source):
+                state = cli._UIState()
+                failure = ModelFailure(
+                    category="authentication", message="rejected", provider="api",
+                    model="wire", auth_source=source,
+                )
+                cli._mark_auth_required(
+                    state, ModelAuthenticationError("rejected", failure=failure),
+                )
+                self.assertTrue(state.auth_required)
+                self.assertEqual(state.auth_notice, expected)
 
 
 if __name__ == "__main__":

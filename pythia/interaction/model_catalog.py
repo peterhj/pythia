@@ -299,7 +299,8 @@ _ANTHROPIC = EndpointSpec(
 _PROFILE_DEFAULT_ENDPOINTS = MappingProxyType({
     "codex": _CHATGPT,
     "responses": EndpointSpec(
-        "responses", OPENAI_RESPONSES_API_URL + "/responses", auth="supplied",
+        "responses", OPENAI_RESPONSES_API_URL + "/responses",
+        auth="env:OPENAI_API_KEY",
     ),
     "messages": _ANTHROPIC,
     "chat-completions": EndpointSpec(

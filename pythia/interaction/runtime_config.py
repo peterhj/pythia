@@ -154,7 +154,7 @@ def resolve_compaction_mode(binding, requested: Optional[str] = None) -> str:
 def _model_compaction_mode(model, requested: Optional[str]) -> str:
     """Infer a Python-built model's mode, or check a requested one."""
     from .messages import MessagesModel
-    from .responses import CodexResponsesModel
+    from .responses import _ResponsesModelBase
 
     requested = validate_config_value("compaction_mode", requested)
     if isinstance(model, MessagesModel):
@@ -171,7 +171,7 @@ def _model_compaction_mode(model, requested: Optional[str]) -> str:
             )
         return "provider" if configured else "pi"
     remote = (
-        isinstance(model, CodexResponsesModel)
+        isinstance(model, _ResponsesModelBase)
         and model.supports_remote_compaction
     )
     if requested == "provider" and not remote:
@@ -399,7 +399,7 @@ class InteractionConfig:
         """
         from .chat_completions import ChatCompletionsModel
         from .messages import MessagesModel
-        from .responses import CodexResponsesModel
+        from .responses import _ResponsesModelBase
 
         if not isinstance(snapshot, InteractionConfigSnapshot):
             raise TypeError("snapshot must be InteractionConfigSnapshot")
@@ -423,7 +423,7 @@ class InteractionConfig:
                 ),
             )
             profile = "messages"
-        elif isinstance(model, CodexResponsesModel):
+        elif isinstance(model, _ResponsesModelBase):
             endpoint = model.endpoint
             profile = model.binding.endpoint.api
         elif isinstance(model, ChatCompletionsModel):

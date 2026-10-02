@@ -25,6 +25,7 @@ from .model_catalog import parse_json_value, freeze_extra_sample_params, thaw_js
 from .codex_auth import CodexAuth, _resolve_auth_file
 from .model_catalog_config import load_model_catalog
 from .responses import CodexResponsesModel
+from .responses import ResponsesModel
 from .timeouts import DEFAULT_REQUEST_TIMEOUT_SECONDS
 
 
@@ -87,7 +88,7 @@ def prepare_namespace(args, catalog=None):
             "A custom Codex destination requires explicit --endpoint-api codex; "
             "use --endpoint-api chat-completions for a local chat model."
         )
-    if binding.api not in {"chat-completions", "messages", "codex"}:
+    if binding.api not in {"chat-completions", "messages", "codex", "responses"}:
         raise ValueError(f"The frontend does not support the {binding.api} API.")
     if not getattr(args, "_endpoint_prepared", False):
         if getattr(args, "codex_home", None) is not None or getattr(args, "codex_auth_file", None) is not None:
@@ -155,7 +156,7 @@ def add_catalog_arguments(parser, *, suppress_extra_sample_params=False):
 def add_endpoint_arguments(parser, *, auto=False):
     default = argparse.SUPPRESS if auto else None
     parser.add_argument("--endpoint-api", dest="model_api",
-                        choices=("chat-completions", "messages", "codex"),
+                        choices=("chat-completions", "messages", "codex", "responses"),
                         default=default, help="endpoint API; omitted infers a unique catalog selection")
     parser.add_argument("--endpoint-url", default=default, help="complete model POST URL")
     parser.add_argument("--endpoint-model", default=default, help="wire model ID (not a catalog selector)")
@@ -283,6 +284,25 @@ def build_model(
                   if binding.endpoint.auth == "supplied" else None),
             opener=opener,
             auth_opener=auth_opener,
+        )
+
+    if args.model_api == "responses":
+        if args.codex_home is not None or args.codex_auth_file is not None:
+            raise ValueError(
+                "Endpoint auth paths require --endpoint-api codex"
+            )
+        if args.model is None or not args.model.strip():
+            raise ValueError(
+                "--model is required with --endpoint-api responses"
+            )
+        # API-key or anonymous auth only: there is no OAuth refresh for
+        # auth_opener to carry, and env:NAME is reread by the model per sample.
+        return ResponsesModel(
+            binding=binding,
+            api_key=(_endpoint_api_key(args, binding)
+                     if binding.endpoint.auth == "supplied" else None),
+            request_timeout_seconds=args.request_timeout_seconds,
+            opener=opener,
         )
 
     raise ValueError(f"unsupported model API: {args.model_api!r}")

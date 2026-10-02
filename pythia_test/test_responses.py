@@ -34,6 +34,7 @@ from pythia.interaction import META_RESPONSES_API_URL
 from pythia.interaction import Message
 from pythia.interaction import ModelAuthenticationError
 from pythia.interaction import ModelConfigurationError
+from pythia.interaction import ModelContextWindowError
 from pythia.interaction import InteractionContext
 from pythia.interaction import ModelResponseError
 from pythia.interaction import ModelSampleBoundary
@@ -1765,11 +1766,11 @@ class CodexResponsesModelTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(
             ModelConfigurationError,
-            "temperature",
+            "^Responses does not support these sampling options: seed$",
         ):
             model.sample(
                 InteractionContext([Message(role="user", content="hello")]),
-                sample_params=SampleParams(temperature=0.5),
+                sample_params=SampleParams(seed=7),
             )
 
         partial_message = _message_event(0, "partial")
@@ -2648,6 +2649,137 @@ class DemoConfigurationTests(unittest.TestCase):
             "unsupported model API: 'unsupported-api'",
         ):
             _build_model(args)
+
+
+class GenericResponsesWireTests(unittest.TestCase):
+    """Public Responses request and response shapes; Codex requests unchanged."""
+
+    TOOL = ToolSpec("lookup", "Look things up.", {"type": "object", "properties": {}})
+
+    def _sample(self, api_provider, *outcomes, tools=(), sample_params=None):
+        opener = _ScriptedOpener(*outcomes)
+        model = codex_model(
+            responses_endpoint(
+                api_url="https://api.example.test/v1",
+                model="wire-model",
+                bearer_token="api-key",
+                api_provider=api_provider,
+            ),
+            opener=opener,
+            retry_sleep=lambda _delay: None,
+        )
+        sample = model.sample(
+            InteractionContext([Message(role="user", content="hello")]),
+            tools=tools,
+            sample_params=sample_params,
+        )
+        return sample, opener
+
+    def test_tool_fields_need_tools_except_on_codex(self):
+        fields = {"tools", "tool_choice", "parallel_tool_calls"}
+        for api_provider, tools, sent in (
+            ("api", (), False), ("api", (self.TOOL,), True), ("codex", (), True),
+        ):
+            with self.subTest(api_provider=api_provider, tools=len(tools)):
+                _, opener = self._sample(
+                    api_provider,
+                    _FakeSSEResponse(_message_event(0, "done"), _completed_event()),
+                    tools=tools,
+                )
+                payload = _request_payload(opener)
+                self.assertEqual(fields & payload.keys(), fields if sent else set())
+                if sent:
+                    self.assertEqual(
+                        (payload["tool_choice"], payload["parallel_tool_calls"]),
+                        ("auto", False),
+                    )
+                self.assertEqual(
+                    (payload["store"], payload["stream"], payload["include"]),
+                    (False, True, ["reasoning.encrypted_content"]),
+                )
+
+    def test_generic_route_sends_temperature_and_top_p_and_codex_rejects_them(self):
+        _, opener = self._sample(
+            "api",
+            _FakeSSEResponse(_message_event(0, "done"), _completed_event()),
+            sample_params=SampleParams(temperature=0.25, top_p=0.5, max_output_tokens=64),
+        )
+        payload = _request_payload(opener)
+        self.assertEqual(
+            (payload["temperature"], payload["top_p"], payload["max_output_tokens"]),
+            (0.25, 0.5, 64),
+        )
+        for api_provider, params, message in (
+            ("api", SampleParams(stop=("END",), temperature=0.25),
+             "^Responses does not support these sampling options: stop$"),
+            ("codex", SampleParams(temperature=0.25),
+             "^Codex Responses does not support these sampling options yet: temperature$"),
+        ):
+            with self.subTest(api_provider=api_provider), \
+                    self.assertRaisesRegex(ModelConfigurationError, message):
+                self._sample(api_provider, sample_params=params)
+
+    def test_refusal_parts_decode_with_a_refusal_stop_reason(self):
+        refusal = {
+            "type": "response.output_item.done",
+            "output_index": 0,
+            "item": {
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "refusal", "refusal": "I can't help with that."}],
+            },
+        }
+        sample, _ = self._sample("api", _FakeSSEResponse(
+            {"type": "response.refusal.delta", "output_index": 0, "delta": "I can't"},
+            refusal,
+            _completed_event(),
+        ))
+        self.assertEqual(sample.last_assistant_text, "I can't help with that.")
+        self.assertEqual(sample.stop_reason, "refusal")
+        sample, _ = self._sample(
+            "api", _FakeSSEResponse(_message_event(0, "Sure."), _completed_event()),
+        )
+        self.assertEqual(sample.stop_reason, "end_turn")
+        malformed = dict(refusal, item=dict(refusal["item"], content=[{"type": "refusal"}]))
+        with self.assertRaises(ModelResponseError) as raised:
+            self._sample("api", _FakeSSEResponse(malformed, _completed_event()))
+        self.assertEqual(raised.exception.failure.category, "invalid_output_item")
+
+    def test_context_window_codes_classify_http_and_stream_failures(self):
+        body = json.dumps({"error": {
+            "type": "invalid_request_error", "code": "context_length_exceeded",
+            "message": "Input is too large.",  # No text marker: the code decides.
+        }}).encode()
+        outcomes = {
+            "http": lambda: _http_error(400, body=body),
+            "response.failed": lambda: _FakeSSEResponse({
+                "type": "response.failed",
+                "response": {"error": {"code": "context_length_exceeded", "message": "x"}},
+            }),
+            "public error event": lambda: _FakeSSEResponse({
+                "type": "error", "code": "context_length_exceeded", "message": "x",
+                "param": None, "sequence_number": 1,
+            }),
+            "nested error event": lambda: _FakeSSEResponse({
+                "type": "error", "error": {"code": "context_length_exceeded"},
+            }),
+        }
+        for name, outcome in outcomes.items():
+            for api_provider in ("api", "codex"):
+                with self.subTest(name, api_provider=api_provider):
+                    with self.assertRaises(ModelContextWindowError) as raised:
+                        self._sample(api_provider, outcome())
+                    self.assertEqual(raised.exception.failure.category, "context_window")
+                    self.assertEqual(
+                        raised.exception.failure.error_code, "context_length_exceeded",
+                    )
+        with self.assertRaises(ModelResponseError) as raised:
+            self._sample("api", _FakeSSEResponse({
+                "type": "response.failed",
+                "response": {"error": {"code": "server_error", "message": "x"}},
+            }))
+        self.assertNotIsInstance(raised.exception, ModelContextWindowError)
+        self.assertEqual(raised.exception.failure.category, "response_failed")
 
 
 if __name__ == "__main__":

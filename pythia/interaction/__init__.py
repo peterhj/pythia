@@ -103,6 +103,7 @@ from .model_catalog import get_model_spec
 from .model_catalog import list_model_specs
 from .responses import CodexResponsesModel
 from .responses import REMOTE_COMPACTION_V2_RETAINED_USER_MESSAGE_TOKENS
+from .responses import ResponsesModel
 from .responses import ResponsesOpaqueCompactor
 from .responses import StreamingResponsesEndpoint
 from .responses import X_CODEX_TURN_STATE_HEADER
@@ -190,6 +191,7 @@ __all__ = [
     "Reasoning",
     "REMOTE_COMPACTION_V2_RETAINED_USER_MESSAGE_TOKENS",
     "ResponsesDefaults",
+    "ResponsesModel",
     "ResponsesOpaqueCompactor",
     "StreamingResponsesEndpoint",
     "SampleParams",

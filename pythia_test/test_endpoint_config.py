@@ -12,8 +12,8 @@ import unittest
 from unittest import mock
 
 from pythia.interaction import (
-    BUILTIN_MODEL_CATALOG, EndpointSpec, InteractionConfig, InteractionContext,
-    Message, ModelSpec, ModelLimits, parse_model_catalog,
+    BUILTIN_MODEL_CATALOG, ConfigError, EndpointSpec, InteractionConfig, InteractionContext,
+    Message, ModelSpec, ModelLimits, ResponsesModel, parse_model_catalog,
 )
 from pythia.interaction import cli, demo, responses
 from pythia.interaction._auto_config import resolve_config, namespace
@@ -287,6 +287,79 @@ source = metadata only
             endpoint = namespace(settings[2], registry).model_binding.endpoint
             self.assertEqual(endpoint.url, "http://host.test/exact")
             self.assertEqual(endpoint.model, "worker-wire")
+
+
+class StandaloneResponsesFrontendTests(unittest.TestCase):
+    LOCAL = "http://127.0.0.1:9/v1/responses"
+
+    def test_cli_and_demo_build_the_standalone_route_with_pi(self):
+        with mock.patch.dict("os.environ", {"OPENAI_API_KEY": "env-key"}):
+            for frontend in (cli, demo):
+                with self.subTest(frontend=frontend.__name__):
+                    args = prepare_namespace(frontend._build_parser().parse_args(
+                        ["--endpoint-api", "responses", "--model", "gpt-test"]
+                    ))
+                    model = build_model(args)
+                    self.assertIsInstance(model, ResponsesModel)
+                    self.assertEqual(
+                        (model.endpoint.url, model.endpoint.model, model.binding.endpoint.auth),
+                        ("https://api.openai.com/v1/responses", "gpt-test", "env:OPENAI_API_KEY"),
+                    )
+                    self.assertEqual(InteractionConfig.from_namespace(args).get("compaction_mode"), "pi")
+                    self.assertFalse(supports_account_services(args))
+
+    def test_credentials_urls_and_required_options(self):
+        flags = ("--endpoint-api", "responses", "--model", "gpt-test")
+        with mock.patch.dict("os.environ", {}, clear=True):
+            with self.assertRaisesRegex(ValueError, "OPENAI_API_KEY"):
+                build_model(prepared(*flags))
+            supplied = build_model(prepared(*flags, "--endpoint-api-key", "literal"))
+            self.assertEqual(supplied.binding.endpoint.auth, "supplied")
+            self.assertEqual(supplied.endpoint.bearer_token, "literal")
+            # The default OpenAI key never follows a changed URL implicitly.
+            with self.assertRaisesRegex(ValueError, "requires explicit --endpoint-auth"):
+                prepared(*flags, "--endpoint-url", self.LOCAL)
+            local = build_model(prepared(*flags, "--endpoint-url", self.LOCAL, "--endpoint-auth", "none"))
+            self.assertEqual((local.endpoint.url, local.endpoint.bearer_token), (self.LOCAL, None))
+            with self.assertRaisesRegex(ConfigError, "no provider compaction"):
+                build_model(prepared(*flags, "--endpoint-url", self.LOCAL, "--endpoint-auth", "none",
+                                     "--compaction-mode", "provider"))
+        with self.assertRaisesRegex(ValueError, "--model is required with --endpoint-api responses"):
+            build_model(prepared("--endpoint-api", "responses"))
+        with self.assertRaisesRegex(ValueError, "Endpoint auth paths require --endpoint-api codex"):
+            prepared(*flags, "--endpoint-auth-home", "/nonexistent")
+
+    def test_user_catalog_responses_model_is_selected_by_name(self):
+        registry = parse_model_catalog('''[catalog]
+version = 4
+[model.public-test]
+endpoint.api = responses
+endpoint.url = https://api.example.test/v1/responses
+endpoint.model = public-wire
+endpoint.auth = env:PUBLIC_TEST_KEY
+''')
+        with mock.patch.dict("os.environ", {"PUBLIC_TEST_KEY": "public-key"}):
+            model = build_model(prepared("--model", "public-test", catalog=registry))
+        self.assertIsInstance(model, ResponsesModel)
+        self.assertEqual(
+            (model.endpoint.url, model.endpoint.model, model.endpoint.bearer_token),
+            ("https://api.example.test/v1/responses", "public-wire", "public-key"),
+        )
+
+    def test_auto_accepts_the_responses_api(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "contexts.json"
+            path.write_text(json.dumps({"version": 1, "contexts": {"2": {
+                "endpoint_url": self.LOCAL, "endpoint_auth": "none",
+            }}}))
+            settings = resolve_config(
+                path, {"model_api": "responses", "model": "gpt-test"},
+                catalog=BUILTIN_MODEL_CATALOG,
+            )
+            binding = namespace(settings[2], BUILTIN_MODEL_CATALOG).model_binding
+        self.assertEqual((binding.api, binding.endpoint.url, binding.endpoint.auth),
+                         ("responses", self.LOCAL, "none"))
+
 
 if __name__ == "__main__":
     unittest.main()

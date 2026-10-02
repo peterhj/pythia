@@ -41,7 +41,7 @@ _SAVED_KEYS = {
     1: frozenset(DEFAULTS).difference(_COMPACTION_KEYS) | {"name"},
     2: frozenset(DEFAULTS) | {"name"},
 }
-_APIS = {"chat-completions", "messages", "codex"}
+_APIS = {"chat-completions", "messages", "codex", "responses"}
 _PROVIDER_FIELDS = ("model", "endpoint_url", "endpoint_model", "endpoint_auth",
                     "codex_home", "codex_auth_file")
 _PATHS = ("cwd", "codex_home", "codex_auth_file")
@@ -193,7 +193,7 @@ def _validate(settings, catalog):
     args = namespace(settings, catalog)
     api = args.model_api
     if api != "chat-completions" and args.model is None:
-        raise ValueError("A model is required for Messages/Codex.")
+        raise ValueError("A model is required for Messages, Codex, and Responses.")
     name = settings["name"]
     if (not isinstance(name, str) or not name.strip() or len(name) > 64 or
             any(ord(c) < 32 or ord(c) == 127 for c in name)):

@@ -334,6 +334,12 @@ def _mark_auth_required(
         state.auth_notice = (
             "Configured static credential rejected; restart with updated credentials."
         )
+    elif exc.failure is not None and exc.failure.auth_source == "none":
+        # /login cannot help an anonymous non-Codex endpoint.
+        state.auth_notice = (
+            "Endpoint rejected anonymous access; restart with "
+            "--endpoint-auth env:NAME or supplied."
+        )
     else:
         state.auth_notice = "Model authentication needed; use /login."
 
@@ -992,11 +998,12 @@ async def _drive_interaction(
                     )
                     if message.has_media and args.model_api not in {
                         "codex",
+                        "responses",
                         "chat-completions",
                     }:
                         raise AttachmentError(
                             f"--endpoint-api {args.model_api} does not support "
-                            "media prompts; use codex or "
+                            "media prompts; use codex, responses, or "
                             "chat-completions"
                         )
                 except AttachmentError as exc:

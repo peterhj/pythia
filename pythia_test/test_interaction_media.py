@@ -505,6 +505,27 @@ class HeadlessMediaTests(unittest.TestCase):
         self.assertEqual(model.calls, [])
         self.assertIn("does not support media", stderr)
 
+    def test_responses_api_accepts_media(self):
+        code, model, stderr = self.run_main(
+            [
+                "--enable-experimental-media",
+                "--endpoint-api",
+                "responses",
+                "--model",
+                "gpt-test",
+                "--prompt",
+                "@pic.png describe",
+            ],
+            _answer("ok"),
+        )
+        self.assertEqual(code, 0, stderr)
+        (sent_user,) = [
+            item
+            for item in model.calls[0][0].items
+            if isinstance(item, Message) and item.role == "user"
+        ]
+        self.assertTrue(sent_user.has_media)
+
 
 class DisplayTests(unittest.TestCase):
     def test_media_message_renders_without_payload(self):
