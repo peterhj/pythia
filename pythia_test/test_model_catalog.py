@@ -192,13 +192,18 @@ class ModelCatalogTests(unittest.TestCase):
         context = InteractionContext((Message("user", "Hello."),))
         specs = list_model_specs("messages")
         self.assertTrue(specs)
+        # Opus and Sonnet (base and -max presets) also request summarized thinking.
+        summarized = {"claude-opus-5-5", "claude-sonnet-5-5"}
         for spec in specs:
             with self.subTest(name=spec.name):
                 payload = MessagesModel(messages_endpoint(
                     api_url="https://api.anthropic.com", model=spec.name, api_key="FAKE",
                 ))._build_request_payload(context, (), None)
                 self.assertEqual(payload["model"], spec.endpoint.model)
-                self.assertEqual(payload["thinking"], {"type": "adaptive"})
+                thinking = {"type": "adaptive"}
+                if spec.endpoint.model in summarized:
+                    thinking["display"] = "summarized"
+                self.assertEqual(payload["thinking"], thinking)
                 if spec.name.endswith("-max"):
                     self.assertEqual(payload["output_config"], {"effort": "max"})
                 else:
@@ -310,7 +315,8 @@ class ModelCatalogTests(unittest.TestCase):
             self.assertIn("META_API_KEY", model_help)
             # Request settings: typed Responses defaults, then extra sample params as sent.
             self.assertIn("codex-gpt-6-astra-max (codex, effort=max, summary=auto, verbosity=low)", model_help)
-            self.assertIn('claude-opus-5.5-max (messages, thinking={"type":"adaptive"}, '
+            self.assertIn('claude-opus-5.5-max (messages, '
+                          'thinking={"type":"adaptive","display":"summarized"}, '
                           'output_config={"effort":"max"}, ANTHROPIC_API_KEY)', model_help)
             self.assertNotIn("codex-gpt-6-astra-low", model_help)
             self.assertNotIn("muse-spark-1.3-max", model_help)

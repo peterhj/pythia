@@ -385,7 +385,7 @@ _OPUS = ModelSpec(
         "https://platform.claude.com/docs/en/models/opus-5-5/overview; "
         "https://platform.claude.com/docs/en/build-with-claude/effort"
     ),
-    extra_sample_params={"thinking": {"type": "adaptive"}},
+    extra_sample_params={"thinking": {"type": "adaptive", "display": "summarized"}},
 )
 _SONNET = ModelSpec(
     name="claude-sonnet-5.5",
@@ -399,7 +399,7 @@ _SONNET = ModelSpec(
         "https://platform.claude.com/docs/en/models/sonnet-5-5/overview; "
         "https://platform.claude.com/docs/en/build-with-claude/effort"
     ),
-    extra_sample_params={"thinking": {"type": "adaptive"}},
+    extra_sample_params={"thinking": {"type": "adaptive", "display": "summarized"}},
 )
 
 

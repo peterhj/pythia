@@ -487,7 +487,8 @@ class BoundRequestTests(unittest.TestCase):
         cfg = InteractionConfig.from_namespace(args)
         payload = build_model(args)._build_request_payload(context(), (), cfg.snapshot().sample_params())
         self.assertEqual(payload["output_config"], {"effort": "low"})
-        self.assertEqual(payload["thinking"], {"type": "adaptive"})  # Other preset params are kept.
+        # Other preset params are kept.
+        self.assertEqual(payload["thinking"], {"type": "adaptive", "display": "summarized"})
 
     def test_user_codex_extra_sample_params_extend_every_request(self):
         registry = catalog(CODEX + 'extra_sample_params.service_tier = "flex"\n')
@@ -800,7 +801,8 @@ class CatalogEntrypointTests(unittest.TestCase):
                     ', thinking={"type":"enabled","budget_tokens":1000}, reasoning_effort="max"'), line)
                 self.assertTrue(line["code-env"].endswith(", effort=high"), line)
                 self.assertTrue(line["claude-opus-5.5-max:"].endswith(
-                    'source=builtin, thinking={"type":"adaptive"}, output_config={"effort":"max"}'), line)
+                    'source=builtin, thinking={"type":"adaptive","display":"summarized"}, '
+                    'output_config={"effort":"max"}'), line)
 
     def test_cli_debug_binding_snapshot_is_opt_in(self):
         requests = []

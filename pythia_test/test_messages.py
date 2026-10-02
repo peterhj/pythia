@@ -414,7 +414,10 @@ class MessagesSummaryRequestTests(unittest.TestCase):
                     self.assertNotIn(key, payload)
                 self.assertNotIn("tool_use", json.dumps(payload))
                 self.assertEqual(payload["max_tokens"], max_tokens)
-                self.assertEqual(payload["thinking"], {"type": "adaptive"})
+                self.assertEqual(
+                    payload["thinking"],
+                    {"type": "adaptive", "display": "summarized"},
+                )
                 self.assertEqual(payload["output_config"], {"effort": "max"})
                 # Summary requests still carry cache_control (plan 9.1 TODO).
                 self.assertEqual(payload["cache_control"], {"type": "ephemeral", "ttl": "5m"})
