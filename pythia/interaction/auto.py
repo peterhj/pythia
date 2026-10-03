@@ -1,7 +1,10 @@
-"""Board-first fixed-role MVP. Run ``python3 -m pythia.interaction.auto --help``.
+"""Fixed-role auto app. Run ``python3 -m pythia.interaction.auto --help``.
 
-All contexts initially wait. User board threads wake #1 (main), its plans wake
-#2 (worker), and finalized main turns produce a debug event from #-1 (watcher).
+All contexts initially wait. By default only #1 (main) and #-1 (watcher) run:
+frontend tasks wake main directly, and finalized main turns produce a debug
+event from the watcher. ``--enable-experimental-worker-board`` adds the
+experimental #2 (worker) and shared message board: user tasks then become board
+threads that wake main, and main's posted plans wake the worker.
 This module deliberately does not change the existing CLI or demo.
 """
 
@@ -48,6 +51,8 @@ from .user import UserInteraction
 _FRAME_INTERVAL = 1 / 128
 _SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 _ACTIVE_PHASES = {"starting", "sampling", "compacting", "executing tools", "saving"}
+# Unfinished in-process tasks admitted without the board (its user-task limit).
+_MAX_PENDING_TASKS = 16
 
 
 _COOPERATION_PREAMBLE = (
@@ -99,10 +104,20 @@ _ROLE_INSTRUCTIONS = {
     ),
     -1: "You are watcher. The host displays a debug event when main's end-of-turn condition fires. No model polling is needed.",
 }
+# Without the board, main defaults to no instructions (like the CLI): its
+# board-era role text is about delegating to the worker.
+_STANDALONE_ROLE_INSTRUCTIONS = {-1: _ROLE_INSTRUCTIONS[-1]}
+_RESTART_NOTICE = ("Restart notice: saved history was resumed without "
+                   "restoring old command-session IDs or runtime state.")
 
 
 def _instructions(index, settings, base_url):
+    """Effective role instructions; None without the board and any body."""
     body = settings["instructions"]
+    if base_url is None:
+        if body is None:
+            body = _STANDALONE_ROLE_INSTRUCTIONS.get(index)
+        return None if body is None else Instructions(body)
     if body is None:
         body = _COOPERATION_PREAMBLE + "\n\n" + _ROLE_INSTRUCTIONS[index]
     return Instructions(body + "\n\n# Shared message board instructions\n\n"
@@ -124,7 +139,19 @@ class _Event:
 @dataclass(frozen=True)
 class _Completion:
     record_id: str
-    thread_id: str
+    thread_id: Optional[str]
+
+
+@dataclass(frozen=True)
+class _Task:
+    """One in-process user task for main when the experimental board is off.
+
+    It has the board-record fields an owner job reads; there is no thread.
+    """
+    sequence: int
+    record_id: str
+    content: str
+    thread_id: None = None
 
 
 class _Stopping(RuntimeError):
@@ -201,32 +228,43 @@ def _compact(session, index, model, environment, config, context, sample_params)
 
 
 class _Session:
-    """Private fixed-role runtime; no dynamic manager/template API."""
+    """Private fixed-role runtime; no dynamic manager/template API.
+
+    The #2 worker and the board it coordinates through are one experimental,
+    opt-in unit. Without them, main takes in-process tasks in FIFO order.
+    """
     def __init__(self, path, settings, *, board_port=0,
                  model_factory=_model_factory, environment_factory=_environment_factory,
                  resume=False, enable_board_auth=True,
-                 debug_save_model_binding=False):
+                 debug_save_model_binding=False,
+                 enable_experimental_worker_board=False):
         if type(enable_board_auth) is not bool:
             raise TypeError("enable_board_auth must be a bool.")
         if type(debug_save_model_binding) is not bool:
             raise TypeError("debug_save_model_binding must be a bool.")
+        if type(enable_experimental_worker_board) is not bool:
+            raise TypeError("enable_experimental_worker_board must be a bool.")
+        self.worker_board = enable_experimental_worker_board
+        # Settings (and config.json) keep every fixed role; only these run.
+        self.roles = tuple(i for i in NAMES if i != 2 or self.worker_board)
         self.path = Path(path).expanduser().absolute()
         self.catalog = getattr(settings, "catalog", BUILTIN_MODEL_CATALOG)
         self.settings = {i: deepcopy(s) for i, s in settings.items()}
-        self.bindings = {i: namespace(s, self.catalog).model_binding for i, s in self.settings.items()}
-        self.names = {i: self.settings[i]["name"] for i in NAMES}
+        self.bindings = {i: namespace(self.settings[i], self.catalog).model_binding for i in self.roles}
+        self.names = {i: self.settings[i]["name"] for i in self.roles}
         self._model_factory, self._environment_factory = model_factory, environment_factory
         self._port = board_port
         self._resume = resume
         self._enable_board_auth = enable_board_auth
         self._debug_save_model_binding = debug_save_model_binding
+        self._started = False
         self._resumed = False
         self._baseline = 0
         self._contexts = {}
         self._lock_file = None
         self._stop = threading.Event()
         self._changed = threading.Condition()
-        self._states = {i: ("starting", time.monotonic()) for i in NAMES}
+        self._states = {i: ("starting", time.monotonic()) for i in self.roles}
         self._events = deque(maxlen=512)
         self._dropped = 0
         self._board_failure_shown = False
@@ -235,7 +273,10 @@ class _Session:
         self._expected_watches = set()
         self._watched = set()
         self._watch_queue = queue.Queue()
-        self._ready = {i: threading.Event() for i in NAMES}
+        self._ready = {i: threading.Event() for i in self.roles}
+        # Without the board: retained in-process tasks, guarded by _changed.
+        self._tasks = []
+        self._accepting = False
         self._threads = {}
         self._errors = []
         self._fatal = False
@@ -278,40 +319,53 @@ class _Session:
                 file.close()
 
     def start(self):
-        if self.service is not None or self._closed:
+        if self._started or self._closed:
             raise RuntimeError("Auto session cannot be started twice.")
         exists = self.path.exists()
         if exists and not self._resume:
             raise FileExistsError(self.path)
         if not exists:
             self.path.mkdir(mode=0o700)
+        self._started = True
         try:
             self._lock()
             self._resumed = exists
             restored = None
             if self._resumed:
+                # The board journal marks a worker/board save. Neither mode
+                # adopts the other's history; nothing is modified on mismatch.
+                journal = (self.path / "index.jsonl").exists()
+                if journal and not self.worker_board:
+                    raise ValueError("This auto save uses the experimental worker/board; resume it "
+                                     "with --enable-experimental-worker-board.")
+                if self.worker_board and not journal:
+                    raise ValueError("This auto save was created without the experimental "
+                                     "worker/board; resume it without "
+                                     "--enable-experimental-worker-board.")
                 contexts_path = self.path / "contexts"
-                for index in NAMES:
+                for index in self.roles:
                     context = load_interaction_save(contexts_path / f"{index}.jsonl")
                     if not len(context) or not isinstance(context[0], Init):
                         raise ValueError("Auto context history must begin with initialization metadata.")
                     self._contexts[index] = context
-                restored = Board.restore(self.path)
-                self._baseline = len(restored)
-                for record, _size in restored:
-                    if record.kind in {"answer", "result"}:
-                        self._done[record.reply_to] = record.success
+                if self.worker_board:
+                    restored = Board.restore(self.path)
+                    self._baseline = len(restored)
+                    for record, _size in restored:
+                        if record.kind in {"answer", "result"}:
+                            self._done[record.reply_to] = record.success
             else:
                 (self.path / "contexts").mkdir(mode=0o700)
             atomic_text(self.path / "config.json", json.dumps({
                 "version": SAVED_CONFIG_VERSION,
                 "contexts": {str(i): s for i, s in self.settings.items()},
             }, indent=2, ensure_ascii=False) + "\n")
-            self.service = BoardService(
-                self.path, port=self._port, restored=restored,
-                enable_board_auth=self._enable_board_auth,
-            )
-            for index in NAMES:
+            if self.worker_board:
+                self.service = BoardService(
+                    self.path, port=self._port, restored=restored,
+                    enable_board_auth=self._enable_board_auth,
+                )
+            for index in self.roles:
                 thread = threading.Thread(target=self._owner, args=(index,),
                                           name=f"auto-context-{index}")
                 self._threads[index] = thread
@@ -327,8 +381,12 @@ class _Session:
                 )
                 if warning is not None:
                     self._emit(None, (DisplayItem(warning),))
-            with self.service.board.changed:
-                self.service.board.accepting = True
+            if self.service is not None:
+                with self.service.board.changed:
+                    self.service.board.accepting = True
+            else:
+                with self._changed:
+                    self._accepting = True
             self._emit(None, (DisplayItem(f"Save directory: {self.path}"),
                               DisplayItem("Warning: local tools are unsandboxed; use a trusted model and workspace.")))
             if self._resumed:
@@ -336,8 +394,9 @@ class _Session:
                     "Resumed saved history without replaying old work; command-session IDs and runtime state were not restored."
                 ),))
             summaries = "\n".join(
-                f"#{i} ({s['name']}): {self.bindings[i].api} / {s['model'] or '(server default)'}"
-                for i, s in self.settings.items()
+                f"#{i} ({self.names[i]}): {self.bindings[i].api} / "
+                f"{self.settings[i]['model'] or '(server default)'}"
+                for i in self.roles
             )
             self._emit(None, (DisplayItem(summaries),))
             return self
@@ -390,9 +449,13 @@ class _Session:
             return self._states[index][0] in _ACTIVE_PHASES
 
     @property
+    def board_failed(self):
+        return self.service is not None and self.service.board.failed
+
+    @property
     def has_errors(self):
         with self._changed:
-            return bool(self._errors) or (self.service is not None and self.service.board.failed)
+            return bool(self._errors) or self.board_failed
 
     def _error(self, index, message, *, fatal=False):
         with self._changed:
@@ -417,8 +480,10 @@ class _Session:
         try:
             args = namespace(self.settings[index], self.catalog, binding=self.bindings[index])
             config = InteractionConfig.from_namespace(args).snapshot()
-            binding = _Binding(index, self.service.client(str(index)))
-            environment = self._environment_factory(index, args, () if index == -1 else binding.tools())
+            service = self.service
+            binding = None if service is None else _Binding(index, service.client(str(index)))
+            environment = self._environment_factory(
+                index, args, () if binding is None or index == -1 else binding.tools())
             if not isinstance(environment, Environment):
                 raise TypeError("Environment factory must return an Environment.")
             # The watcher is host control, so no provider/auth initialization is
@@ -426,6 +491,8 @@ class _Session:
             model = None if index == -1 else self._model_factory(index, args)
             if index != -1 and not callable(getattr(model, "sample", None)):
                 raise TypeError("Model factory must return a model with sample().")
+            current = _instructions(index, self.settings[index],
+                                    None if service is None else service.base_url)
             if self._resumed:
                 context = self._contexts[index]
                 recovered = []
@@ -441,16 +508,13 @@ class _Session:
                         "User-tool outcome unavailable after restart. The command was not rerun and may already have produced side effects.",
                         success=False,
                     )))
-                current = _instructions(index, self.settings[index], self.service.base_url)
-                current = Instructions(
-                    current.text + "\n\nRestart notice: saved history was resumed without "
-                    "restoring old command-session IDs or runtime state."
-                )
-                context.extend((*recovered, current))
+                notice = Instructions(_RESTART_NOTICE if current is None
+                                      else current.text + "\n\n" + _RESTART_NOTICE)
+                context.extend((*recovered, notice))
                 self._checkpoint(index, context)
             else:
                 context = InteractionContext((Init(model=args.model),
-                                              _instructions(index, self.settings[index], self.service.base_url)))
+                                              *(() if current is None else (current,))))
                 self._checkpoint(index, context)
             self._phase(index, "quiescent")
             self._ready[index].set()
@@ -459,13 +523,15 @@ class _Session:
                 return
             cursor = self._baseline
             while not self._stop.is_set():
-                source = self.service.board.wait_input("user" if index == 1 else "plan", cursor, self._stop)
+                source = self._wait_input(index, cursor)
                 if source is None or self._stop.is_set():
                     break
                 cursor = source.sequence
-                binding.source = source
+                if binding is not None:
+                    binding.source = source
                 self._job(index, source, model, environment, config, context, binding)
-                binding.source = None
+                if binding is not None:
+                    binding.source = None
                 self._phase(index, "quiescent")
         except BaseException as exc:
             self._error(index, f"Auto context failed ({type(exc).__name__}); details withheld.", fatal=True)
@@ -480,17 +546,30 @@ class _Session:
                         self._error(index, f"Environment cleanup failed ({type(exc).__name__}).", fatal=True)
             self._phase(index, "closed")
 
+    def _wait_input(self, index, cursor):
+        """Block for this role's next source after cursor; None once stopping."""
+        if self.service is not None:
+            return self.service.board.wait_input("user" if index == 1 else "plan", cursor, self._stop)
+        with self._changed:
+            while not self._stop.is_set():
+                if len(self._tasks) > cursor:
+                    return self._tasks[cursor]
+                self._changed.wait()
+            return None
+
     def _watch(self):
         while True:
             completion = self._watch_queue.get()
             if completion is None:
                 return
+            source = f"source={completion.record_id}"
+            if completion.thread_id is not None:
+                source = f"thread={completion.thread_id} {source}"
             with self._changed:
                 if completion.record_id in self._watched:
                     continue
                 self._emit(-1, (DisplayItem(
-                    "[debug] main end-of-turn condition fired: "
-                    f"#1 thread={completion.thread_id} source={completion.record_id}",
+                    f"[debug] main end-of-turn condition fired: #1 {source}",
                     label="debug",
                 ),), "debug")
                 self._watched.add(completion.record_id)
@@ -501,8 +580,12 @@ class _Session:
         try:
             if index == 2:
                 binding.client.post(source.thread_id, "started", "Worker started this plan.", source.record_id)
-            label = "User task" if index == 1 else "Assigned plan from main (#1)"
-            user = UserInteraction((Message("user", f"{label}\nBoard thread: {source.thread_id}\nSource record: {source.record_id}\n\n{source.content}"),))
+            if binding is None:
+                text = source.content  # Without the board, main sees only the task text.
+            else:
+                label = "User task" if index == 1 else "Assigned plan from main (#1)"
+                text = f"{label}\nBoard thread: {source.thread_id}\nSource record: {source.record_id}\n\n{source.content}"
+            user = UserInteraction((Message("user", text),))
             self._checkpoint(index, context, user.context_items())
             self._emit(index, user.display_items())
             final = self._turn(index, model, environment, config, context)
@@ -510,21 +593,23 @@ class _Session:
                 with self._changed:
                     self._expected_watches.add(source.record_id)
                     self._watch_queue.put(_Completion(source.record_id, source.thread_id))
-            binding.client.post(source.thread_id, "answer" if index == 1 else "result",
-                                final, source.record_id, success=True)
+            if binding is not None:
+                binding.client.post(source.thread_id, "answer" if index == 1 else "result",
+                                    final, source.record_id, success=True)
             success = True
         except Exception as exc:
             message = ("Stopped before further effects; prior effects may have occurred."
                        if isinstance(exc, _Stopping) else
                        f"Task failed ({type(exc).__name__}); effects may have occurred. Details withheld.")
-            fatal = (isinstance(exc, SaveError) or self.service.board.failed or
+            fatal = (isinstance(exc, SaveError) or self.board_failed or
                      bool(context.pending_tool_calls()))
             self._error(index, message, fatal=fatal)
-            try:
-                binding.client.post(source.thread_id, "answer" if index == 1 else "result",
-                                    message, source.record_id, success=False)
-            except BoardError:
-                self._error(index, "Outcome could not be published; inspect the saved logs. No automatic retry will run.", fatal=True)
+            if binding is not None:
+                try:
+                    binding.client.post(source.thread_id, "answer" if index == 1 else "result",
+                                        message, source.record_id, success=False)
+                except BoardError:
+                    self._error(index, "Outcome could not be published; inspect the saved logs. No automatic retry will run.", fatal=True)
         finally:
             with self._changed:
                 self._done[source.record_id] = success
@@ -589,18 +674,65 @@ class _Session:
         raise RuntimeError("Model exceeded the per-turn sample limit.")
 
     def _check_running(self):
-        if self.service.board.failed:
+        if self.board_failed:
             raise BoardError("Board persistence failed; no further effects may start.", 503)
         if self._stop.is_set():
             raise _Stopping()
 
     def submit(self, text, *, request_id=None):
-        if self._stop.is_set() or self.service is None:
+        """Submit one user task for main; returns its handle for task_result().
+
+        With the board this posts a fresh user thread (request_id makes an
+        uncertain HTTP outcome retryable). Otherwise the task is queued in
+        process, which has no uncertain outcome, so request_id is unused.
+        """
+        if self._stop.is_set():
             raise BoardError("Auto is not accepting new work.", 503)
-        return self.service.client("user").create_thread(text, request_id=request_id)
+        if self.worker_board:
+            if self.service is None:
+                raise BoardError("Auto is not accepting new work.", 503)
+            return self.service.client("user").create_thread(text, request_id=request_id)
+        del request_id
+        if not isinstance(text, str) or not text.strip():
+            raise BoardError("Nonempty content is required.")
+        try:
+            text.encode("utf-8")
+        except UnicodeError:
+            # Unencodable text would only fail later, as a fatal checkpoint.
+            raise BoardError("Content must be valid UTF-8.") from None
+        with self._changed:
+            if self._stop.is_set() or not self._accepting:
+                raise BoardError("Auto is not accepting new work.", 503)
+            if sum(task.record_id not in self._done for task in self._tasks) >= _MAX_PENDING_TASKS:
+                raise BoardError("Pending work limit reached; request was not accepted.", 429)
+            sequence = len(self._tasks) + 1
+            self._tasks.append(_Task(sequence, str(sequence), text))
+            self._changed.notify_all()
+        return {"record_id": str(sequence)}
+
+    def task_result(self, submitted):
+        """None while a submit() handle's task is pending; then its bool outcome.
+
+        With the board this is thread_result() for the posted thread. Without
+        it, a task is one main job plus its applicable watch.
+        """
+        if self.worker_board:
+            return self.thread_result(submitted["thread_id"])
+        source = submitted["record_id"]
+        with self._changed:
+            if self._fatal:
+                return False
+            if not any(task.record_id == source for task in self._tasks):
+                raise BoardError("Unknown task.", 404)
+            if source not in self._done or (source in self._expected_watches
+                                            and source not in self._watched):
+                return None
+            return self._done[source]
 
     def thread_result(self, thread_id):
         """None while pending; bool once all jobs and applicable watches settle."""
+        if self.service is None:
+            raise BoardError("Unknown task thread.", 404)
         # Snapshot done BEFORE records: once main is done its board answer is
         # committed and no further plans may be added. The later board snapshot
         # therefore cannot miss a plan just published by a finishing main.
@@ -619,6 +751,9 @@ class _Session:
 
     def request_stop(self):
         self._stop.set()
+        with self._changed:
+            self._accepting = False
+            self._changed.notify_all()  # Wakes an idle main waiting for a task.
         if self.service is not None:
             with self.service.board.changed:
                 self.service.board.accepting = False
@@ -646,6 +781,14 @@ class _Session:
                     self._emit(None, (DisplayItem(
                         f"Stopped with {pending} queued/unresolved tasks in the saved board; they were not executed or replayed."),))
                 self.service.close()
+            else:
+                # Owners have exited, so every task without an outcome never started.
+                with self._changed:
+                    queued = sum(task.record_id not in self._done for task in self._tasks)
+                if queued:
+                    self._emit(None, (DisplayItem(
+                        f"Stopped with {queued} queued user tasks that were not executed; "
+                        "without the board, queued tasks are not saved or replayed."),))
             self._unlock()
 
 
@@ -680,7 +823,7 @@ def _one_prompt(session, prompt, *, display=True):
     submitted = session.submit(prompt)
     while True:
         output(session)
-        result = session.thread_result(submitted["thread_id"])
+        result = session.task_result(submitted)
         if result is not None:
             output(session)
             return 0 if result else 1
@@ -707,18 +850,27 @@ def _local_command(text, selected, session):
         return selected, (), True
     if words == ["/contexts"]:
         summaries = "\n".join(
-            ("* " if i == selected else "  ") + session.status(i) for i in NAMES
+            ("* " if i == selected else "  ") + session.status(i) for i in session.roles
         )
         return selected, (DisplayItem(summaries),), False
     if words and words[0] == "/context" and len(words) in {1, 2}:
         target = selected
         if len(words) == 2:
-            value = words[1].removeprefix("#")
-            if value not in {"1", "2", "-1"}:
-                raise ValueError("Use /context 1, /context 2, or /context -1.")
-            target = int(value)
+            roles = {str(i): i for i in session.roles}
+            target = roles.get(words[1].removeprefix("#"))
+            if target is None:
+                choices = [f"/context {i}" for i in session.roles]
+                hint = (" or ".join(choices) if len(choices) == 2
+                        else ", ".join(choices[:-1]) + ", or " + choices[-1])
+                raise ValueError(f"Use {hint}.")
         return target, (DisplayItem(f"Selected #{target} ({session.names[target]})."),), False
     raise ValueError("Use /contexts, /context N, /quit, or /exit.")
+
+
+def _posted_notice(session, posted):
+    if session.worker_board:
+        return f"Posted user thread {posted['thread_id']}."
+    return f"Queued user task {posted['record_id']} for #1 ({session.names[1]})."
 
 
 async def _interactive(session, terminal):
@@ -753,9 +905,10 @@ async def _interactive(session, terminal):
                                 except ValueError as exc:
                                     notices.append(DisplayItem(str(exc)))
                             elif selected != 1:
-                                notices.append(DisplayItem("Switch to /context 1 to submit a new user board thread. Draft preserved."))
+                                kind = "user board thread" if session.worker_board else "user task"
+                                notices.append(DisplayItem(f"Switch to /context 1 to submit a new {kind}. Draft preserved."))
                             elif pending is not None:
-                                notices.append(DisplayItem("A board submission is still pending. Draft preserved."))
+                                notices.append(DisplayItem("A submission is still pending. Draft preserved."))
                             else:
                                 submitted_text = editor.text
                                 request_id = retry[1] if retry and retry[0] == submitted_text else uuid.uuid4().hex
@@ -767,15 +920,21 @@ async def _interactive(session, terminal):
                 if pending is not None and pending.done():
                     try:
                         posted = pending.result()
-                        notices.append(DisplayItem(f"Posted user thread {posted['thread_id']}."))
+                        notices.append(DisplayItem(_posted_notice(session, posted)))
                         retry = None
                         if editor.text == submitted_text:
                             editor = Editor()
-                    except Exception:
-                        notices.append(DisplayItem("Board submission failed or is uncertain. Retry the unchanged draft to reuse its request ID."))
+                    except Exception as exc:
+                        if session.worker_board:
+                            notice = "Board submission failed or is uncertain. Retry the unchanged draft to reuse its request ID."
+                        else:
+                            # An in-process rejection is certain; its reason is host text.
+                            reason = str(exc) if isinstance(exc, BoardError) else "Submission failed."
+                            notice = f"Task was not queued: {reason} Draft preserved."
+                        notices.append(DisplayItem(notice))
                     pending = None
                 notices.extend(_display_events(session, session.drain_events()))
-                if session.service.board.failed and not board_failure_shown:
+                if session.board_failed and not board_failure_shown:
                     session.request_stop()
                     notices.append(DisplayItem("Use /quit to close the failed session."))
                     board_failure_shown = True
@@ -815,6 +974,14 @@ def main(argv=None):
         args.prompt = load_prompt(args)
         if not 0 <= args.board_port <= 65535:
             raise ValueError("board-port must be between 0 and 65535.")
+        if not args.enable_experimental_worker_board:
+            # Non-default board options would otherwise be silently ignored.
+            if args.board_port != 0 or not args.enable_board_auth:
+                raise ValueError("--board-port and --enable-board-auth require "
+                                 "--enable-experimental-worker-board.")
+            if args.headless and args.prompt is None:
+                raise ValueError("--headless without --prompt or --prompt-file requires "
+                                 "--enable-experimental-worker-board, whose board accepts tasks.")
         if args.prompt is not None and not args.prompt.strip():
             raise ValueError("prompt must not be empty.")
         if (not args.headless and args.prompt is None
@@ -831,12 +998,14 @@ def main(argv=None):
         settings = resolve_config(args.context_config, overrides, saved=saved, catalog=catalog)
         session = _Session(save_path, settings, board_port=args.board_port,
                            resume=args.resume, enable_board_auth=args.enable_board_auth,
-                           debug_save_model_binding=args.debug_save_model_binding)
+                           debug_save_model_binding=args.debug_save_model_binding,
+                           enable_experimental_worker_board=args.enable_experimental_worker_board)
         session.start()
-        if not args.enable_board_auth:
-            print("Warning: board authentication is disabled; local clients can read board data "
-                  "and submit tasks that may run unsandboxed tools.", file=sys.stderr, flush=True)
-        print(f"Board: {session.service.base_url}/README.md", flush=True)
+        if args.enable_experimental_worker_board:
+            if not args.enable_board_auth:
+                print("Warning: board authentication is disabled; local clients can read board data "
+                      "and submit tasks that may run unsandboxed tools.", file=sys.stderr, flush=True)
+            print(f"Board: {session.service.base_url}/README.md", flush=True)
         if args.prompt is not None:
             exit_code = _one_prompt(session, args.prompt, display=not args.headless)
         elif args.headless:

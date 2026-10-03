@@ -237,7 +237,9 @@ def namespace(settings, catalog=BUILTIN_MODEL_CATALOG, *, binding=None):
 
 def build_parser():
     parser = argparse.ArgumentParser(
-        description="Board-first three-context auto MVP (local tools are unsandboxed).",
+        description=("Fixed-role auto: #1 main takes user tasks and #-1 watcher displays "
+                     "main's end-of-turn events; the #2 worker and shared message board "
+                     "are experimental opt-ins (local tools are unsandboxed)."),
         allow_abbrev=False,
     )
     parser.add_argument("--context-config", type=Path, help="Version-1 JSON configuration for contexts 1, 2, -1.")
@@ -246,7 +248,8 @@ def build_parser():
                               "(default: interaction-auto)."))
     add_prompt_arguments(
         parser, allow_file=True,
-        prompt_help="Post one user task as a fresh board thread; run without a TTY.",
+        prompt_help=("Submit one user task to main (a fresh board thread with the "
+                     "experimental worker/board); run without a TTY."),
     )
     parser.add_argument(
         "--resume", action="store_true",
@@ -260,12 +263,24 @@ def build_parser():
               "and no TTY is required (default: %(default)s)"),
     )
     parser.add_argument(
+        "--enable-experimental-worker-board", nargs="?", const=True, default=False,
+        type=_boolean_argument, metavar="{False,True}",
+        help=("experimental: also run the #2 worker and the shared message board "
+              "(loopback HTTP board, board tools and instructions, plan delegation, "
+              "and idle --headless task intake); otherwise main takes tasks "
+              "directly. --resume requires the save's original setting; a bare "
+              "flag means True (default: %(default)s)"),
+    )
+    parser.add_argument(
         "--enable-board-auth", nargs="?", const=True, default=True,
         type=_boolean_argument, metavar="{False,True}",
         help=("require bearer authentication for board data and HTML routes; "
-              "False enables unsafe local debugging (default: %(default)s)"),
+              "False enables unsafe local debugging; requires the experimental "
+              "worker/board (default: %(default)s)"),
     )
-    parser.add_argument("--board-port", type=int, default=0, help="Loopback port (0 chooses an available port).")
+    parser.add_argument("--board-port", type=int, default=0,
+                        help=("Loopback board port (0 chooses an available port); requires "
+                              "the experimental worker/board."))
     add_endpoint_arguments(parser, auto=True)
     add_catalog_arguments(parser, suppress_extra_sample_params=True)
     for key in ("model", "cwd", "instructions"):

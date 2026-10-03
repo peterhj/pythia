@@ -91,7 +91,7 @@ class DisplayTests(unittest.TestCase):
             2: "#2 (worker custom) - sampling (1.2s)",
             -1: "#-1 (watcher custom) - waiting",
         }
-        session = SimpleNamespace(status=lambda index: statuses[index])
+        session = SimpleNamespace(status=lambda index: statuses[index], roles=(1, 2, -1))
         for selected in (1, 2, -1):
             with self.subTest(selected=selected):
                 actual_selected, items, stop = auto._local_command("/contexts", selected, session)
@@ -174,6 +174,25 @@ class ConfigTests(unittest.TestCase):
             with self.subTest(invalid=invalid), redirect_stderr(io.StringIO()):
                 with self.assertRaises(SystemExit):
                     parser.parse_args(["--enable-board-auth", invalid])
+
+    def test_worker_board_flag_is_frontend_only_and_off_by_default(self):
+        parser = build_parser()
+        flag = "--enable-experimental-worker-board"
+        for argv, expected in (((), False), ((flag,), True), ((flag, "TRUE"), True),
+                               ((flag, "false"), False)):
+            with self.subTest(argv=argv):
+                args = parser.parse_args(argv)
+                self.assertIs(args.enable_experimental_worker_board, expected)
+                settings = resolve_config(overrides={
+                    key: value for key, value in vars(args).items() if key in auto.DEFAULTS
+                })
+                self.assertEqual(set(settings), {1, 2, -1})
+                self.assertTrue(all("enable_experimental_worker_board" not in value
+                                    for value in settings.values()))
+        for invalid in ("yes", "1"):
+            with self.subTest(invalid=invalid), redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit):
+                    parser.parse_args([flag, invalid])
 
     def test_saved_config_statically_validates_and_normalizes_paths(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -444,6 +463,19 @@ class InstructionTests(unittest.TestCase):
                     self.assertIn(f"Address: {self.base_url}\n", board)
                     self.assertIn(f"Read {self.base_url}/README.md", board)
 
+    def test_without_board_main_has_no_default_and_bodies_are_verbatim(self):
+        # Main's default role text is about delegation, so without the board it
+        # has none, like the CLI; the watcher keeps its host-only note.
+        self.assertIsNone(auto._instructions(1, self.settings[1], None))
+        watcher = auto._instructions(-1, self.settings[-1], None).text
+        self.assertEqual(watcher, auto._ROLE_INSTRUCTIONS[-1])
+        self.assertNotIn("board", watcher.lower())
+        for index in (1, -1):
+            for custom in ("Use my custom role contract.", ""):
+                with self.subTest(index=index, custom=custom):
+                    self.settings[index]["instructions"] = custom
+                    self.assertEqual(auto._instructions(index, self.settings[index], None).text, custom)
+
 
 class RuntimeTests(unittest.TestCase):
     def setUp(self):
@@ -455,10 +487,17 @@ class RuntimeTests(unittest.TestCase):
         self.effects = []
         self.threads = {i: [] for i in (1, 2, -1)}
         self.closed = []
+        self.tool_names = {}
 
     def session(self, scripts, extra_tools=(), *, settings_overrides=None,
-                settings_updates=None, **kwargs):
+                settings_updates=None, worker_board=True, **kwargs):
+        """Start a scripted session; most runtime tests opt into the worker/board.
+
+        worker_board=False omits the flag to exercise _Session's default.
+        """
         test = self
+        if worker_board:
+            kwargs["enable_experimental_worker_board"] = True
         class Model:
             def __init__(self, index):
                 self.index = index
@@ -483,6 +522,7 @@ class RuntimeTests(unittest.TestCase):
             def __init__(self, index, tools):
                 self.index = index
                 test.threads[index].append(threading.get_ident())
+                test.tool_names[index] = [tool.spec.name for tool in tools]
                 super().__init__((*tools, *extra_tools))
             def execute_tool_calls(self, calls):
                 test.threads[self.index].append(threading.get_ident())
@@ -509,6 +549,14 @@ class RuntimeTests(unittest.TestCase):
     def finished(self, session, thread):
         wait_for(lambda: session.thread_result(thread) is not None)
         return session.thread_result(thread)
+
+    def settled(self, session, submitted):
+        wait_for(lambda: session.task_result(submitted) is not None)
+        return session.task_result(submitted)
+
+    def files(self):
+        return {path.relative_to(self.path): path.read_bytes()
+                for path in self.path.rglob("*") if path.is_file()}
 
     def test_startup_context_summaries_share_one_global_display_item(self):
         session = self.session({}, settings_updates={
@@ -934,7 +982,8 @@ class RuntimeTests(unittest.TestCase):
                 raise RuntimeError("FAKE_SECRET")
             return mock.Mock()
         session = auto._Session(self.path, resolve_config(), model_factory=model,
-                               environment_factory=lambda i, a, t: Env(i))
+                               environment_factory=lambda i, a, t: Env(i),
+                               enable_experimental_worker_board=True)
         with self.assertRaises(RuntimeError):
             session.start()
         self.assertCountEqual([i for i, _, _ in closed], (1, 2, -1))
@@ -1269,6 +1318,7 @@ class RuntimeTests(unittest.TestCase):
         settings = resolve_config(saved=auto.load_saved_config(self.path / "config.json"))
         with self.assertRaisesRegex(RuntimeError, "already in use"):
             auto._Session(self.path, settings, resume=True,
+                          enable_experimental_worker_board=True,
                           model_factory=lambda *_: self.fail("model initialized"),
                           environment_factory=lambda *_: self.fail("environment initialized")).start()
         self.assertEqual((self.path / "config.json").read_bytes(), config)
@@ -1277,7 +1327,8 @@ class RuntimeTests(unittest.TestCase):
         context_path.write_text("broken\n")
         broken = context_path.read_bytes()
         with self.assertRaises(Exception):
-            auto._Session(self.path, settings, resume=True).start()
+            auto._Session(self.path, settings, resume=True,
+                          enable_experimental_worker_board=True).start()
         self.assertEqual(context_path.read_bytes(), broken)
 
     def test_resume_lock_cannot_be_bypassed_by_directory_symlink(self):
@@ -1289,6 +1340,7 @@ class RuntimeTests(unittest.TestCase):
                   for path in self.path.rglob("*") if path.is_file()}
         with self.assertRaisesRegex(RuntimeError, "already in use"):
             auto._Session(alias, settings, resume=True,
+                          enable_experimental_worker_board=True,
                           model_factory=lambda *_: self.fail("model initialized"),
                           environment_factory=lambda *_: self.fail("environment initialized")).start()
         self.assertEqual({path.relative_to(self.path): path.read_bytes()
@@ -1296,13 +1348,14 @@ class RuntimeTests(unittest.TestCase):
         stdout, stderr = io.StringIO(), io.StringIO()
         with redirect_stdout(stdout), redirect_stderr(stderr):
             self.assertEqual(auto.main([
-                "--resume", "--headless", "--save", str(alias)
+                "--resume", "--headless", "--enable-experimental-worker-board", "--save", str(alias)
             ]), 1)
         self.assertEqual(stdout.getvalue(), "")
         self.assertIn("auto failed: Auto save directory is already in use.",
                       stderr.getvalue())
         session.close()
-        resumed = auto._Session(alias, settings, resume=True).start()
+        resumed = auto._Session(alias, settings, resume=True,
+                                enable_experimental_worker_board=True).start()
         try:
             self.assertTrue(resumed._resumed)
             self.assertEqual(resumed.service.board.records(), ())
@@ -1321,6 +1374,7 @@ class RuntimeTests(unittest.TestCase):
         settings = resolve_config(saved=auto.load_saved_config(self.path / "config.json"))
         with self.assertRaisesRegex(ValueError, "initialization metadata"):
             auto._Session(self.path, settings, resume=True,
+                          enable_experimental_worker_board=True,
                           model_factory=lambda *_: self.fail("model initialized"),
                           environment_factory=lambda *_: self.fail("environment initialized")).start()
         self.assertEqual({path.relative_to(self.path): path.read_bytes()
@@ -1345,7 +1399,8 @@ class RuntimeTests(unittest.TestCase):
 
         settings = resolve_config(overrides={"cwd": str(new)}, saved=saved)
         self.assertTrue(all(value["cwd"] == str(new.absolute()) for value in settings.values()))
-        resumed = auto._Session(self.path, settings, resume=True).start()
+        resumed = auto._Session(self.path, settings, resume=True,
+                                enable_experimental_worker_board=True).start()
         try:
             for index in (1, 2, -1):
                 context = load_interaction_save(self.path / "contexts" / f"{index}.jsonl")
@@ -1355,7 +1410,8 @@ class RuntimeTests(unittest.TestCase):
         updated = auto.load_saved_config(self.path / "config.json")
         again = resolve_config(saved=updated)
         self.assertTrue(all(value["cwd"] == str(new.absolute()) for value in again.values()))
-        repeated = auto._Session(self.path, again, resume=True).start()
+        repeated = auto._Session(self.path, again, resume=True,
+                                 enable_experimental_worker_board=True).start()
         repeated.close()
 
     def test_resume_missing_directory_is_fresh_and_pending_call_is_not_rerun(self):
@@ -1388,8 +1444,421 @@ class RuntimeTests(unittest.TestCase):
                              for item in again), 1)
         repeated.close()
 
+    def test_default_runs_only_main_and_watcher_without_board(self):
+        session = self.session({1: [answer("main done")]}, worker_board=False)
+        self.assertFalse(session.worker_board)
+        self.assertEqual(session.roles, (1, -1))
+        self.assertIsNone(session.service)
+        for name in ("index.jsonl", "index.md", "index.html", "contexts/2.jsonl"):
+            self.assertFalse((self.path / name).exists(), name)
+        # No worker model/environment, and no board tools for main.
+        self.assertEqual(self.threads[2], [])
+        self.assertEqual(self.tool_names, {1: [], -1: []})
+        self.assertEqual(len(load_interaction_save(self.path / "contexts" / "1.jsonl")), 1)
+        watcher = load_interaction_save(self.path / "contexts" / "-1.jsonl")
+        self.assertEqual(watcher[1], auto.Instructions(auto._ROLE_INSTRUCTIONS[-1]))
+        self.assertEqual(set(json.loads((self.path / "config.json").read_text())["contexts"]),
+                         {"1", "2", "-1"})
+        events = session.drain_events()
+        self.assertEqual(events[-1].items[0].text.splitlines(), [
+            "#1 (main): chat-completions / (server default)",
+            "#-1 (watcher): chat-completions / (server default)",
+        ])
+        self.assertEqual(self.calls, {1: [], 2: []})
+
+        submitted = session.submit("plain task", request_id="unused-without-board")
+        self.assertEqual(submitted, {"record_id": "1"})
+        self.assertTrue(self.settled(session, submitted))
+        self.assertEqual([item for item in self.calls[1][0] if isinstance(item, Message)],
+                         [Message("user", "plain task")])
+        debug = [event for event in session.drain_events() if event.kind == "debug"]
+        self.assertEqual([event.index for event in debug], [-1])
+        self.assertEqual(debug[0].items[0].text,
+                         "[debug] main end-of-turn condition fired: #1 source=1")
+        with self.assertRaisesRegex(BoardError, "Unknown task"):
+            session.task_result({"record_id": "2"})
+        session.close()
+        self.assertCountEqual(self.closed, (1, -1))
+        self.assertEqual(len(set(self.threads[1])), 1)
+        self.assertFalse(any(thread.is_alive() for thread in session._threads.values()))
+
+    def test_default_tasks_run_in_fifo_order_and_only_successes_fire_watch(self):
+        reached, release = threading.Event(), threading.Event()
+        def first(_context):
+            reached.set()
+            self.assertTrue(release.wait(5))
+            return answer("first done")
+        failure = ModelTransportError("SECRET", failure=ModelFailure("transport", "safe"))
+        session = self.session({1: [first, failure, answer("third done")]}, worker_board=False)
+        try:
+            handles = [session.submit("first")]
+            self.assertTrue(reached.wait(3))
+            handles += [session.submit("second"), session.submit("third")]
+            self.assertEqual([handle["record_id"] for handle in handles], ["1", "2", "3"])
+            self.assertEqual([session.task_result(handle) for handle in handles], [None] * 3)
+            release.set()
+            self.assertEqual([self.settled(session, handle) for handle in handles],
+                             [True, False, True])
+        finally:
+            release.set()
+        self.assertEqual([[item.content for item in call if isinstance(item, Message)
+                           and item.role == "user"][-1] for call in self.calls[1]],
+                         ["first", "second", "third"])
+        debug = [event.items[0].text for event in session.drain_events() if event.kind == "debug"]
+        self.assertEqual(debug, [f"[debug] main end-of-turn condition fired: #1 source={n}"
+                                 for n in (1, 3)])
+        self.assertTrue(session.has_errors)  # The failed task is reported, not fatal.
+        self.assertFalse(session._stop.is_set())
+        self.assertNotIn("SECRET", (self.path / "contexts" / "1.jsonl").read_text())
+
+    def test_default_submission_limits_and_close_report_unexecuted_tasks(self):
+        reached, release = threading.Event(), threading.Event()
+        def first(_context):
+            reached.set()
+            self.assertTrue(release.wait(5))
+            return answer("first done")
+        session = self.session({1: [first]}, worker_board=False)
+        closer = threading.Thread(target=session.close)
+        try:
+            for invalid, reason in ((" \n", "Nonempty"), ("bad \ud800", "UTF-8")):
+                with self.subTest(reason=reason), self.assertRaisesRegex(BoardError, reason):
+                    session.submit(invalid)
+            session.submit("running")
+            self.assertTrue(reached.wait(3))
+            for n in range(auto._MAX_PENDING_TASKS - 1):
+                session.submit(f"queued {n}")
+            with self.assertRaisesRegex(BoardError, "Pending work limit"):
+                session.submit("one too many")
+            closer.start()
+            wait_for(session._stop.is_set)
+            with self.assertRaisesRegex(BoardError, "not accepting"):
+                session.submit("after stop")
+            release.set()
+            closer.join(5)
+            self.assertFalse(closer.is_alive())
+        finally:
+            release.set()
+            if closer.is_alive():
+                closer.join(5)
+        self.assertEqual(len(self.calls[1]), 1)
+        self.assertTrue(session.task_result({"record_id": "1"}))
+        notices = [item.text for event in session.drain_events() for item in event.items]
+        self.assertIn(f"Stopped with {auto._MAX_PENDING_TASKS - 1} queued user tasks that were not "
+                      "executed; without the board, queued tasks are not saved or replayed.", notices)
+
+    def test_default_resume_restores_without_board_and_rejects_board_flag(self):
+        session = self.session({1: [answer("old main")]}, worker_board=False)
+        self.assertTrue(self.settled(session, session.submit("old task")))
+        session.close()
+        old = {index: load_interaction_save(self.path / "contexts" / f"{index}.jsonl").items
+               for index in (1, -1)}
+        before = self.files()
+        settings = resolve_config(saved=auto.load_saved_config(self.path / "config.json"))
+        with self.assertRaisesRegex(ValueError, "created without the experimental worker/board"):
+            auto._Session(self.path, settings, resume=True, enable_experimental_worker_board=True,
+                          model_factory=lambda *_: self.fail("model initialized"),
+                          environment_factory=lambda *_: self.fail("environment initialized")).start()
+        self.assertEqual(self.files(), before)
+
+        resumed = self.session({1: [answer("new main")]}, worker_board=False, resume=True)
+        restored = {index: load_interaction_save(self.path / "contexts" / f"{index}.jsonl")
+                    for index in (1, -1)}
+        for index, context in restored.items():
+            self.assertEqual(context.items[:len(old[index])], old[index])
+        self.assertEqual(restored[1][-1], auto.Instructions(auto._RESTART_NOTICE))
+        self.assertEqual(restored[-1][-1], auto.Instructions(
+            auto._ROLE_INSTRUCTIONS[-1] + "\n\n" + auto._RESTART_NOTICE))
+        self.assertFalse((self.path / "index.jsonl").exists())
+        new = resumed.submit("new task")
+        self.assertEqual(new, {"record_id": "1"})
+        self.assertTrue(self.settled(resumed, new))
+        self.assertTrue(any(isinstance(item, Message) and item.content == "old main"
+                            for item in self.calls[1][-1]))
+
+    def test_board_save_requires_the_flag_to_resume(self):
+        self.session({}).close()
+        before = self.files()
+        settings = resolve_config(saved=auto.load_saved_config(self.path / "config.json"))
+        with self.assertRaisesRegex(ValueError, "uses the experimental worker/board; resume it "
+                                    "with --enable-experimental-worker-board"):
+            auto._Session(self.path, settings, resume=True,
+                          model_factory=lambda *_: self.fail("model initialized"),
+                          environment_factory=lambda *_: self.fail("environment initialized")).start()
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            self.assertEqual(auto.main(["--resume", "--no-user-model-catalog", "--prompt", "task",
+                                        "--save", str(self.path)]), 1)
+        self.assertIn("auto failed: This auto save uses the experimental worker/board",
+                      stderr.getvalue())
+        self.assertEqual(self.files(), before)
+
+    def test_default_navigation_lists_only_main_and_watcher(self):
+        session = self.session({}, worker_board=False)
+        _, items, _ = auto._local_command("/contexts", 1, session)
+        self.assertEqual(items[0].text.splitlines(),
+                         ["* #1 (main) - quiescent", "  #-1 (watcher) - quiescent"])
+        self.assertEqual(auto._local_command("/context #-1", 1, session)[0], -1)
+        for text in ("/context 2", "/context #2", "/context 0"):
+            with self.subTest(text=text), self.assertRaisesRegex(
+                    ValueError, r"^Use /context 1 or /context -1\.$"):
+                auto._local_command(text, 1, session)
+        self.assertEqual(self.calls, {1: [], 2: []})
+
+    def test_default_one_prompt_displays_main_and_watcher_only(self):
+        for display in (False, True):
+            with self.subTest(display=display):
+                self.path = Path(self.temp.name) / f"session-{display}"
+                session = self.session({1: [answer("shown answer")]}, worker_board=False)
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    self.assertEqual(auto._one_prompt(session, "shown task", display=display), 0)
+                text = output.getvalue()
+                if not display:
+                    self.assertEqual(text, "")
+                    continue
+                self.assertIn("[#1 (main) - assistant] shown answer", text)
+                self.assertIn("[#-1 (watcher) - debug] main end-of-turn condition fired: "
+                              "#1 source=1", text)
+                self.assertNotIn("#2", text)
+                self.assertNotIn("Board", text)
+
+    def test_default_interactive_queues_tasks_for_main_and_shows_watcher(self):
+        session = self.session({1: [answer("interactive done")]}, worker_board=False)
+        test = self
+
+        class Terminal:
+            closed = False
+
+            def __init__(self):
+                self.keys = deque()
+                self.texts = []
+                self.stage = 0
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                pass
+
+            def submit(self, text):
+                self.keys.extend(SimpleNamespace(key=key, data=data) for key, data in (
+                    ("c-u", ""), ("c-k", ""), ("<bracketed-paste>", text), ("c-m", "\r")))
+
+            def read_keys(self):
+                keys = tuple(self.keys)
+                self.keys.clear()
+                return keys
+
+            def render(self, editor, status, items, prompt=":> "):
+                self.texts.extend(item.text for item in items)
+                if self.stage == 0:
+                    self.submit("/context 2")
+                    self.stage = 1
+                elif self.stage == 1 and "Use /context 1 or /context -1." in self.texts:
+                    self.submit("/context -1")
+                    self.stage = 2
+                elif self.stage == 2 and status.startswith("#-1 (watcher)"):
+                    self.submit("watcher draft")
+                    self.stage = 3
+                elif self.stage == 3 and ("Switch to /context 1 to submit a new user task. "
+                                          "Draft preserved.") in self.texts:
+                    test.assertEqual(editor.text, "watcher draft")
+                    self.submit("/context 1")
+                    self.stage = 4
+                elif self.stage == 4 and status.startswith("#1 (main)"):
+                    self.submit("interactive task")
+                    self.stage = 5
+                elif (self.stage == 5 and "Queued user task 1 for #1 (main)." in self.texts
+                      and session.task_result({"record_id": "1"}) is True
+                      and status.startswith("#1 (main) - quiescent")):
+                    test.assertEqual(prompt, ":> ")
+                    self.submit("/quit")
+                    self.stage = 6
+
+        terminal = Terminal()
+        self.assertEqual(asyncio.run(asyncio.wait_for(
+            auto._interactive(session, terminal), timeout=6)), 0)
+        self.assertEqual(terminal.stage, 6)
+        self.assertEqual(len(self.calls[1]), 1)
+        self.assertEqual([item for item in self.calls[1][0] if isinstance(item, Message)],
+                         [Message("user", "interactive task")])
+        self.assertIn("[#1 (main) - assistant] interactive done", terminal.texts)
+        self.assertIn("[#-1 (watcher) - debug] main end-of-turn condition fired: #1 source=1",
+                      terminal.texts)
+        self.assertFalse(any(thread.is_alive() for thread in session._threads.values()))
+
 
 class EntryPointTests(unittest.TestCase):
+    def test_default_rejects_board_only_options_before_any_session(self):
+        for argv in (["--headless"], ["--headless", "--resume"],
+                     ["--board-port", "8123", "--prompt", "task"],
+                     ["--enable-board-auth", "False", "--prompt", "task"]):
+            with self.subTest(argv=argv):
+                stdout, stderr = io.StringIO(), io.StringIO()
+                with (mock.patch.object(auto, "_Session") as session,
+                      redirect_stdout(stdout), redirect_stderr(stderr)):
+                    self.assertEqual(auto.main([*argv, "--no-user-model-catalog",
+                                                "--save", "unused"]), 1)
+                session.assert_not_called()
+                self.assertEqual(stdout.getvalue(), "")
+                self.assertTrue(stderr.getvalue().startswith("auto failed: "), stderr.getvalue())
+                self.assertIn("require", stderr.getvalue())
+                self.assertIn("--enable-experimental-worker-board", stderr.getvalue())
+
+    def test_default_passes_flag_and_prints_no_board_line(self):
+        created = []
+
+        class Session:
+            has_errors = False
+            service = None
+
+            def __init__(self, *args, **kwargs):
+                created.append(kwargs)
+
+            def start(self):
+                return self
+
+            def close(self):
+                pass
+
+            def drain_events(self):
+                return ()
+
+        # Explicitly supplied default board options are harmless.
+        for argv in ([], ["--board-port", "0", "--enable-board-auth", "True"],
+                     ["--enable-experimental-worker-board", "False"]):
+            with self.subTest(argv=argv):
+                stdout, stderr = io.StringIO(), io.StringIO()
+                with (mock.patch.object(auto, "_Session", Session),
+                      mock.patch.object(auto, "_one_prompt", return_value=0) as run,
+                      redirect_stdout(stdout), redirect_stderr(stderr)):
+                    self.assertEqual(auto.main([*argv, "--no-user-model-catalog", "--prompt", "task",
+                                                "--save", "unused"]), 0)
+                run.assert_called_once()
+                self.assertIs(created[-1]["enable_experimental_worker_board"], False)
+                self.assertEqual(stdout.getvalue(), "")
+                self.assertEqual(stderr.getvalue(), "")
+
+    def test_default_one_prompt_subprocess_runs_main_and_watcher_without_board(self):
+        seen = []
+
+        class Gateway(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_POST(self):
+                request = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                seen.append(request)
+                message = ({"role": "assistant", "content": None, "tool_calls": [{
+                    "id": "work", "type": "function", "function": {
+                        "name": "exec_command",
+                        "arguments": json.dumps({"cmd": "printf main > proof.txt",
+                                                 "yield_time_ms": 1000})}}]}
+                    if len(seen) == 1 else {"role": "assistant", "content": "main answer"})
+                data = json.dumps({"choices": [{"message": message, "finish_reason": "stop"}],
+                                   "usage": {"prompt_tokens": 5, "completion_tokens": 2,
+                                             "total_tokens": 7}}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+        gateway = ThreadingHTTPServer(("127.0.0.1", 0), Gateway)
+        server_thread = threading.Thread(target=gateway.serve_forever, kwargs={"poll_interval": .01})
+        server_thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                run = root / "run"
+                result = subprocess.run([
+                    sys.executable, "-m", "pythia.interaction.auto", "--no-user-model-catalog",
+                    "--endpoint-url", f"http://127.0.0.1:{gateway.server_port}/v1/chat/completions",
+                    "--model", "main", "--request-timeout-seconds", "3", "--cwd", tmp,
+                    "--save", str(run), "--prompt", "Do the task",
+                ], capture_output=True, text=True, timeout=15)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(result.stderr, "")
+                self.assertIn("[#1 (main) - assistant] main answer", result.stdout)
+                self.assertIn("[#-1 (watcher) - debug] main end-of-turn condition fired: "
+                              "#1 source=1", result.stdout)
+                self.assertNotIn("Board", result.stdout)
+                self.assertNotIn("#2", result.stdout)
+                self.assertEqual((root / "proof.txt").read_text(), "main")
+                for name in ("config.json", "contexts/1.jsonl", "contexts/-1.jsonl"):
+                    self.assertTrue((run / name).is_file(), name)
+                for name in ("index.jsonl", "index.md", "index.html", "contexts/2.jsonl"):
+                    self.assertFalse((run / name).exists(), name)
+                self.assertEqual(len(seen), 2)
+                for request in seen:
+                    names = {tool["function"]["name"] for tool in request["tools"]}
+                    self.assertIn("exec_command", names)
+                    self.assertFalse(any(name.startswith("board_") for name in names))
+                    self.assertFalse(any(message["role"] in {"system", "developer"}
+                                         for message in request["messages"]))
+                self.assertEqual(seen[0]["messages"][0]["role"], "user")
+                self.assertIn("Do the task", json.dumps(seen[0]["messages"][0]))
+                self.assertNotIn("Board thread", json.dumps(seen))
+        finally:
+            gateway.shutdown()
+            server_thread.join()
+            gateway.server_close()
+
+    @unittest.skipUnless(os.name == "posix", "requires a POSIX pseudo-terminal")
+    def test_default_pty_lists_main_and_watcher_and_exits_without_model_work(self):
+        import fcntl
+        import pty
+        import select
+        import struct
+        import termios
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "pty-run"
+            master, slave = pty.openpty()
+            fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 120, 0, 0))
+            process = subprocess.Popen([
+                sys.executable, "-m", "pythia.interaction.auto", "--no-user-model-catalog",
+                "--save", str(path), "--endpoint-url", "http://127.0.0.1:1/v1/chat/completions",
+                "--request-timeout-seconds", "1",
+            ], stdin=slave, stdout=slave, stderr=subprocess.PIPE,
+               env={**os.environ, "TERM": "xterm-256color"})
+            os.close(slave)
+            output = bytearray()
+
+            def expect(marker, after=0):
+                deadline = time.monotonic() + 5
+                while marker not in output[after:]:
+                    if time.monotonic() >= deadline:
+                        self.fail(f"PTY did not show {marker!r}: {bytes(output)!r}")
+                    if select.select([master], [], [], .05)[0]:
+                        try:
+                            output.extend(os.read(master, 65536))
+                        except OSError:
+                            self.fail(f"PTY closed early: {bytes(output)!r}")
+            try:
+                expect(b"#1 (main) - quiescent")
+                start = len(output)
+                os.write(master, b"/contexts\r")
+                expect(b"#-1 (watcher) - quiescent", start)
+                start = len(output)
+                os.write(master, b"/context 2\r")
+                expect(b"Use /context 1 or /context -1.", start)
+                os.write(master, b"\x04")
+                self.assertEqual(process.wait(timeout=5), 0)
+                self.assertEqual(process.stderr.read(), b"")
+                self.assertNotIn(b"Board", output)
+                self.assertNotIn(b"#2", output)
+                self.assertFalse((path / "index.jsonl").exists())
+                self.assertFalse((path / "contexts" / "2.jsonl").exists())
+                self.assertEqual(len(load_interaction_save(path / "contexts" / "1.jsonl")), 1)
+                self.assertEqual(len(load_interaction_save(path / "contexts" / "-1.jsonl")), 2)
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                    process.wait()
+                process.stderr.close()
+                os.close(master)
+
     def test_board_auth_cli_propagation_warning_and_resume_secure_default(self):
         created = []
         class Session:
@@ -1404,10 +1873,11 @@ class EntryPointTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             missing = Path(tmp) / "guaranteed-missing-save"
-            for argv, expected, warned in ((["--headless", "--enable-board-auth", "False"], False, True),
-                                           (["--headless"], True, False),
-                                           (["--headless", "--enable-board-auth"], True, False),
-                                           (["--headless", "--resume"], True, False)):
+            board = "--enable-experimental-worker-board"
+            for argv, expected, warned in (([board, "--headless", "--enable-board-auth", "False"], False, True),
+                                           ([board, "--headless"], True, False),
+                                           ([board, "--headless", "--enable-board-auth"], True, False),
+                                           ([board, "--headless", "--resume"], True, False)):
                 with self.subTest(argv=argv):
                     self.assertFalse(missing.exists())
                     stdout, stderr = io.StringIO(), io.StringIO()
@@ -1416,6 +1886,7 @@ class EntryPointTests(unittest.TestCase):
                           redirect_stdout(stdout), redirect_stderr(stderr)):
                         self.assertEqual(auto.main([*argv, "--save", str(missing)]), 0)
                     self.assertIs(created[-1]["enable_board_auth"], expected)
+                    self.assertIs(created[-1]["enable_experimental_worker_board"], True)
                     self.assertEqual(stdout.getvalue(),
                                      "Board: http://127.0.0.1:43210/README.md\n")
                     self.assertEqual("authentication is disabled" in stderr.getvalue(), warned)
@@ -1450,7 +1921,7 @@ class EntryPointTests(unittest.TestCase):
             with self.subTest(prompt=prompt):
                 output = Output()
                 runner = "_headless" if prompt is None else "_one_prompt"
-                argv = ["--headless", "--save", "unused"]
+                argv = ["--enable-experimental-worker-board", "--headless", "--save", "unused"]
                 if prompt is not None:
                     argv += ["--prompt", prompt]
                 def run_after_board(*args, **kwargs):
@@ -1481,7 +1952,8 @@ class EntryPointTests(unittest.TestCase):
               mock.patch.object(auto, "_one_prompt", return_value=0) as run,
               redirect_stdout(output)):
             self.assertEqual(auto.main([
-                "--headless", "False", "--save", "unused", "--prompt", "task"
+                "--enable-experimental-worker-board", "--headless", "False",
+                "--save", "unused", "--prompt", "task"
             ]), 0)
         self.assertTrue(run.call_args.kwargs["display"])
         self.assertEqual(output.getvalue().count("Board: "), 1)
@@ -1521,7 +1993,8 @@ class EntryPointTests(unittest.TestCase):
                       mock.patch.object(auto, "_print_events",
                                         side_effect=AssertionError("display leaked")),
                       redirect_stdout(stdout), redirect_stderr(stderr)):
-                    self.assertEqual(auto.main(["--headless", "--save", "unused"]), expected)
+                    self.assertEqual(auto.main(["--enable-experimental-worker-board", "--headless",
+                                                "--save", "unused"]), expected)
                 self.assertEqual(stdout.getvalue().count("Board: "), int(board))
                 self.assertNotIn("Save directory", stdout.getvalue())
 
@@ -1534,7 +2007,8 @@ class EntryPointTests(unittest.TestCase):
               mock.patch.object(auto, "_print_events",
                                 side_effect=AssertionError("display leaked")),
               redirect_stdout(stdout), redirect_stderr(stderr)):
-            self.assertEqual(auto.main(["--headless", "--save", "unused"]), 1)
+            self.assertEqual(auto.main(["--enable-experimental-worker-board", "--headless",
+                                        "--save", "unused"]), 1)
         self.assertEqual(stdout.getvalue(), "")
 
     def test_codex_auto_flow_rejects_system_wire_messages_like_the_real_endpoint(self):
@@ -1595,6 +2069,7 @@ class EntryPointTests(unittest.TestCase):
                 }))
                 result = subprocess.run([
                     sys.executable, "-m", "pythia.interaction.auto", "--context-config", str(settings),
+                    "--enable-experimental-worker-board",
                     "--save", str(root / "run"), "--prompt", "Review auto startup.",
                 ], capture_output=True, text=True, timeout=15)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -1632,7 +2107,8 @@ class EntryPointTests(unittest.TestCase):
             master, slave = pty.openpty()
             fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 120, 0, 0))
             process = subprocess.Popen([
-                sys.executable, "-m", "pythia.interaction.auto", "--save", str(path),
+                sys.executable, "-m", "pythia.interaction.auto", "--enable-experimental-worker-board",
+                "--save", str(path),
                 "--endpoint-url", "http://127.0.0.1:1/v1/chat/completions",
                 "--request-timeout-seconds", "1",
             ], stdin=slave, stdout=slave, stderr=subprocess.PIPE,
@@ -1720,6 +2196,7 @@ class EntryPointTests(unittest.TestCase):
                                            "max_output_tokens": 128}},
                 }))
                 result = subprocess.run([sys.executable, "-m", "pythia.interaction.auto",
+                    "--enable-experimental-worker-board",
                     "--context-config", str(settings), "--save", str(root / "run"), "--prompt", "Do the task"],
                     env={**os.environ, "AUTO_TEST_KEY": "FAKE_PROVIDER_SECRET"},
                     capture_output=True, text=True, timeout=15)

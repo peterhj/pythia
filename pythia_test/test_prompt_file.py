@@ -134,6 +134,7 @@ class PromptFileTests(unittest.TestCase):
                         mock.patch.object(auto, "PosixTerminal") as terminal, \
                         mock.patch.object(auto, "_print_events"), redirect_stdout(output):
                     self.assertEqual(auto.main([
+                        "--enable-experimental-worker-board",
                         f"--headless={headless}", "--prompt-file", str(source),
                         "--save", str(self.root / "run"),
                     ]), 0)
