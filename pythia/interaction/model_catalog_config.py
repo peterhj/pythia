@@ -25,6 +25,8 @@ _EXTRA_SAMPLE_PARAMS_PREFIX = "extra_sample_params."
 _LIMIT_FIELDS = frozenset(("auto_compact_context_tokens", "max_context_tokens", "max_output_tokens"))
 _RESPONSES_FIELDS = frozenset(("reasoning_effort", "reasoning_summary", "text_verbosity"))
 _INTEGER = re.compile(r"^[+-]?[0-9]+$")
+# Roles whose default models the optional [auto] section may name.
+AUTO_ROLES = ("main", "watcher", "worker")
 
 
 def default_model_catalog_path():
@@ -152,6 +154,7 @@ def parse_model_catalog(text, *, base=BUILTIN_MODEL_CATALOG, source="user"):
             version = LATEST_MODEL_CATALOG_VERSION
             assumed_version = True
         sections = [section for section in parser.sections() if section != "catalog"]
+        sections = [section for section in sections if section != "auto"]
         if len(sections) > MAX_CATALOG_MODELS or any(not section.startswith("model.") for section in sections):
             raise ValueError()
     except (configparser.Error, ValueError):
@@ -192,6 +195,10 @@ def parse_model_catalog(text, *, base=BUILTIN_MODEL_CATALOG, source="user"):
         catalog = ModelCatalog(tuple(specs.values()), origins)
     except ValueError:
         raise ValueError(f"Model catalog selector/alias collision in {source}") from None
+    if parser.has_section("auto"):
+        catalog = replace(catalog, auto_models={
+            **catalog.auto_models, **_auto_models(parser["auto"], catalog, source),
+        })
     if assumed_version:
         warnings.warn(
             f"Model catalog {source!r} does not specify a version; assuming latest "
@@ -200,6 +207,32 @@ def parse_model_catalog(text, *, base=BUILTIN_MODEL_CATALOG, source="user"):
             stacklevel=2,
         )
     return catalog
+
+
+def _auto_models(section, catalog, source):
+    """[auto] <role>.model selectors: catalog names only, so typos fail at load."""
+    models = {}
+    for key, raw in section.items():
+        role, dot, field = key.partition(".")
+        if role not in AUTO_ROLES or not dot or field != "model":
+            raise ValueError(f"Invalid model catalog [auto] key {key!r} in {source}; "
+                             "expected main.model, watcher.model, or worker.model")
+        try:
+            name = _text(raw)
+        except ValueError:
+            raise ValueError(f"Invalid model catalog [auto] {key} in {source}") from None
+        if name is None:
+            continue
+        name = name.strip()
+        matches = catalog.matches(name) if name else ()
+        if not matches:
+            raise ValueError(f"Invalid model catalog [auto] {key} in {source}: "
+                             f"{name!r} is not a catalog model")
+        if len(matches) > 1:
+            raise ValueError(f"Invalid model catalog [auto] {key} in {source}: "
+                             f"{name!r} is in the catalog for several APIs")
+        models[role] = name
+    return models
 
 
 def load_model_catalog(path=None, *, enabled=True, base=BUILTIN_MODEL_CATALOG):
@@ -223,6 +256,7 @@ def load_model_catalog(path=None, *, enabled=True, base=BUILTIN_MODEL_CATALOG):
 
 
 __all__ = [
+    "AUTO_ROLES",
     "LATEST_MODEL_CATALOG_VERSION",
     "default_model_catalog_path",
     "load_model_catalog",

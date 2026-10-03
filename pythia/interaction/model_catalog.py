@@ -539,10 +539,15 @@ class ModelBinding:
 
 @dataclass(frozen=True)
 class ModelCatalog:
-    """Immutable registry. File loading belongs to model_catalog_config, not here."""
+    """Immutable registry. File loading belongs to model_catalog_config, not here.
+
+    auto_models maps auto role names to their default catalog selectors (the
+    user catalog's optional [auto] section); other frontends ignore it.
+    """
 
     specs: Tuple[ModelSpec, ...] = ()
     origins: Mapping = field(default_factory=dict, repr=False)
+    auto_models: Mapping = field(default_factory=dict)
     _index: Mapping = field(init=False, repr=False, compare=False)
 
     def __post_init__(self):
@@ -552,6 +557,11 @@ class ModelCatalog:
             not isinstance(value, str) or not value for value in self.origins.values()
         ):
             raise TypeError("catalog origins must be nonempty strings")
+        if not isinstance(self.auto_models, MappingABC) or any(
+            not isinstance(key, str) or not isinstance(value, str) or not value.strip()
+            for key, value in self.auto_models.items()
+        ):
+            raise TypeError("catalog auto_models must map role names to model names")
         object.__setattr__(self, "specs", specs)
         object.__setattr__(self, "_index", index)
         object.__setattr__(self, "origins", MappingProxyType({
@@ -560,6 +570,7 @@ class ModelCatalog:
             )
             for spec in specs
         }))
+        object.__setattr__(self, "auto_models", MappingProxyType(dict(self.auto_models)))
 
     def get_model_spec(self, api, name):
         api = _normalize_profile(api)

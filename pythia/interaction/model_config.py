@@ -122,6 +122,9 @@ def render_model_catalog(catalog):
         settings = "".join(f", {setting}" for setting in _request_settings(spec))
         lines.append(f"{spec.name}{aliases}: api={spec.endpoint.api}, model={spec.endpoint.model}, "
                      f"url={spec.endpoint.url}, auth={spec.endpoint.auth}, source={origin}{settings}")
+    if catalog.auto_models:
+        lines.append("[auto] " + ", ".join(
+            f"{role}.model = {name}" for role, name in catalog.auto_models.items()))
     return "\n".join(lines)
 
 

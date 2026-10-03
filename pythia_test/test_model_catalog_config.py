@@ -21,7 +21,9 @@ from pythia.interaction import (
     create_default_compactor, load_model_catalog, parse_model_catalog,
 )
 from pythia.interaction import auto, cli, demo, model_catalog, responses
-from pythia.interaction._auto_config import build_parser, load_saved_config, namespace, resolve_config
+from pythia.interaction._auto_config import (
+    build_parser, load_saved_config, namespace, resolve_config, saved_document,
+)
 from pythia.interaction._model_binding_debug import (
     debug_model_binding_path, save_debug_model_bindings,
 )
@@ -30,7 +32,8 @@ from pythia.interaction.messages import (
     MessagesEndpoint, MessagesModel, MessagesPromptCaching, MessagesServerCompaction,
 )
 from pythia.interaction.model_config import build_model, prepare_namespace, supports_account_services
-from pythia.interaction.model_catalog_config import MAX_CATALOG_BYTES
+from pythia.interaction.model_config import render_model_catalog
+from pythia.interaction.model_catalog_config import AUTO_ROLES, MAX_CATALOG_BYTES
 
 
 HEADER = "[catalog]\nversion = 4\n"
@@ -676,30 +679,30 @@ class BoundRequestTests(unittest.TestCase):
         self.assertIsInstance(build_model(args), ChatCompletionsModel)
 
 class AutoCatalogTests(unittest.TestCase):
-    def test_context_api_can_disambiguate_a_common_model_without_repeating_it(self):
+    def test_role_api_can_disambiguate_main_model_without_repeating_it(self):
         registry = catalog(LOCAL.replace("local-max", "codex-gpt-6-astra"))
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "contexts.json"
-            path.write_text(json.dumps({"version": 1,
-                "defaults": {"model": "codex-gpt-6-astra"},
-                "contexts": {"1": {"model_api": "codex"},
-                             "2": {"model_api": "chat-completions"},
-                             "-1": {"model_api": "codex"}},
+            path.write_text(json.dumps({"version": 3,
+                "main": {"model": "codex-gpt-6-astra", "model_api": "codex"},
+                "worker": {"model_api": "chat-completions"},
+                "watcher": {"model_api": "codex"},
             }))
             settings = resolve_config(path, catalog=registry)
             self.assertEqual(settings[1]["model"], "codex-gpt-6-astra")
             self.assertEqual(namespace(settings[1], registry).model_binding.endpoint.model, "gpt-6-astra")
+            # A route without a model uses main's model name.
+            self.assertEqual(settings[2]["model"], "codex-gpt-6-astra")
             self.assertEqual(namespace(settings[2], registry).model_binding.endpoint.model, "served-local")
 
-    def test_context_api_inference_clearing_and_params_do_not_leak(self):
+    def test_role_api_inference_clearing_and_params_do_not_leak(self):
         registry = catalog(LOCAL + MESSAGE)
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "contexts.json"
-            path.write_text(json.dumps({"version": 1, "contexts": {
-                "2": {"model_api": None, "model": "worker"},
-            }}))
-            settings = resolve_config(path, {"model": "local-max", "model_api": "chat-completions",
-                                            "extra_sample_params": {"custom": True}}, catalog=registry)
+            path.write_text(json.dumps({"version": 3, "worker": {"model_api": None, "model": "worker"}}))
+            settings = resolve_config(path, {"model_api": "chat-completions",
+                                            "extra_sample_params": {"custom": True}},
+                                      role_models={1: "local-max"}, catalog=registry)
             main = InteractionConfig.from_namespace(namespace(settings[1], registry))
             worker_args = namespace(settings[2], registry)
             worker = InteractionConfig.from_namespace(worker_args)
@@ -715,11 +718,12 @@ class AutoCatalogTests(unittest.TestCase):
         registry = catalog()
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "contexts.json"
-            path.write_text(json.dumps({"version": 1, "contexts": {
-                "2": {"extra_sample_params": None},
-                "-1": {"extra_sample_params": {"thinking": {"type": "disabled"}}},
-            }}))
-            settings = resolve_config(path, {"model": "local-max", "extra_sample_params": {"custom": 1}}, catalog=registry)
+            path.write_text(json.dumps({"version": 3,
+                "main": {"model": "local-max", "extra_sample_params": {"custom": 1}},
+                "worker": {"extra_sample_params": None},
+                "watcher": {"extra_sample_params": {"thinking": {"type": "disabled"}}},
+            }))
+            settings = resolve_config(path, catalog=registry)
             one, two, watch = (InteractionConfig.from_namespace(namespace(settings[i], registry)) for i in (1, 2, -1))
             self.assertEqual(one.get("extra_sample_params")["custom"], 1)
             self.assertNotIn("custom", two.get("extra_sample_params"))
@@ -740,9 +744,9 @@ class AutoCatalogTests(unittest.TestCase):
         registry = catalog(CODEX)
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "contexts.json"
-            path.write_text(json.dumps({"version": 1, "contexts": {"2": {"model": "code-env"}}}))
-            settings = resolve_config(path, {"model_api": "codex", "model": "codex-gpt-6-astra",
-                                            "codex_home": directory}, catalog=registry)
+            path.write_text(json.dumps({"version": 3, "worker": {"model": "code-env"}}))
+            settings = resolve_config(path, {"model_api": "codex", "codex_home": directory},
+                                      role_models={1: "codex-gpt-6-astra"}, catalog=registry)
             self.assertIsNone(settings[2]["codex_home"])
             self.assertEqual(settings[1]["codex_home"], directory)
 
@@ -751,21 +755,40 @@ class AutoCatalogTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "config.json"
             settings = resolve_config(overrides={"model": "local-max"}, catalog=registry)
-            document = {"version": 2, "contexts": {str(i): dict(s) for i, s in settings.items()}}
-            for row in document["contexts"].values():
-                row.pop("extra_sample_params")
+            document = saved_document(settings)
+            document["main"].pop("extra_sample_params")
             path.write_text(json.dumps(document))
             with self.assertRaisesRegex(ValueError, "Invalid saved"):
                 load_saved_config(path)
-            path.write_text(json.dumps({
-                "version": 2,
-                "contexts": {str(i): dict(s) for i, s in settings.items()},
-            }))
+            path.write_text(json.dumps(saved_document(settings)))
             saved = load_saved_config(path)
             current = resolve_config(saved=saved, catalog=registry)
             self.assertIsNone(current[1]["extra_sample_params"])
             self.assertIsNone(current[1]["model_api"])
             self.assertEqual(namespace(current[1], registry).model_binding.endpoint.model, "served-local")
+
+    def test_auto_section_names_default_role_models(self):
+        registry = catalog(LOCAL + "\n[auto]\nmain.model = codex-gpt-6-astra-max\n"
+                           "watcher.model = local-alias\nworker.model = null\n")
+        self.assertEqual(dict(registry.auto_models),
+                         {"main": "codex-gpt-6-astra-max", "watcher": "local-alias"})
+        self.assertIn("[auto] main.model = codex-gpt-6-astra-max, watcher.model = local-alias",
+                      render_model_catalog(registry))
+        self.assertEqual(dict(catalog().auto_models), {})
+        self.assertNotIn("[auto]", render_model_catalog(catalog()))
+        self.assertEqual(set(AUTO_ROLES), set(auto.NAMES.values()))
+
+    def test_auto_section_rejects_unknown_roles_and_models(self):
+        duplicate = LOCAL.replace("local-max", "codex-gpt-6-luna")
+        for text, message in (
+            (LOCAL + "\n[auto]\nwatchr.model = local-max\n", "watchr.model"),
+            (LOCAL + "\n[auto]\nmain = local-max\n", "'main'"),
+            (LOCAL + "\n[auto]\nmain.model = no-such-model\n", "not a catalog model"),
+            (LOCAL + "\n[auto]\nmain.model =\n", "not a catalog model"),
+            (duplicate + "\n[auto]\nmain.model = codex-gpt-6-luna\n", "several APIs"),
+        ):
+            with self.subTest(text=text[-40:]), self.assertRaisesRegex(ValueError, message):
+                catalog(text)
 
 
 class CatalogEntrypointTests(unittest.TestCase):

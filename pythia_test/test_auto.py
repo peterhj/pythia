@@ -27,13 +27,18 @@ from pythia.interaction import load_interaction_save
 from pythia.interaction import auto
 from pythia.interaction import SampleParams
 from pythia.interaction._auto_board import BoardError
-from pythia.interaction._auto_config import build_parser, namespace, resolve_config
+from pythia.interaction._auto_config import FOLLOWS_MAIN, build_parser, namespace, resolve_config
 from pythia.interaction.messages import resolve_messages_max_output_tokens
 from pythia.interaction.runtime_config import InteractionConfig
 
 
 def answer(text="done"):
     return ModelSample((Message("assistant", text),))
+
+
+def resume(content, call_id="resume"):
+    """A watcher sample that resumes main with content."""
+    return ModelSample((ToolCall("resume_main", call_id, json.dumps({"content": content})),))
 
 
 def wait_for(predicate, timeout=5):
@@ -199,22 +204,19 @@ class ConfigTests(unittest.TestCase):
             root = Path(tmp)
             for directory in ("relative-cwd", "relative-home", "auth-parent"):
                 (root / directory).mkdir()
-            snapshot = resolve_config(overrides={"cwd": tmp})
-            snapshot[1].update({
+            snapshot = auto.saved_document(resolve_config(overrides={"cwd": tmp}))
+            snapshot["main"].update({
                 "model_api": "codex", "model": "saved-codex",
                 "cwd": "relative-cwd", "codex_home": "relative-home",
             })
-            snapshot[2].update({
+            snapshot["worker"].update({
                 "model_api": "codex", "model": "saved-codex-worker",
                 "cwd": "relative-cwd", "codex_auth_file": "auth-parent/auth.json",
             })
             path = root / "config.json"
 
             def write():
-                path.write_text(json.dumps({
-                    "version": 2,
-                    "contexts": {str(index): value for index, value in snapshot.items()},
-                }))
+                path.write_text(json.dumps(snapshot))
 
             write()
             saved = auto.load_saved_config(path)
@@ -224,60 +226,70 @@ class ConfigTests(unittest.TestCase):
                              str((root / "auth-parent/auth.json").absolute()))
             merged = resolve_config(saved=saved)
             self.assertEqual(merged[1]["codex_home"], saved[1]["codex_home"])
+            self.assertEqual(merged[2]["codex_auth_file"], saved[2]["codex_auth_file"])
 
             for key in ("cwd", "codex_home", "codex_auth_file"):
-                original = snapshot[1][key]
+                original = snapshot["main"][key]
                 for invalid in (123, "", "bad\x00path"):
                     with self.subTest(key=key, invalid=invalid):
-                        snapshot[1][key] = invalid
+                        snapshot["main"][key] = invalid
                         write()
                         with self.assertRaises(ValueError):
                             auto.load_saved_config(path)
-                snapshot[1][key] = original
+                snapshot["main"][key] = original
 
-    def test_saved_config_version_1_loads_with_compaction_defaults(self):
-        compaction = ("compaction_mode", "compaction_keep_recent_tokens",
-                      "compaction_max_output_tokens")
+    def test_saved_config_is_version_3_and_older_saves_are_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "config.json"
             current = resolve_config(overrides={"cwd": tmp, "model": "saved-model"})
-            old = {str(i): {k: v for k, v in s.items() if k not in compaction}
-                   for i, s in current.items()}
-            path.write_text(json.dumps({"version": 1, "contexts": old}))
-            saved = auto.load_saved_config(path)
-            self.assertEqual(saved, current)
-            for settings in saved.values():
-                self.assertEqual({key: settings[key] for key in compaction},
-                                 dict.fromkeys(compaction))
-            # Each version requires its exact key set.
-            for version, contexts in (
-                (1, {str(i): dict(s) for i, s in current.items()}),
-                (2, old),
-                (3, {str(i): dict(s) for i, s in current.items()}),
-            ):
+            document = auto.saved_document(current)
+            self.assertEqual(set(document), {"version", "main", "worker", "watcher"})
+            self.assertEqual(document["version"], 3)
+            self.assertEqual(set(document["main"]), set(auto.DEFAULTS) | {"name"})
+            path.write_text(json.dumps(document))
+            self.assertEqual(resolve_config(saved=auto.load_saved_config(path)), current)
+            for version in (1, 2):
                 with self.subTest(version=version):
-                    path.write_text(json.dumps({"version": version, "contexts": contexts}))
+                    path.write_text(json.dumps({"version": version, "contexts": {}}))
+                    with self.assertRaisesRegex(ValueError, "earlier version of auto"):
+                        auto.load_saved_config(path)
+            incomplete = {key: value for key, value in document["main"].items() if key != "cwd"}
+            for broken in ({**document, "version": 4}, {**document, "main": incomplete},
+                           {**document, "watcher": {"model": "no identity"}},
+                           {**document, "observer": {"name": "x", "instructions": None}}):
+                with self.subTest(broken=broken):
+                    path.write_text(json.dumps(broken))
                     with self.assertRaisesRegex(ValueError, "Invalid saved"):
                         auto.load_saved_config(path)
 
     def test_saved_settings_are_base_for_explicit_resume_overrides(self):
-        saved = resolve_config(overrides={"model": "saved-model", "cwd": str(Path.cwd())})
-        saved[2]["name"] = "saved worker"
-        saved[2]["instructions"] = "saved custom worker instructions"
         with tempfile.TemporaryDirectory() as tmp:
+            # Created with --model: every role chose saved-model itself.
+            document = auto.saved_document(resolve_config(
+                overrides={"model": "saved-model", "cwd": str(Path.cwd())}))
+            document["worker"].update(name="saved worker",
+                                      instructions="saved custom worker instructions")
+            saved_path = Path(tmp) / "config.json"
+            saved_path.write_text(json.dumps(document))
+            saved = auto.load_saved_config(saved_path)
             path = Path(tmp) / "override.json"
             path.write_text(json.dumps({
-                "version": 1,
-                "defaults": {"max_samples": 7},
-                "contexts": {"2": {"model": "role-model", "name": "new worker"}},
+                "version": 3,
+                "main": {"max_samples": 7},
+                "worker": {"model": "role-model", "name": "new worker"},
             }))
+            settings = resolve_config(path, saved=saved, role_models={1: "launch-model"})
+            self.assertEqual(settings[1]["model"], "launch-model")
+            self.assertEqual(settings[2]["model"], "role-model")
+            # --main-model is main's only: the watcher keeps the model it chose.
+            self.assertEqual(settings[-1]["model"], "saved-model")
+            self.assertEqual(settings.sources, {1: "command line", 2: "config file", -1: "saved"})
+            self.assertTrue(all(value["max_samples"] == 7 for value in settings.values()))
+            self.assertEqual(settings[2]["name"], "new worker")
+            self.assertEqual(settings[2]["instructions"], "saved custom worker instructions")
+            # --model sets every role's model, over the file and the save.
             settings = resolve_config(path, {"model": "launch-model"}, saved=saved)
-        self.assertEqual(settings[1]["model"], "launch-model")
-        self.assertEqual(settings[2]["model"], "role-model")
-        self.assertEqual(settings[-1]["model"], "launch-model")
-        self.assertTrue(all(value["max_samples"] == 7 for value in settings.values()))
-        self.assertEqual(settings[2]["name"], "new worker")
-        self.assertEqual(settings[2]["instructions"], "saved custom worker instructions")
+            self.assertEqual({value["model"] for value in settings.values()}, {"launch-model"})
 
     def test_headless_boolean_argument_is_frontend_only(self):
         parser = build_parser()
@@ -309,7 +321,7 @@ class ConfigTests(unittest.TestCase):
             self.assertIsNone(snapshot.max_samples)
             self.assertEqual(snapshot.sample_params(), SampleParams(enable_auto_compaction=True))
 
-    def test_explicit_limits_and_per_context_null_overrides(self):
+    def test_explicit_limits_and_per_role_null_overrides(self):
         args = build_parser().parse_args(["--max-samples", "3", "--max-output-tokens", "128"])
         overrides = {"max_samples": args.max_samples, "max_output_tokens": args.max_output_tokens}
         for settings in resolve_config(overrides=overrides).values():
@@ -318,15 +330,18 @@ class ConfigTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "settings.json"
             path.write_text(json.dumps({
-                "version": 1,
-                "defaults": {"max_samples": 5, "max_output_tokens": 512},
-                "contexts": {"2": {"max_samples": None, "max_output_tokens": None}},
+                "version": 3,
+                "main": {"max_samples": 5, "max_output_tokens": 512},
+                "worker": {"max_samples": None, "max_output_tokens": None},
             }))
+            settings = resolve_config(path)
+            limits = {i: (s["max_samples"], s["max_output_tokens"]) for i, s in settings.items()}
+            # Roles inherit main's settings; a role's null clears them for that role.
+            self.assertEqual(limits, {1: (5, 512), -1: (5, 512), 2: (None, None)})
+            # The command line wins over the file.
             settings = resolve_config(path, overrides)
-            self.assertEqual(settings[1]["max_samples"], 3)
-            self.assertEqual(settings[1]["max_output_tokens"], 128)
-            self.assertIsNone(settings[2]["max_samples"])
-            self.assertIsNone(settings[2]["max_output_tokens"])
+            limits = {i: (s["max_samples"], s["max_output_tokens"]) for i, s in settings.items()}
+            self.assertEqual(limits, {1: (3, 128), -1: (3, 128), 2: (3, 128)})
         for key in ("max_samples", "max_output_tokens"):
             for value in (0, -1, True, False, 1.5, "3"):
                 with self.subTest(key=key, value=value), self.assertRaises(ValueError):
@@ -345,32 +360,42 @@ class ConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "provide it explicitly"):
             resolve_config(overrides={"model_api": "messages", "model": "uncatalogued-auto-test-model"})
 
-    def test_file_overrides_launch_defaults_and_resets_cross_api_fields(self):
+    def test_command_line_wins_and_role_routes_reset_main_provider_fields(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "settings.json"
             path.write_text(json.dumps({
-                "version": 1,
-                "defaults": {"model_api": "codex", "model": "file-main", "codex_auth_file": "auth.json"},
-                "contexts": {"2": {"model_api": "messages", "model": "worker",
-                                       "endpoint_auth": "env:WORKER_KEY",
-                                       "max_output_tokens": 64}},
+                "version": 3,
+                "main": {"model_api": "codex", "model": "file-main", "codex_auth_file": "auth.json"},
+                "worker": {"model_api": "messages", "model": "worker",
+                           "endpoint_auth": "env:WORKER_KEY", "max_output_tokens": 64},
             }))
             parsed = build_parser().parse_args(["--context-config", str(path), "--prompt", "hi"])
             self.assertFalse(hasattr(parsed, "model_api"))
-            settings = resolve_config(path, {"model": "launch-main"})
-            self.assertEqual(settings[1]["model"], "launch-main")
-            self.assertEqual(settings[-1]["model"], "launch-main")
-            self.assertEqual(settings[1]["codex_auth_file"], str(Path(tmp) / "auth.json"))
-            self.assertEqual(settings[2]["model_api"], "messages")
-            self.assertEqual(settings[2]["model"], "worker")
+            settings = resolve_config(path, role_models={1: "launch-main"})
+            auth = str(Path(tmp) / "auth.json")
+            self.assertEqual((settings[1]["model_api"], settings[1]["model"]), ("codex", "launch-main"))
+            self.assertEqual(settings[1]["codex_auth_file"], auth)
+            # The watcher follows main; the worker keeps its own route, without
+            # main's Codex credential file.
+            self.assertEqual((settings[-1]["model"], settings[-1]["codex_auth_file"]), ("launch-main", auth))
+            self.assertEqual((settings[2]["model_api"], settings[2]["model"]), ("messages", "worker"))
             self.assertIsNone(settings[2]["codex_auth_file"])
             self.assertEqual(settings[2]["endpoint_auth"], "env:WORKER_KEY")
+            self.assertEqual(settings[2]["max_output_tokens"], 64)
             self.assertEqual([settings[i]["name"] for i in (1, 2, -1)], ["main", "worker", "watcher"])
+            self.assertEqual(settings.sources,
+                             {1: "command line", 2: "config file", -1: FOLLOWS_MAIN})
+            # --model is every role's model: the worker's file route gives way whole.
+            settings = resolve_config(path, {"model": "launch-all"})
+            self.assertEqual({value["model"] for value in settings.values()}, {"launch-all"})
+            self.assertEqual(settings[2]["model_api"], "codex")
+            self.assertIsNone(settings[2]["endpoint_auth"])
 
     def test_config_validation_and_instruction_scope(self):
         settings = resolve_config(overrides={"instructions": ""})
         self.assertEqual(settings[1]["instructions"], "")
         self.assertIsNone(settings[2]["instructions"])
+        self.assertIsNone(settings[-1]["instructions"])
         bad = ({"max_samples": 0}, {"request_timeout_seconds": float("nan")},
                {"endpoint_url": "http://user:secret@localhost"}, {"api_key": "SECRET"},
                {"model_api": "other"}, {"max_output_tokens": True},
@@ -381,12 +406,170 @@ class ConfigTests(unittest.TestCase):
                 resolve_config(overrides=overrides)
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "bad.json"
-            for content in ('{"version":1,"contexts":{"0":{}}}',
-                            '{"version":1,"version":1}',
-                            '{"version":1,"contexts":{"-1":{"name":"bad\\nname"}}}'):
-                path.write_text(content)
-                with self.assertRaises(ValueError):
-                    resolve_config(path)
+            for content in ('{"version":3,"observer":{}}',
+                            '{"version":3,"version":3}',
+                            '{"version":3,"watcher":{"name":"bad\\nname"}}',
+                            '{"version":3,"main":{"api_key":"SECRET"}}',
+                            '{"version":1,"contexts":{}}'):
+                with self.subTest(content=content):
+                    path.write_text(content)
+                    with self.assertRaises(ValueError):
+                        resolve_config(path)
+            path.write_text('{"version":1,"contexts":{}}')
+            with self.assertRaisesRegex(ValueError, "version 3"):
+                resolve_config(path)
+            # Instructions are per role; the command line's win over the file's.
+            path.write_text(json.dumps({"version": 3, "main": {"instructions": "file main"},
+                                        "watcher": {"instructions": "file watcher"}}))
+            self.assertEqual(resolve_config(path)[1]["instructions"], "file main")
+            settings = resolve_config(path, {"instructions": "launch main"})
+            self.assertEqual(settings[1]["instructions"], "launch main")
+            self.assertEqual(settings[-1]["instructions"], "file watcher")
+            self.assertIsNone(settings[2]["instructions"])
+
+
+class RoleModelTests(unittest.TestCase):
+    """Every role uses main's model unless it chooses its own."""
+
+    def resolve(self, overrides=None, **kwargs):
+        return resolve_config(overrides={"cwd": str(Path.cwd()), **(overrides or {})},
+                              roles=(1, -1), **kwargs)
+
+    def route(self, settings, index):
+        binding = namespace(settings[index], settings.catalog).model_binding
+        return binding.api, binding.endpoint.model, binding.endpoint.url, binding.endpoint.auth
+
+    def test_model_options(self):
+        codex = "https://chatgpt.com/backend-api/codex/responses"
+        local = "http://127.0.0.1:8000/v1/chat/completions"
+        gpu = "http://gpu:8000/v1/chat/completions"
+        for overrides, role_models, main, watcher, sources in (
+            ({}, {}, ("chat-completions", None, local, "none"),
+             ("chat-completions", None, local, "none"), ("built-in default", FOLLOWS_MAIN)),
+            ({"model": "codex-gpt-6-astra-max"}, {},
+             ("codex", "gpt-6-astra", codex, "codex-login"),
+             ("codex", "gpt-6-astra", codex, "codex-login"), ("command line", "command line")),
+            ({"model": "codex-gpt-6-astra-max"}, {-1: "codex-gpt-6-luna"},
+             ("codex", "gpt-6-astra", codex, "codex-login"),
+             ("codex", "gpt-6-luna", codex, "codex-login"), ("command line", "command line")),
+            ({"model": "claude-opus-5.5"}, {-1: "codex-gpt-6-luna"},
+             ("messages", "claude-opus-5-5", "https://api.anthropic.com/v1/messages",
+              "env:ANTHROPIC_API_KEY"),
+             ("codex", "gpt-6-luna", codex, "codex-login"), ("command line", "command line")),
+            # Another name is a model ID on main's endpoint.
+            ({"endpoint_url": gpu, "model": "big"}, {-1: "small"},
+             ("chat-completions", "big", gpu, "none"),
+             ("chat-completions", "small", gpu, "none"), ("command line", "command line")),
+            # --main-model is main's only, with main's endpoint options.
+            ({"endpoint_url": gpu}, {1: "big"}, ("chat-completions", "big", gpu, "none"),
+             ("chat-completions", "big", gpu, "none"), ("command line", FOLLOWS_MAIN)),
+        ):
+            with self.subTest(overrides=overrides, role_models=role_models):
+                settings = self.resolve(overrides, role_models=role_models)
+                self.assertEqual(self.route(settings, 1), main)
+                self.assertEqual(self.route(settings, -1), watcher)
+                self.assertEqual((settings.sources[1], settings.sources[-1]), sources)
+
+    def test_catalog_defaults_are_independent_per_role(self):
+        defaults = {1: "codex-gpt-6-astra-max", -1: "codex-gpt-6-luna"}
+        for overrides, role_models, models, sources in (
+            ({}, {}, ("codex-gpt-6-astra-max", "codex-gpt-6-luna"),
+             ("catalog default", "catalog default")),
+            ({"model": "codex-gpt-6-sol"}, {}, ("codex-gpt-6-sol", "codex-gpt-6-sol"),
+             ("command line", "command line")),
+            ({}, {1: "codex-gpt-6-sol"}, ("codex-gpt-6-sol", "codex-gpt-6-luna"),
+             ("command line", "catalog default")),
+            ({}, {-1: "codex-gpt-6-sol"}, ("codex-gpt-6-astra-max", "codex-gpt-6-sol"),
+             ("catalog default", "command line")),
+        ):
+            with self.subTest(overrides=overrides, role_models=role_models):
+                settings = self.resolve(overrides, role_models=role_models, role_defaults=defaults)
+                self.assertEqual((settings[1]["model"], settings[-1]["model"]), models)
+                self.assertEqual((settings.sources[1], settings.sources[-1]), sources)
+        # A role without a default follows main.
+        settings = self.resolve({}, role_models={1: "codex-gpt-6-sol"},
+                                role_defaults={1: "codex-gpt-6-astra-max"})
+        self.assertEqual(settings[-1]["model"], "codex-gpt-6-sol")
+        # An explicit endpoint means that server, not the default model on it.
+        settings = self.resolve({"endpoint_url": "http://gpu:8000/v1/chat/completions"},
+                                role_defaults={1: "codex-gpt-6-astra-max"})
+        self.assertIsNone(settings[1]["model"])
+        self.assertEqual(self.route(settings, 1)[0], "chat-completions")
+        # Connection-only options adjust the default model's connection.
+        settings = self.resolve({"codex_auth_file": "/x/auth.json"},
+                                role_defaults={1: "codex-gpt-6-astra-max"})
+        self.assertEqual((settings[1]["model"], settings[1]["codex_auth_file"]),
+                         ("codex-gpt-6-astra-max", "/x/auth.json"))
+        self.assertEqual(settings.sources[1], "catalog default")
+
+    def test_a_role_on_another_model_takes_nothing_model_specific(self):
+        explicit = {"model_api": "codex", "model": "gpt-6-astra-max",
+                    "codex_auth_file": "/x/auth.json"}
+        # A catalog name selects its own route even when main's API is explicit.
+        settings = self.resolve(explicit, role_models={-1: "claude-sonnet-5.5"})
+        self.assertEqual(self.route(settings, -1)[0], "messages")
+        self.assertIsNone(settings[-1]["codex_auth_file"])
+        # Main's credentials carry only to the same connection.
+        settings = self.resolve(explicit, role_models={-1: "codex-gpt-6-luna"})
+        self.assertEqual(self.route(settings, -1)[:2], ("codex", "gpt-6-luna"))
+        self.assertEqual(settings[-1]["codex_auth_file"], "/x/auth.json")
+        # Model-specific options stay with main's model.
+        limits = {"model": "claude-opus-5.5", "max_output_tokens": 64000,
+                  "auto_compact_tokens": 100000, "extra_sample_params": {"custom": 1}}
+        settings = self.resolve(limits, role_models={-1: "codex-gpt-6-luna"})
+        self.assertEqual(settings[1]["max_output_tokens"], 64000)
+        for key in ("max_output_tokens", "auto_compact_tokens", "extra_sample_params"):
+            self.assertIsNone(settings[-1][key], key)
+        self.assertEqual(self.resolve(limits)[-1]["max_output_tokens"], 64000)
+        # Shared settings still apply to every role.
+        settings = self.resolve({"max_samples": 3}, role_models={-1: "codex-gpt-6-luna"})
+        self.assertEqual(settings[-1]["max_samples"], 3)
+
+    def test_ambiguous_names_and_unrunnable_role_models_fail(self):
+        from pythia.interaction.model_catalog_config import parse_model_catalog
+        registry = parse_model_catalog(
+            "[catalog]\nversion = 4\n\n[model.codex-gpt-6-luna]\nendpoint.api = chat-completions\n"
+            "endpoint.url = http://127.0.0.1:9/v1/chat/completions\nendpoint.model = luna\n"
+            "endpoint.auth = none\n")
+        with self.assertRaisesRegex(ValueError, "several APIs"):
+            self.resolve(role_models={-1: "codex-gpt-6-luna"}, catalog=registry)
+        with self.assertRaisesRegex(ValueError, "running role"):
+            self.resolve(role_models={2: "codex-gpt-6-luna"})
+
+    def test_config_file_entries_for_roles_that_do_not_run_are_ignored(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "auto.json"
+            # Not runnable: Messages needs a token budget for an uncatalogued model.
+            path.write_text(json.dumps({"version": 3, "worker": {
+                "model_api": "messages", "model": "uncatalogued-worker"}}))
+            self.assertEqual(set(self.resolve(path=path)), {1, -1})
+            with self.assertRaisesRegex(ValueError, "provide it explicitly"):
+                resolve_config(path)
+
+    def test_resume_keeps_each_role_model_and_ignores_catalog_defaults(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.json"
+
+            def create(**kwargs):
+                path.write_text(json.dumps(auto.saved_document(self.resolve(**kwargs))))
+
+            def resume(overrides=None, **kwargs):
+                settings = self.resolve(overrides, saved=auto.load_saved_config(path), **kwargs)
+                return settings[1]["model"], settings[-1]["model"], settings.sources[-1]
+
+            create(overrides={"model": "codex-gpt-6-astra"})
+            self.assertEqual(resume(role_models={1: "codex-gpt-6-sol"}),
+                             ("codex-gpt-6-sol", "codex-gpt-6-astra", "saved"))
+            self.assertEqual(resume({"model": "codex-gpt-6-luna"}),
+                             ("codex-gpt-6-luna", "codex-gpt-6-luna", "command line"))
+            create(role_defaults={1: "codex-gpt-6-astra"})
+            self.assertEqual(json.loads(path.read_text())["watcher"],
+                             {"name": "watcher", "instructions": None})
+            self.assertEqual(resume(role_models={1: "codex-gpt-6-sol"}),
+                             ("codex-gpt-6-sol", "codex-gpt-6-sol", FOLLOWS_MAIN))
+            create(role_defaults={1: "codex-gpt-6-astra", -1: "codex-gpt-6-luna"})
+            self.assertEqual(resume(role_defaults={1: "codex-gpt-6-sol", -1: "codex-gpt-6-sol"}),
+                             ("codex-gpt-6-astra", "codex-gpt-6-luna", "saved"))
 
 
 class InstructionTests(unittest.TestCase):
@@ -488,9 +671,10 @@ class RuntimeTests(unittest.TestCase):
         self.threads = {i: [] for i in (1, 2, -1)}
         self.closed = []
         self.tool_names = {}
+        self.models_built = []
 
     def session(self, scripts, extra_tools=(), *, settings_overrides=None,
-                settings_updates=None, worker_board=True, **kwargs):
+                settings_updates=None, role_models=None, worker_board=True, **kwargs):
         """Start a scripted session; most runtime tests opt into the worker/board.
 
         worker_board=False omits the flag to exercise _Session's default.
@@ -503,11 +687,13 @@ class RuntimeTests(unittest.TestCase):
                 self.index = index
                 self.outcomes = deque(scripts.get(index, ()))
                 test.threads[index].append(threading.get_ident())
+                test.models_built.append(index)
 
             def sample(self, context, **params):
                 test.threads[self.index].append(threading.get_ident())
-                test.calls[self.index].append(context.copy())
-                test.options[self.index].append(params.get("sample_params"))
+                # A watcher (#-1) entry appears only once the watcher samples.
+                test.calls.setdefault(self.index, []).append(context.copy())
+                test.options.setdefault(self.index, []).append(params.get("sample_params"))
                 saved = load_interaction_save(test.path / "contexts" / f"{self.index}.jsonl")
                 test.assertEqual(saved.items, context.items)
                 test.assertFalse(context.pending_tool_calls())
@@ -536,7 +722,8 @@ class RuntimeTests(unittest.TestCase):
         saved = (auto.load_saved_config(self.path / "config.json")
                  if kwargs.get("resume") and self.path.exists() else None)
         settings = resolve_config(
-            overrides={"cwd": self.temp.name, **(settings_overrides or {})}, saved=saved
+            overrides={"cwd": self.temp.name, **(settings_overrides or {})}, saved=saved,
+            role_models=role_models,
         )
         for index, updates in (settings_updates or {}).items():
             settings[index].update(updates)
@@ -559,11 +746,10 @@ class RuntimeTests(unittest.TestCase):
                 for path in self.path.rglob("*") if path.is_file()}
 
     def test_startup_context_summaries_share_one_global_display_item(self):
-        session = self.session({}, settings_updates={
+        session = self.session({}, role_models={2: "worker-model"}, settings_updates={
             1: {"name": "lead custom"},
-            2: {"name": "builder custom", "model_api": "messages", "model": "worker-model",
-                "max_output_tokens": 128},
-            -1: {"name": "observer custom", "model": "watch-model"},
+            2: {"name": "builder custom"},
+            -1: {"name": "observer custom"},
         })
         events = session.drain_events()
         self.assertEqual(len(events), 2)
@@ -574,10 +760,11 @@ class RuntimeTests(unittest.TestCase):
         ])
         self.assertEqual(len(events[1].items), 1)
         summary = events[1].items[0].text
+        # Each role's model and its source; the board watcher runs no model.
         self.assertEqual(summary.splitlines(), [
-            "#1 (lead custom): chat-completions / (server default)",
-            "#2 (builder custom): messages / worker-model",
-            "#-1 (observer custom): chat-completions / watch-model",
+            "#1 (lead custom): chat-completions / (server default) at 127.0.0.1:8000 (built-in default)",
+            "#2 (builder custom): chat-completions / worker-model at 127.0.0.1:8000 (command line)",
+            "#-1 (observer custom): no model (observe-only)",
         ])
         self.assertEqual(len(summary.split("\n")), 3)
         self.assertFalse(summary.endswith("\n"))
@@ -597,7 +784,8 @@ class RuntimeTests(unittest.TestCase):
 
     def test_busy_phase_classification(self):
         session = self.session({})
-        for phase in ("starting", "sampling", "compacting", "executing tools", "saving"):
+        for phase in ("starting", "sampling", "compacting", "executing tools", "saving",
+                      "awaiting watcher"):
             with self.subTest(phase=phase):
                 session._phase(2, phase)
                 self.assertTrue(session._is_busy(2))
@@ -823,14 +1011,17 @@ class RuntimeTests(unittest.TestCase):
         self.assertFalse(any(isinstance(i, Message) and i.role == "assistant" for i in saved))
         self.assertFalse(any(e.kind == "debug" for e in session.drain_events()))
 
-    def test_saved_config_is_version_2(self):
-        session = self.session({})
+    def test_saved_config_is_version_3_with_running_roles(self):
+        session = self.session({}, role_models={2: "worker-model"})
         document = json.loads((self.path / "config.json").read_text())
-        self.assertEqual(document["version"], 2)
-        for settings in document["contexts"].values():
-            self.assertIn("compaction_mode", settings)
-            self.assertIn("compaction_keep_recent_tokens", settings)
-            self.assertIn("compaction_max_output_tokens", settings)
+        self.assertEqual(document["version"], 3)
+        self.assertEqual(set(document), {"version", "main", "worker", "watcher"})
+        for key in ("compaction_mode", "compaction_keep_recent_tokens",
+                    "compaction_max_output_tokens"):
+            self.assertIn(key, document["main"])
+        # The worker keeps the model it chose; the watcher follows main.
+        self.assertEqual(document["worker"]["model"], "worker-model")
+        self.assertEqual(document["watcher"], {"name": "watcher", "instructions": None})
         session.close()
 
     def compactor(self, **kwargs):
@@ -1445,24 +1636,26 @@ class RuntimeTests(unittest.TestCase):
         repeated.close()
 
     def test_default_runs_only_main_and_watcher_without_board(self):
-        session = self.session({1: [answer("main done")]}, worker_board=False)
+        session = self.session({1: [answer("main done")], -1: [answer("Complete.")]},
+                               worker_board=False)
         self.assertFalse(session.worker_board)
         self.assertEqual(session.roles, (1, -1))
         self.assertIsNone(session.service)
         for name in ("index.jsonl", "index.md", "index.html", "contexts/2.jsonl"):
             self.assertFalse((self.path / name).exists(), name)
-        # No worker model/environment, and no board tools for main.
+        # No worker model/environment and no board tools; the watcher supervises.
         self.assertEqual(self.threads[2], [])
-        self.assertEqual(self.tool_names, {1: [], -1: []})
+        self.assertEqual(self.tool_names, {1: [], -1: ["resume_main", "read_main_context"]})
+        self.assertCountEqual(self.models_built, (1, -1))
         self.assertEqual(len(load_interaction_save(self.path / "contexts" / "1.jsonl")), 1)
         watcher = load_interaction_save(self.path / "contexts" / "-1.jsonl")
-        self.assertEqual(watcher[1], auto.Instructions(auto._ROLE_INSTRUCTIONS[-1]))
-        self.assertEqual(set(json.loads((self.path / "config.json").read_text())["contexts"]),
-                         {"1", "2", "-1"})
+        self.assertEqual(watcher[1], auto.Instructions(auto._SUPERVISOR_INSTRUCTIONS))
+        self.assertEqual(set(json.loads((self.path / "config.json").read_text())),
+                         {"version", "main", "watcher"})
         events = session.drain_events()
         self.assertEqual(events[-1].items[0].text.splitlines(), [
-            "#1 (main): chat-completions / (server default)",
-            "#-1 (watcher): chat-completions / (server default)",
+            "#1 (main): chat-completions / (server default) at 127.0.0.1:8000 (built-in default)",
+            "#-1 (watcher): chat-completions / (server default) at 127.0.0.1:8000 (same as main)",
         ])
         self.assertEqual(self.calls, {1: [], 2: []})
 
@@ -1471,25 +1664,39 @@ class RuntimeTests(unittest.TestCase):
         self.assertTrue(self.settled(session, submitted))
         self.assertEqual([item for item in self.calls[1][0] if isinstance(item, Message)],
                          [Message("user", "plain task")])
+        report = [item for item in self.calls[-1][0] if isinstance(item, Message)][-1].content
+        for expected in ("yielded on task 1 (watcher resumes so far: 0)", "User request:\nplain task",
+                         "Outcome: ended", "Main's final answer:\nmain done"):
+            self.assertIn(expected, report)
         debug = [event for event in session.drain_events() if event.kind == "debug"]
-        self.assertEqual([event.index for event in debug], [-1])
-        self.assertEqual(debug[0].items[0].text,
-                         "[debug] main end-of-turn condition fired: #1 source=1")
+        self.assertEqual([event.index for event in debug], [-1, -1])
+        self.assertEqual([event.items[0].text for event in debug], [
+            "[debug] main end-of-turn condition fired: #1 source=1",
+            "[debug] watcher released main: #1 source=1",
+        ])
+        self.assertFalse(session.has_errors)
         with self.assertRaisesRegex(BoardError, "Unknown task"):
             session.task_result({"record_id": "2"})
         session.close()
         self.assertCountEqual(self.closed, (1, -1))
-        self.assertEqual(len(set(self.threads[1])), 1)
+        for index in (1, -1):  # Each context's model/tools stay on its owner thread.
+            self.assertEqual(len(set(self.threads[index])), 1, index)
         self.assertFalse(any(thread.is_alive() for thread in session._threads.values()))
 
-    def test_default_tasks_run_in_fifo_order_and_only_successes_fire_watch(self):
+    def test_default_tasks_run_in_fifo_order_and_every_yield_reaches_the_watcher(self):
         reached, release = threading.Event(), threading.Event()
         def first(_context):
             reached.set()
             self.assertTrue(release.wait(5))
             return answer("first done")
         failure = ModelTransportError("SECRET", failure=ModelFailure("transport", "safe"))
-        session = self.session({1: [first, failure, answer("third done")]}, worker_board=False)
+        # Observe-only: the watcher sees every yield but builds no model.
+        session = self.session({1: [first, failure, answer("third done")]}, worker_board=False,
+                               watcher_max_resumes=0)
+        self.assertEqual(self.models_built, [1])
+        self.assertEqual(self.tool_names[-1], [])
+        self.assertEqual(load_interaction_save(self.path / "contexts" / "-1.jsonl")[1],
+                         auto.Instructions(auto._ROLE_INSTRUCTIONS[-1]))
         try:
             handles = [session.submit("first")]
             self.assertTrue(reached.wait(3))
@@ -1505,8 +1712,15 @@ class RuntimeTests(unittest.TestCase):
                            and item.role == "user"][-1] for call in self.calls[1]],
                          ["first", "second", "third"])
         debug = [event.items[0].text for event in session.drain_events() if event.kind == "debug"]
-        self.assertEqual(debug, [f"[debug] main end-of-turn condition fired: #1 source={n}"
-                                 for n in (1, 3)])
+        self.assertEqual(debug, [
+            "[debug] main end-of-turn condition fired: #1 source=1",
+            "[debug] watcher released main: #1 source=1",
+            "[debug] main yielded: #1 source=2 failed (ModelTransportError)",
+            "[debug] watcher released main: #1 source=2",
+            "[debug] main end-of-turn condition fired: #1 source=3",
+            "[debug] watcher released main: #1 source=3",
+        ])
+        self.assertNotIn(-1, self.calls)
         self.assertTrue(session.has_errors)  # The failed task is reported, not fatal.
         self.assertFalse(session._stop.is_set())
         self.assertNotIn("SECRET", (self.path / "contexts" / "1.jsonl").read_text())
@@ -1547,7 +1761,8 @@ class RuntimeTests(unittest.TestCase):
                       "executed; without the board, queued tasks are not saved or replayed.", notices)
 
     def test_default_resume_restores_without_board_and_rejects_board_flag(self):
-        session = self.session({1: [answer("old main")]}, worker_board=False)
+        session = self.session({1: [answer("old main")], -1: [answer("Complete.")]},
+                               worker_board=False)
         self.assertTrue(self.settled(session, session.submit("old task")))
         session.close()
         old = {index: load_interaction_save(self.path / "contexts" / f"{index}.jsonl").items
@@ -1560,14 +1775,18 @@ class RuntimeTests(unittest.TestCase):
                           environment_factory=lambda *_: self.fail("environment initialized")).start()
         self.assertEqual(self.files(), before)
 
-        resumed = self.session({1: [answer("new main")]}, worker_board=False, resume=True)
+        resumed = self.session({1: [answer("new main")], -1: [answer("Complete.")]},
+                               worker_board=False, resume=True)
         restored = {index: load_interaction_save(self.path / "contexts" / f"{index}.jsonl")
                     for index in (1, -1)}
         for index, context in restored.items():
             self.assertEqual(context.items[:len(old[index])], old[index])
         self.assertEqual(restored[1][-1], auto.Instructions(auto._RESTART_NOTICE))
         self.assertEqual(restored[-1][-1], auto.Instructions(
-            auto._ROLE_INSTRUCTIONS[-1] + "\n\n" + auto._RESTART_NOTICE))
+            auto._SUPERVISOR_INSTRUCTIONS + "\n\n" + auto._RESTART_NOTICE))
+        # The watcher's own history (report, decision) was restored, not replayed.
+        self.assertTrue(any(isinstance(item, Message) and "User request:\nold task" in item.content
+                            for item in restored[-1]))
         self.assertFalse((self.path / "index.jsonl").exists())
         new = resumed.submit("new task")
         self.assertEqual(new, {"record_id": "1"})
@@ -1608,7 +1827,8 @@ class RuntimeTests(unittest.TestCase):
         for display in (False, True):
             with self.subTest(display=display):
                 self.path = Path(self.temp.name) / f"session-{display}"
-                session = self.session({1: [answer("shown answer")]}, worker_board=False)
+                session = self.session({1: [answer("shown answer")], -1: [answer("Complete.")]},
+                                       worker_board=False)
                 output = io.StringIO()
                 with redirect_stdout(output):
                     self.assertEqual(auto._one_prompt(session, "shown task", display=display), 0)
@@ -1619,11 +1839,16 @@ class RuntimeTests(unittest.TestCase):
                 self.assertIn("[#1 (main) - assistant] shown answer", text)
                 self.assertIn("[#-1 (watcher) - debug] main end-of-turn condition fired: "
                               "#1 source=1", text)
+                self.assertIn("[#-1 (watcher) - user] Main (#1) yielded on task 1", text)
+                self.assertIn("[#-1 (watcher) - assistant] Complete.", text)
+                self.assertIn("[#-1 (watcher) - debug] watcher released main: #1 source=1", text)
+                self.assertNotIn("decision failed", text)
                 self.assertNotIn("#2", text)
                 self.assertNotIn("Board", text)
 
     def test_default_interactive_queues_tasks_for_main_and_shows_watcher(self):
-        session = self.session({1: [answer("interactive done")]}, worker_board=False)
+        session = self.session({1: [answer("interactive done")], -1: [answer("Complete.")]},
+                               worker_board=False)
         test = self
 
         class Terminal:
@@ -1685,7 +1910,195 @@ class RuntimeTests(unittest.TestCase):
         self.assertIn("[#1 (main) - assistant] interactive done", terminal.texts)
         self.assertIn("[#-1 (watcher) - debug] main end-of-turn condition fired: #1 source=1",
                       terminal.texts)
+        self.assertIn("[#-1 (watcher) - assistant] Complete.", terminal.texts)
+        self.assertFalse(any("decision failed" in text for text in terminal.texts))
         self.assertFalse(any(thread.is_alive() for thread in session._threads.values()))
+
+    def debug_texts(self, session):
+        return [item.text for event in session.drain_events() if event.kind == "debug"
+                for item in event.items]
+
+    @staticmethod
+    def last_user(context):
+        return [item for item in context if isinstance(item, Message) and item.role == "user"][-1]
+
+    def test_watcher_recovers_main_from_a_failed_turn(self):
+        failure = ModelTransportError("SECRET", failure=ModelFailure("transport", "safe summary"))
+        session = self.session({
+            1: [failure, answer("recovered answer")],
+            -1: [resume("Retry the request."), answer("Resuming main."), answer("Complete.")],
+        }, worker_board=False)
+        self.assertTrue(self.settled(session, session.submit("flaky task")))
+        self.assertFalse(session.has_errors)  # Recovery contributes to success.
+        self.assertEqual(len(self.calls[1]), 2)
+        self.assertEqual(self.last_user(self.calls[1][1]),
+                         Message("user", auto._FOLLOW_UP_HEADER + "Retry the request."))
+        first, second = (self.last_user(self.calls[-1][i]).content for i in (0, 2))
+        self.assertIn("Outcome: failed (ModelTransportError)", first)
+        self.assertIn("Failure: transport: safe summary", first)
+        self.assertIn("(watcher resumes so far: 1)", second)
+        self.assertIn("Main's final answer:\nrecovered answer", second)
+        self.assertEqual(self.debug_texts(session), [
+            "[debug] main yielded: #1 source=1 failed (ModelTransportError)",
+            "[debug] watcher resumed main: #1 source=1",
+            "[debug] main end-of-turn condition fired: #1 source=1",
+            "[debug] watcher released main: #1 source=1",
+        ])
+        for index in (1, -1):
+            self.assertNotIn("SECRET", (self.path / "contexts" / f"{index}.jsonl").read_text())
+
+    def test_watcher_continues_main_after_its_sample_limit(self):
+        tool = Tool(ToolSpec("noop", "continue the test", {}),
+                    lambda *args, **kwargs: ToolOutcome("ok"))
+        session = self.session({
+            1: [ModelSample((ToolCall("noop", "n1", "{}"),)), answer("finished")],
+            -1: [resume("Continue where you stopped."), answer("Resuming."), answer("Complete.")],
+        }, (tool,), worker_board=False, settings_updates={1: {"max_samples": 1}})
+        self.assertTrue(self.settled(session, session.submit("long task")))
+        self.assertIn("Outcome: failed (SampleLimitExceeded)",
+                      self.last_user(self.calls[-1][0]).content)
+        self.assertEqual(len(self.calls[1]), 2)  # The resumed turn gets a fresh limit.
+        self.assertFalse(session.has_errors)
+
+    def test_resume_budget_bounds_watcher_resumes(self):
+        session = self.session({
+            1: [answer("draft 1"), answer("draft 2"), answer("draft 3")],
+            -1: [resume("More.", "r1"), answer("Again."), resume("More.", "r2"), answer("Again.")],
+        }, worker_board=False, watcher_max_resumes=2)
+        self.assertTrue(self.settled(session, session.submit("polish")))
+        self.assertEqual(len(self.calls[1]), 3)
+        self.assertEqual(len(self.calls[-1]), 4)  # The over-budget yield costs no sample.
+        self.assertEqual([text for text in self.debug_texts(session) if "watcher" in text], [
+            "[debug] watcher resumed main: #1 source=1",
+            "[debug] watcher resumed main: #1 source=1",
+            "[debug] watcher released main: #1 source=1",
+        ])
+
+    def test_watcher_failure_releases_main_and_keeps_its_outcome(self):
+        failure = ModelTransportError("SECRET", failure=ModelFailure("transport", "down"))
+        session = self.session({1: [answer("first"), answer("second")],
+                                -1: [failure, answer("Complete.")]}, worker_board=False)
+        self.assertTrue(self.settled(session, session.submit("one")))
+        self.assertTrue(self.settled(session, session.submit("two")))
+        errors = [item.text for event in session.drain_events() if event.kind == "error"
+                  for item in event.items]
+        self.assertEqual(errors, ["Watcher decision failed (ModelTransportError); main was "
+                                  "released. Details withheld."])
+        self.assertFalse(session.has_errors)
+        self.assertFalse(session._stop.is_set())
+
+    def test_fault_reaches_the_watcher_before_it_stops_the_session(self):
+        session = self.session({1: [answer()]}, worker_board=False)
+        real_save = auto.save_interaction_save
+
+        def save(path, context):
+            if path.name == "1.jsonl" and isinstance(context.items[-1], TurnSummary):
+                from pythia.interaction import SaveError
+                raise SaveError("disk")
+            return real_save(path, context)
+
+        with mock.patch.object(auto, "save_interaction_save", save):
+            submitted = session.submit("fail summary")
+            self.assertFalse(self.settled(session, submitted))
+            wait_for(session._stop.is_set)
+        texts = [(event.kind, item.text) for event in session.drain_events() for item in event.items]
+        fault = ("debug", "[debug] main yielded: #1 source=1 failed (SaveError), non-resumable")
+        error = ("error", "Task failed (SaveError); effects may have occurred. Details withheld.")
+        # Main waited for the watcher (which propagates, for now) before stopping.
+        self.assertLess(texts.index(fault), texts.index(error))
+        self.assertNotIn(-1, self.calls)  # A fault costs no watcher sample.
+        with self.assertRaisesRegex(BoardError, "not accepting"):
+            session.submit("after the fault")
+
+    def test_stop_while_main_awaits_the_watcher_releases_without_resuming(self):
+        reached, release = threading.Event(), threading.Event()
+
+        def deciding(_context):
+            reached.set()
+            self.assertTrue(release.wait(5))
+            return resume("Keep going.")
+
+        session = self.session({1: [answer("done")], -1: [deciding]}, worker_board=False)
+        closer = threading.Thread(target=session.close)
+        try:
+            submitted = session.submit("task")
+            self.assertTrue(reached.wait(3))
+            self.assertTrue(session.status(1).startswith("#1 (main) - awaiting watcher"))
+            self.assertTrue(session._is_busy(1))
+            self.assertIsNone(session.task_result(submitted))
+            closer.start()
+            wait_for(lambda: session.task_result(submitted) is not None)
+            self.assertTrue(session.task_result(submitted))  # Settled from main's last yield.
+            self.assertTrue(closer.is_alive())  # Close drains the watcher's in-flight sample.
+            release.set()
+            closer.join(5)
+            self.assertFalse(closer.is_alive())
+        finally:
+            release.set()
+            if closer.is_alive():
+                closer.join(5)
+        self.assertEqual(len(self.calls[1]), 1)  # The late resume was never applied.
+        self.assertIn("[debug] watcher released main: #1 source=1", self.debug_texts(session))
+        self.assertFalse(any(thread.is_alive() for thread in session._threads.values()))
+
+    def test_user_tasks_queued_during_a_decision_run_after_main_is_released(self):
+        reached, release = threading.Event(), threading.Event()
+
+        def deciding(_context):
+            reached.set()
+            self.assertTrue(release.wait(5))
+            return resume("Follow up on A.")
+
+        session = self.session({
+            1: [answer("A1"), answer("A2"), answer("B1")],
+            -1: [deciding, answer("Resuming."), answer("Complete."), answer("Complete.")],
+        }, worker_board=False)
+        try:
+            a = session.submit("task A")
+            self.assertTrue(reached.wait(3))
+            b = session.submit("task B")
+            release.set()
+            self.assertTrue(self.settled(session, a))
+            self.assertTrue(self.settled(session, b))
+        finally:
+            release.set()
+        self.assertEqual([self.last_user(call).content for call in self.calls[1]],
+                         ["task A", auto._FOLLOW_UP_HEADER + "Follow up on A.", "task B"])
+
+    def test_read_main_context_addresses_main_log_as_of_the_yield(self):
+        session = self.session({
+            1: [answer("visible answer")],
+            -1: [ModelSample((ToolCall("read_main_context", "tail", "{}"),
+                              ToolCall("read_main_context", "head", '{"start": 0, "limit": 1}'),
+                              ToolCall("read_main_context", "bad", '{"limit": 0}'))),
+                 answer("Complete.")],
+        }, worker_board=False)
+        self.assertTrue(self.settled(session, session.submit("inspect me")))
+        main_log = load_interaction_save(self.path / "contexts" / "1.jsonl")
+        results = {item.call_id: item for item in
+                   load_interaction_save(self.path / "contexts" / "-1.jsonl")
+                   if isinstance(item, ToolResult)}
+        tail = json.loads(results["tail"].output)
+        self.assertEqual(tail["revision"], len(main_log))
+        self.assertEqual(tail["items"][-1]["index"], len(main_log) - 1)
+        self.assertFalse(tail["has_more"])
+        texts = "\n".join(entry["text"] for entry in tail["items"])
+        self.assertIn("inspect me", texts)
+        self.assertIn("visible answer", texts)
+        head = json.loads(results["head"].output)
+        self.assertEqual((head["start"], head["next"], head["has_more"]), (0, 1, True))
+        self.assertEqual(head["items"][0]["type"], "Init")
+        self.assertFalse(results["bad"].success)
+        self.assertIn("limit must be an integer", results["bad"].output)
+
+    def test_invalid_watcher_budget_creates_no_save(self):
+        settings = resolve_config(overrides={"cwd": self.temp.name})
+        for kwargs in ({"watcher_max_resumes": -1}, {"watcher_max_resumes": True},
+                       {"watcher_max_resumes": 1.5},
+                       {"watcher_max_resumes": 1, "enable_experimental_worker_board": True}):
+            with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
+                auto._Session(self.path, settings, **kwargs)
+            self.assertFalse(self.path.exists())
 
 
 class EntryPointTests(unittest.TestCase):
@@ -1725,8 +2138,10 @@ class EntryPointTests(unittest.TestCase):
                 return ()
 
         # Explicitly supplied default board options are harmless.
-        for argv in ([], ["--board-port", "0", "--enable-board-auth", "True"],
-                     ["--enable-experimental-worker-board", "False"]):
+        for argv, budget in (([], None), (["--board-port", "0", "--enable-board-auth", "True"], None),
+                             (["--enable-experimental-worker-board", "False"], None),
+                             (["--watcher-max-resumes", "0"], 0),
+                             (["--watcher-max-resumes", "3"], 3)):
             with self.subTest(argv=argv):
                 stdout, stderr = io.StringIO(), io.StringIO()
                 with (mock.patch.object(auto, "_Session", Session),
@@ -1736,10 +2151,174 @@ class EntryPointTests(unittest.TestCase):
                                                 "--save", "unused"]), 0)
                 run.assert_called_once()
                 self.assertIs(created[-1]["enable_experimental_worker_board"], False)
+                self.assertEqual(created[-1]["watcher_max_resumes"], budget)
                 self.assertEqual(stdout.getvalue(), "")
                 self.assertEqual(stderr.getvalue(), "")
 
-    def test_default_one_prompt_subprocess_runs_main_and_watcher_without_board(self):
+    def test_watcher_budget_is_validated_before_any_session(self):
+        for argv, message in ((["--watcher-max-resumes", "-1"], "nonnegative"),
+                              (["--enable-experimental-worker-board", "--watcher-max-resumes", "2"],
+                               "does not apply")):
+            with self.subTest(argv=argv):
+                stdout, stderr = io.StringIO(), io.StringIO()
+                with (mock.patch.object(auto, "_Session") as session,
+                      redirect_stdout(stdout), redirect_stderr(stderr)):
+                    self.assertEqual(auto.main([*argv, "--no-user-model-catalog", "--prompt", "task",
+                                                "--save", "unused"]), 1)
+                session.assert_not_called()
+                self.assertIn(message, stderr.getvalue())
+
+    def stub_main(self, argv, *, environ=None, start_error=None):
+        """Run auto.main with a recording stub session: (code, stdout, stderr, settings)."""
+        created = []
+
+        class Session:
+            has_errors = False
+            service = SimpleNamespace(base_url="http://127.0.0.1:1")  # Board mode prints it.
+
+            def __init__(self, path, settings, **kwargs):
+                created.append(settings)
+
+            def start(self):
+                if start_error is not None:
+                    raise start_error
+                return self
+
+            def close(self):
+                pass
+
+            def drain_events(self):
+                return ()
+
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with (mock.patch.object(auto, "_Session", Session),
+              mock.patch.object(auto, "_one_prompt", return_value=0),
+              mock.patch.dict(os.environ, environ or {}),
+              redirect_stdout(stdout), redirect_stderr(stderr)):
+            code = auto.main([*argv, "--prompt", "task", "--save", "unused"])
+        return code, stdout.getvalue(), stderr.getvalue(), created[-1] if created else None
+
+    def test_role_model_options_and_catalog_defaults_reach_the_session(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            catalog_path = Path(tmp) / "catalog.ini"
+            catalog_path.write_text(
+                "[catalog]\nversion = 4\n\n[auto]\nmain.model = codex-gpt-6-astra-max\n"
+                "watcher.model = codex-gpt-6-luna\nworker.model = codex-gpt-6-sol\n")
+            auth = Path(tmp) / "auth.json"
+            auth.write_text("{}")
+            common = ["--model-catalog", str(catalog_path), "--endpoint-auth-file", str(auth)]
+            for argv, models, sources in (
+                ([], ("codex-gpt-6-astra-max", "codex-gpt-6-luna"),
+                 ("catalog default", "catalog default")),
+                (["--model", "codex-gpt-6-sol"], ("codex-gpt-6-sol", "codex-gpt-6-sol"),
+                 ("command line", "command line")),
+                (["--main-model", "codex-gpt-6-sol"], ("codex-gpt-6-sol", "codex-gpt-6-luna"),
+                 ("command line", "catalog default")),
+                (["--watcher-model", "codex-gpt-6-sol"], ("codex-gpt-6-astra-max", "codex-gpt-6-sol"),
+                 ("catalog default", "command line")),
+                # A watcher that runs no model takes no default.
+                (["--watcher-max-resumes", "0"], ("codex-gpt-6-astra-max", "codex-gpt-6-astra-max"),
+                 ("catalog default", FOLLOWS_MAIN)),
+            ):
+                with self.subTest(argv=argv):
+                    code, _, stderr, settings = self.stub_main([*common, *argv])
+                    self.assertEqual(code, 0, stderr)
+                    self.assertEqual(set(settings), {1, -1})
+                    self.assertEqual((settings[1]["model"], settings[-1]["model"]), models)
+                    self.assertEqual((settings.sources[1], settings.sources[-1]), sources)
+                    # The same Codex route keeps main's credential file.
+                    self.assertEqual(settings[-1]["codex_auth_file"], str(auth))
+            code, _, stderr, settings = self.stub_main(
+                [*common, "--enable-experimental-worker-board"])
+            self.assertEqual(code, 0, stderr)
+            self.assertEqual({i: settings[i]["model"] for i in settings}, {
+                1: "codex-gpt-6-astra-max", 2: "codex-gpt-6-sol", -1: "codex-gpt-6-astra-max"})
+
+    def test_role_options_that_cannot_take_effect_fail_before_any_session(self):
+        for argv, message in (
+            (["--worker-model", "x"], "--worker-model requires --enable-experimental-worker-board"),
+            (["--enable-experimental-worker-board", "--watcher-model", "x"], "has no effect"),
+            (["--watcher-max-resumes", "0", "--watcher-model", "x"], "has no effect"),
+        ):
+            with self.subTest(argv=argv):
+                code, _, stderr, settings = self.stub_main(["--no-user-model-catalog", *argv])
+                self.assertEqual(code, 1)
+                self.assertIsNone(settings)
+                self.assertIn(message, stderr)
+
+    def test_shared_runtime_flags_reach_every_role(self):
+        code, _, stderr, settings = self.stub_main([
+            "--no-user-model-catalog", "--enable-workspace", "False",
+            "--enable-auto-compaction", "False", "--max-samples", "4"])
+        self.assertEqual(code, 0, stderr)
+        for index in (1, -1):
+            self.assertIs(settings[index]["enable_workspace"], False)
+            self.assertIs(settings[index]["enable_auto_compaction"], False)
+            self.assertEqual(settings[index]["max_samples"], 4)
+
+    def test_print_config_shows_each_role_and_saves_nothing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            save = Path(tmp) / "run"
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with (mock.patch.object(auto, "_Session") as session,
+                  redirect_stdout(stdout), redirect_stderr(stderr)):
+                code = auto.main([
+                    "--no-user-model-catalog", "--endpoint-url", "http://gpu:8000/v1/chat/completions",
+                    "--model", "big", "--watcher-model", "small", "--save", str(save),
+                    "--print-config"])
+            self.assertEqual(code, 0, stderr.getvalue())
+            session.assert_not_called()
+            self.assertFalse(save.exists())
+            lines = stdout.getvalue().splitlines()
+            self.assertEqual(lines[:2], [
+                "#1 (main): chat-completions / big at gpu:8000 (command line)",
+                "#-1 (watcher): chat-completions / small at gpu:8000 (command line)",
+            ])
+            document = json.loads("\n".join(lines[2:]))
+            self.assertEqual(set(document), {"version", "main", "watcher"})
+            self.assertEqual((document["main"]["model"], document["watcher"]["model"]), ("big", "small"))
+
+    def test_missing_credentials_fail_before_any_save_without_values(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            auth = Path(tmp) / "auth.json"
+            auth.write_text("{}")
+            missing = Path(tmp) / "missing.json"
+            for argv, message in (
+                (["--model", "claude-sonnet-5.5"],
+                 "#1 (main) uses claude-sonnet-5.5, which needs the ANTHROPIC_API_KEY "
+                 "environment variable; it is not set."),
+                (["--model", "codex-gpt-6-luna", "--endpoint-auth-file", str(missing)],
+                 f"#1 (main) uses codex-gpt-6-luna, which needs a Codex login at {missing}; "
+                 "none was found."),
+                (["--model", "codex-gpt-6-luna", "--endpoint-auth-file", str(auth),
+                  "--watcher-model", "claude-sonnet-5.5"],
+                 "#-1 (watcher) uses claude-sonnet-5.5, which needs the ANTHROPIC_API_KEY"),
+            ):
+                with self.subTest(argv=argv):
+                    code, _, stderr, settings = self.stub_main(
+                        ["--no-user-model-catalog", *argv], environ={"ANTHROPIC_API_KEY": " "})
+                    self.assertEqual(code, 1)
+                    self.assertIsNone(settings)
+                    self.assertIn(message, stderr)
+            # Observe-only, the watcher needs no credential.
+            code, _, stderr, _ = self.stub_main(
+                ["--no-user-model-catalog", "--main-model", "codex-gpt-6-luna",
+                 "--endpoint-auth-file", str(auth), "--model", "claude-sonnet-5.5",
+                 "--watcher-max-resumes", "0"], environ={"ANTHROPIC_API_KEY": ""})
+            self.assertEqual(code, 0, stderr)
+            code, _, stderr, _ = self.stub_main(
+                ["--no-user-model-catalog", "--model", "claude-sonnet-5.5"],
+                environ={"ANTHROPIC_API_KEY": "set"})
+            self.assertEqual(code, 0, stderr)
+
+    def test_startup_failure_reports_its_safe_message(self):
+        error = auto._StartupError("Auto context initialization failed (see context error notices).")
+        code, _, stderr, _ = self.stub_main(["--no-user-model-catalog"], start_error=error)
+        self.assertEqual(code, 1)
+        self.assertIn("auto failed: Auto context initialization failed (see context error notices).",
+                      stderr)
+
+    def test_catalog_role_models_run_end_to_end_and_resume_keeps_them(self):
         seen = []
 
         class Gateway(BaseHTTPRequestHandler):
@@ -1748,13 +2327,102 @@ class EntryPointTests(unittest.TestCase):
 
             def do_POST(self):
                 request = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                seen.append(request["model"])
+                text = "main answer" if request["model"] == "wire-main" else "Complete."
+                data = json.dumps({
+                    "choices": [{"message": {"role": "assistant", "content": text},
+                                 "finish_reason": "stop"}],
+                    "usage": {"prompt_tokens": 5, "completion_tokens": 2, "total_tokens": 7},
+                }).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+        gateway = ThreadingHTTPServer(("127.0.0.1", 0), Gateway)
+        server_thread = threading.Thread(target=gateway.serve_forever, kwargs={"poll_interval": .01})
+        server_thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                url = f"http://127.0.0.1:{gateway.server_port}/v1/chat/completions"
+
+                def write_catalog(watcher):
+                    entries = "".join(
+                        f"[model.{name}]\nendpoint.api = chat-completions\nendpoint.url = {url}\n"
+                        f"endpoint.model = {wire}\nendpoint.auth = none\n\n"
+                        for name, wire in (("gw-main", "wire-main"), ("gw-watch", "wire-watch")))
+                    (root / "catalog.ini").write_text(
+                        f"[catalog]\nversion = 4\n\n{entries}"
+                        f"[auto]\nmain.model = gw-main\nwatcher.model = {watcher}\n")
+
+                def run(*extra):
+                    return subprocess.run([
+                        sys.executable, "-m", "pythia.interaction.auto",
+                        "--model-catalog", str(root / "catalog.ini"),
+                        "--request-timeout-seconds", "3", "--cwd", tmp,
+                        "--save", str(root / "run"), *extra, "--prompt", "Do the task",
+                    ], capture_output=True, text=True, timeout=30)
+
+                write_catalog("gw-watch")
+                result = run()
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("#1 (main): chat-completions / gw-main (catalog default)", result.stdout)
+                self.assertIn("#-1 (watcher): chat-completions / gw-watch (catalog default)",
+                              result.stdout)
+                self.assertEqual(seen, ["wire-main", "wire-watch"])
+                # The save keeps its models when the catalog defaults change.
+                write_catalog("gw-main")
+                seen.clear()
+                result = run("--resume")
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("#-1 (watcher): chat-completions / gw-watch (saved)", result.stdout)
+                self.assertEqual(seen, ["wire-main", "wire-watch"])
+                # --model sets both roles.
+                seen.clear()
+                result = run("--resume", "--model", "gw-main")
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(seen, ["wire-main", "wire-main"])
+        finally:
+            gateway.shutdown()
+            server_thread.join()
+            gateway.server_close()
+
+    def test_default_one_prompt_subprocess_runs_main_and_watcher_without_board(self):
+        seen = []
+
+        def tools(request):
+            return {tool["function"]["name"] for tool in request.get("tools", ())}
+
+        def call(name, call_id, arguments):
+            return {"role": "assistant", "content": None, "tool_calls": [{
+                "id": call_id, "type": "function",
+                "function": {"name": name, "arguments": json.dumps(arguments)}}]}
+
+        def text(content):
+            return {"role": "assistant", "content": content}
+
+        # Main works and answers; the watcher resumes it once, then releases it.
+        script = {
+            "main": [call("exec_command", "work-1",
+                          {"cmd": "printf main > proof.txt", "yield_time_ms": 1000}),
+                     text("main answer"),
+                     call("exec_command", "work-2",
+                          {"cmd": "printf done > done.txt", "yield_time_ms": 1000}),
+                     text("all done")],
+            "watcher": [call("resume_main", "resume-1", {"content": "Also write done.txt."}),
+                        text("Resumed main."), text("Complete.")],
+        }
+
+        class Gateway(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_POST(self):
+                request = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 seen.append(request)
-                message = ({"role": "assistant", "content": None, "tool_calls": [{
-                    "id": "work", "type": "function", "function": {
-                        "name": "exec_command",
-                        "arguments": json.dumps({"cmd": "printf main > proof.txt",
-                                                 "yield_time_ms": 1000})}}]}
-                    if len(seen) == 1 else {"role": "assistant", "content": "main answer"})
+                message = script["watcher" if "resume_main" in tools(request) else "main"].pop(0)
                 data = json.dumps({"choices": [{"message": message, "finish_reason": "stop"}],
                                    "usage": {"prompt_tokens": 5, "completion_tokens": 2,
                                              "total_tokens": 7}}).encode()
@@ -1782,22 +2450,40 @@ class EntryPointTests(unittest.TestCase):
                 self.assertIn("[#1 (main) - assistant] main answer", result.stdout)
                 self.assertIn("[#-1 (watcher) - debug] main end-of-turn condition fired: "
                               "#1 source=1", result.stdout)
+                self.assertIn("[#-1 (watcher) - debug] watcher resumed main: #1 source=1",
+                              result.stdout)
+                self.assertIn("[#1 (main) - user] Automated follow-up from the watcher (#-1):",
+                              result.stdout)
+                self.assertIn("[#1 (main) - assistant] all done", result.stdout)
+                self.assertIn("[#-1 (watcher) - debug] watcher released main: #1 source=1",
+                              result.stdout)
                 self.assertNotIn("Board", result.stdout)
                 self.assertNotIn("#2", result.stdout)
                 self.assertEqual((root / "proof.txt").read_text(), "main")
+                self.assertEqual((root / "done.txt").read_text(), "done")
                 for name in ("config.json", "contexts/1.jsonl", "contexts/-1.jsonl"):
                     self.assertTrue((run / name).is_file(), name)
                 for name in ("index.jsonl", "index.md", "index.html", "contexts/2.jsonl"):
                     self.assertFalse((run / name).exists(), name)
-                self.assertEqual(len(seen), 2)
-                for request in seen:
-                    names = {tool["function"]["name"] for tool in request["tools"]}
-                    self.assertIn("exec_command", names)
-                    self.assertFalse(any(name.startswith("board_") for name in names))
+                self.assertEqual(script, {"main": [], "watcher": []})
+                main = [request for request in seen if "resume_main" not in tools(request)]
+                watcher = [request for request in seen if "resume_main" in tools(request)]
+                self.assertEqual((len(main), len(watcher)), (4, 3))
+                for request in main:
+                    self.assertIn("exec_command", tools(request))
+                    self.assertFalse(any(name.startswith("board_") for name in tools(request)))
                     self.assertFalse(any(message["role"] in {"system", "developer"}
                                          for message in request["messages"]))
-                self.assertEqual(seen[0]["messages"][0]["role"], "user")
-                self.assertIn("Do the task", json.dumps(seen[0]["messages"][0]))
+                self.assertEqual(main[0]["messages"][0]["role"], "user")
+                self.assertIn("Do the task", json.dumps(main[0]["messages"][0]))
+                self.assertIn(json.dumps("Automated follow-up from the watcher (#-1):\n\n"
+                                         "Also write done.txt.")[1:-1], json.dumps(main[2]["messages"]))
+                for request in watcher:
+                    self.assertEqual(tools(request), {"resume_main", "read_main_context"})
+                    self.assertIn(request["messages"][0]["role"], {"system", "developer"})
+                    self.assertIn("the supervisor of main (#1)", json.dumps(request["messages"][0]))
+                    self.assertIn(json.dumps("User request:\nDo the task")[1:-1],
+                                  json.dumps(request["messages"]))
                 self.assertNotIn("Board thread", json.dumps(seen))
         finally:
             gateway.shutdown()
@@ -2058,14 +2744,16 @@ class EntryPointTests(unittest.TestCase):
                 auth.write_text(json.dumps({"tokens": {
                     "access_token": "FAKE_CODEX_SECRET", "account_id": "test-account"}}))
                 settings = root / "auto.json"
+                # The worker's Codex model shares main's route, so it keeps
+                # main's gateway and login.
                 settings.write_text(json.dumps({
-                    "version": 1,
-                    "defaults": {"model_api": "codex", "model": "codex-gpt-6-astra-max",
-                                 "endpoint_url": f"http://127.0.0.1:{gateway.server_port}/responses",
-                                 "endpoint_auth": "codex-login",
-                                 "codex_auth_file": str(auth), "request_timeout_seconds": 3,
-                                 "cwd": tmp},
-                    "contexts": {"2": {"model": "codex-gpt-5.6-sol-max"}},
+                    "version": 3,
+                    "main": {"model_api": "codex", "model": "codex-gpt-6-astra-max",
+                             "endpoint_url": f"http://127.0.0.1:{gateway.server_port}/responses",
+                             "endpoint_auth": "codex-login",
+                             "codex_auth_file": str(auth), "request_timeout_seconds": 3,
+                             "cwd": tmp},
+                    "worker": {"model": "codex-gpt-5.6-sol-max"},
                 }))
                 result = subprocess.run([
                     sys.executable, "-m", "pythia.interaction.auto", "--context-config", str(settings),
@@ -2187,13 +2875,13 @@ class EntryPointTests(unittest.TestCase):
                 settings = root / "contexts.json"
                 url = f"http://127.0.0.1:{gateway.server_port}"
                 settings.write_text(json.dumps({
-                    "version": 1, "defaults": {"model_api": "chat-completions",
+                    "version": 3, "main": {"model_api": "chat-completions",
                         "endpoint_url": url + "/v1/chat/completions",
                         "model": "main", "request_timeout_seconds": 3, "cwd": tmp},
-                    "contexts": {"2": {"model_api": "messages", "model": "worker",
-                                           "endpoint_url": url + "/v1/messages",
-                                           "endpoint_auth": "env:AUTO_TEST_KEY",
-                                           "max_output_tokens": 128}},
+                    "worker": {"model_api": "messages", "model": "worker",
+                               "endpoint_url": url + "/v1/messages",
+                               "endpoint_auth": "env:AUTO_TEST_KEY",
+                               "max_output_tokens": 128},
                 }))
                 result = subprocess.run([sys.executable, "-m", "pythia.interaction.auto",
                     "--enable-experimental-worker-board",

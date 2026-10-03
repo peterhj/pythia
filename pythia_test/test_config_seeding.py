@@ -24,7 +24,7 @@ from pythia.interaction import (
 )
 from pythia.interaction import auto, cli, demo
 from pythia.interaction._auto_config import (
-    DEFAULTS, build_parser, load_saved_config, namespace, resolve_config,
+    DEFAULTS, build_parser, load_saved_config, namespace, resolve_config, saved_document,
 )
 from pythia.interaction.chat_completions import ChatCompletionsEndpoint, ChatCompletionsModel
 from pythia.interaction.codex_auth import CodexAuth
@@ -430,19 +430,19 @@ class AutoSeedingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "input.json"
             path.write_text(json.dumps({
-                "version": 1,
-                "defaults": {"model_api": "codex", "model": "codex-gpt-6-astra", "auto_compact_tokens": 600_000},
-                "contexts": {
-                    "2": {"model_api": "messages", "model": "claude-fable-5.1",
-                          "auto_compact_tokens": None, "max_context_tokens": None},
-                    "-1": {"model": "muse-spark-1.3", "auto_compact_tokens": None},
-                },
+                "version": 3,
+                "main": {"model_api": "codex", "model": "codex-gpt-6-astra", "auto_compact_tokens": 600_000},
+                "worker": {"model_api": "messages", "model": "claude-fable-5.1",
+                           "auto_compact_tokens": None, "max_context_tokens": None},
+                "watcher": {"model": "muse-spark-1.3", "auto_compact_tokens": None},
             }))
             args = build_parser().parse_args([
                 "--auto-compact-tokens", "500000", "--max-context-tokens", "950000",
             ])
             raw = resolve_config(path, {key: value for key, value in vars(args).items() if key in DEFAULTS})
             configs = {i: InteractionConfig.from_namespace(namespace(value)) for i, value in raw.items()}
+            # The command line's model-specific options are main's; each role on
+            # its own model resolves its own catalog defaults.
             self.assertEqual(configs[1].get("auto_compact_tokens"), 500_000)
             self.assertEqual(configs[2].get("auto_compact_tokens"), 872_000)
             self.assertEqual(configs[1].get("max_context_tokens"), 950_000)
@@ -452,23 +452,24 @@ class AutoSeedingTests(unittest.TestCase):
             configs[1].set("auto_compact_tokens", 100_000)
             self.assertEqual(configs[2].get("auto_compact_tokens"), 872_000)
             saved = Path(directory) / "saved.json"
-            saved.write_text(json.dumps({"version": 2, "contexts": {str(i): s for i, s in raw.items()}}))
+            saved.write_text(json.dumps(saved_document(raw)))
             resumed = resolve_config(saved=load_saved_config(saved))
             self.assertEqual(resumed, raw)
 
-    def test_saved_config_rejects_missing_current_keys(self):
+    def test_saved_config_rejects_older_versions_and_missing_keys(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "saved.json"
-            for version, missing in (
-                (1, ("auto_compact_tokens", "max_context_tokens")),
-                (2, ("compaction_mode",)),
-            ):
+            raw = resolve_config(overrides={"model_api": "codex", "model": "codex-gpt-6-astra"})
+            for version in (1, 2):
                 with self.subTest(version=version):
-                    raw = resolve_config(overrides={"model_api": "codex", "model": "codex-gpt-6-astra"})
-                    for settings in raw.values():
-                        for key in missing:
-                            del settings[key]
-                    document = {"version": version, "contexts": {str(i): s for i, s in raw.items()}}
+                    path.write_text(json.dumps(
+                        {"version": version, "contexts": {str(i): s for i, s in raw.items()}}))
+                    with self.assertRaisesRegex(ValueError, "earlier version"):
+                        load_saved_config(path)
+            for missing in ("auto_compact_tokens", "compaction_mode"):
+                with self.subTest(missing=missing):
+                    document = saved_document(raw)
+                    del document["main"][missing]
                     path.write_text(json.dumps(document))
                     with self.assertRaisesRegex(ValueError, "Invalid saved"):
                         load_saved_config(path)

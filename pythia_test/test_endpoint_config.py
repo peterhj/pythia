@@ -272,17 +272,14 @@ source = metadata only
         registry = parse_model_catalog(V2)
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "contexts.json"
-            path.write_text(json.dumps({"version": 1, "contexts": {"2": {
+            path.write_text(json.dumps({"version": 3, "worker": {
                 "endpoint_url": "http://host.test/exact", "endpoint_model": "worker-wire",
                 "endpoint_auth": "none",
-            }}}))
+            }}))
+            # Main's model with its own endpoint; the worker's file route wins for it.
             settings = resolve_config(
-                path,
-                {
-                    "model": "local",
-                    "endpoint_url": "http://launch.test/exact",
-                },
-                catalog=registry,
+                path, {"endpoint_url": "http://launch.test/exact"},
+                role_models={1: "local"}, catalog=registry,
             )
             endpoint = namespace(settings[2], registry).model_binding.endpoint
             self.assertEqual(endpoint.url, "http://host.test/exact")
@@ -349,11 +346,12 @@ endpoint.auth = env:PUBLIC_TEST_KEY
     def test_auto_accepts_the_responses_api(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "contexts.json"
-            path.write_text(json.dumps({"version": 1, "contexts": {"2": {
+            path.write_text(json.dumps({"version": 3, "worker": {
                 "endpoint_url": self.LOCAL, "endpoint_auth": "none",
-            }}}))
+            }}))
+            # The worker's route names no model: main's model and API, elsewhere.
             settings = resolve_config(
-                path, {"model_api": "responses", "model": "gpt-test"},
+                path, {"model_api": "responses"}, role_models={1: "gpt-test"},
                 catalog=BUILTIN_MODEL_CATALOG,
             )
             binding = namespace(settings[2], BUILTIN_MODEL_CATALOG).model_binding
