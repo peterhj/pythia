@@ -95,7 +95,11 @@ def resolve_messages_max_output_tokens(
 
 @dataclass(frozen=True)
 class MessagesPromptCaching:
-    """Automatic prompt caching at the last cacheable block of each request."""
+    """Prompt caching at the last cacheable block of each request.
+
+    Each request carries the top-level (automatic) ``cache_control`` and the
+    same control on the rightmost ``messages`` block that accepts one.
+    """
 
     ttl: Literal["5m", "1h"] = "5m"
 
@@ -452,6 +456,35 @@ def _encode_context(
     if not messages:
         raise ModelConfigurationError("cannot sample an empty model context")
     return system, messages
+
+
+def _accepts_cache_control(block: Mapping[str, Any]) -> bool:
+    """Whether an encoded block may carry an explicit cache breakpoint.
+
+    This is an allow-list. Anthropic rejects breakpoints on thinking and empty
+    text blocks, and unlisted block types are never marked. Blank tool results
+    are skipped because it is unverified whether they accept a breakpoint.
+    """
+    block_type = block.get("type")
+    if block_type == "text":
+        text = block.get("text")
+        return isinstance(text, str) and bool(text.strip())
+    if block_type == "tool_result":
+        content = block.get("content")
+        return isinstance(content, str) and bool(content.strip())
+    return block_type in {"tool_use", "compaction"}
+
+
+def _mark_last_cacheable_block(
+    messages: List[Dict[str, Any]],
+    cache_control: Dict[str, str],
+) -> None:
+    """Mark the rightmost block that accepts ``cache_control``, if any."""
+    for message in reversed(messages):
+        for block in reversed(message["content"]):
+            if _accepts_cache_control(block):
+                block["cache_control"] = cache_control
+                return
 
 
 def _encode_tools(tools: Sequence[Any]) -> List[Dict[str, Any]]:
@@ -868,15 +901,23 @@ class MessagesModel:
         if encoded_tools:
             payload["tools"] = encoded_tools
         if self.endpoint.prompt_caching is not None:
-            # Let the API place and advance the breakpoint. In particular,
-            # do not attach explicit cache controls to thinking/empty blocks.
+            # The top-level control lets the API place its automatic breakpoint
+            # at the last cacheable block. The same control also marks the
+            # rightmost block that accepts an explicit breakpoint (never
+            # thinking or empty blocks, nor system or tools). The TTLs must
+            # match: a different TTL on the block the automatic breakpoint
+            # lands on is an HTTP 400, while the same TTL makes it a no-op.
             # TODO: Add a per-call ``SampleParams.enable_prompt_caching``
-            # (None inherits this policy, False omits cache_control, True
-            # creates no policy), and set it to False for pi summary requests:
-            # nothing reads their cache entries, and 5-minute writes cost
-            # 1.25x base input (pi sends summaries with cacheRetention "none").
-            payload["cache_control"] = (
-                self.endpoint.prompt_caching.request_cache_control()
+            # (None inherits this policy, False omits both the top-level and
+            # the block cache_control, True creates no policy), and set it to
+            # False for pi summary requests: nothing reads their cache
+            # entries, and 5-minute writes cost 1.25x base input (pi sends
+            # summaries with cacheRetention "none").
+            prompt_caching = self.endpoint.prompt_caching
+            payload["cache_control"] = prompt_caching.request_cache_control()
+            _mark_last_cacheable_block(
+                payload["messages"],
+                prompt_caching.request_cache_control(),
             )
         compaction = self.endpoint.server_compaction
         # A per-call False suppresses configured server compaction; None and

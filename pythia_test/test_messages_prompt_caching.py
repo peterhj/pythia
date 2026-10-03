@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pythia_test.interaction_helpers import messages_endpoint
 
+import copy
 import io
 import unittest
 from contextlib import redirect_stderr
@@ -22,6 +23,7 @@ from pythia.interaction import OpaqueCompaction
 from pythia.interaction import Reasoning
 from pythia.interaction import SampleParams
 from pythia.interaction import TokenUsage
+from pythia.interaction import ToolCall
 from pythia.interaction import ToolResult
 from pythia.interaction import ToolSpec
 from pythia.interaction import cli
@@ -42,6 +44,25 @@ def _response(*, content=None, usage=None, stop_reason="end_turn"):
         "content": [{"type": "text", "text": "Done."}] if content is None else content,
         "usage": {} if usage is None else usage,
     })
+
+
+def _marked_blocks(payload):
+    """``(message index, block index, block)`` for each block breakpoint."""
+    return [
+        (message_index, block_index, block)
+        for message_index, message in enumerate(payload["messages"])
+        for block_index, block in enumerate(message["content"])
+        if "cache_control" in block
+    ]
+
+
+def _without_block_markers(payload):
+    """A copy of ``payload`` without block-level cache controls."""
+    stripped = copy.deepcopy(payload)
+    for message in stripped["messages"]:
+        for block in message["content"]:
+            block.pop("cache_control", None)
+    return stripped
 
 
 class MessagesPromptCachingTests(unittest.TestCase):
@@ -85,7 +106,8 @@ class MessagesPromptCachingTests(unittest.TestCase):
         MessagesModel(endpoint, opener=opener).sample(
             InteractionContext((Message("user", "Hello."),))
         )
-        self.assertNotIn("cache_control", _payload(opener))
+        # Neither the top-level control nor a block breakpoint is sent.
+        self.assertNotIn(b"cache_control", opener.calls[0][0].data)
         self.assertIsNone(opener.calls[0][0].get_header("Anthropic-beta"))
 
     def test_unsupported_cache_control_is_not_silently_retried(self):
@@ -103,7 +125,7 @@ class MessagesPromptCachingTests(unittest.TestCase):
         self.assertEqual(len(opener.calls), 1)
         self.assertIn("cache_control", _payload(opener))
 
-    def test_automatic_caching_across_tool_turns_preserves_context_and_blocks(self):
+    def test_caching_across_tool_turns_advances_breakpoint_and_preserves_blocks(self):
         for ttl in ("5m", "1h"):
             with self.subTest(ttl=ttl):
                 opener = _ScriptedOpener(
@@ -129,11 +151,16 @@ class MessagesPromptCachingTests(unittest.TestCase):
 
                 for turn in range(2):
                     before = [interaction_item_to_dict(item) for item in context]
+                    # The uncached request plus the top-level control and the
+                    # same control on the last block: the user text on turn 0,
+                    # then the tool result.
                     expected = uncached._build_request_payload(context, tools, options)
+                    expected["cache_control"] = control
+                    expected["messages"][-1]["content"][-1]["cache_control"] = control
                     sample = model.sample(
                         context, tools=tools, sample_params=options,
                     )
-                    self.assertEqual(_payload(opener), {**expected, "cache_control": control})
+                    self.assertEqual(_payload(opener), expected)
                     self.assertEqual(
                         [interaction_item_to_dict(item) for item in context], before,
                     )
@@ -146,36 +173,81 @@ class MessagesPromptCachingTests(unittest.TestCase):
                 second_payload = _payload(opener)
                 self.assertEqual(second_payload["system"], first_payload["system"])
                 self.assertEqual(second_payload["tools"], first_payload["tools"])
-                self.assertEqual(second_payload["messages"][0], first_payload["messages"][0])
+                # Only the breakpoint moves; the earlier blocks are unchanged.
+                first_messages = _without_block_markers(first_payload)["messages"]
+                self.assertEqual(
+                    _without_block_markers(second_payload)["messages"][:len(first_messages)],
+                    first_messages,
+                )
+                self.assertEqual(len(_marked_blocks(second_payload)), 1)
                 self.assertEqual(second_payload["messages"][1]["content"][0], {
                     "type": "thinking", "thinking": "Check facts.", "signature": "sig",
                 })
                 self.assertEqual(second_payload["messages"][-1]["content"], [{
                     "type": "tool_result", "tool_use_id": "call-1",
                     "content": "Found facts.", "is_error": False,
+                    "cache_control": control,
                 }])
 
-    def test_no_explicit_breakpoints_are_added_to_thinking_or_empty_blocks(self):
-        for context in (
-            InteractionContext((Message("user", "Hello."),)),
-            InteractionContext((Instructions(""), Message("user", "Hello."), Reasoning("thought"))),
-            InteractionContext((Message("user", "Hello."), Message("assistant", ""))),
-        ):
-            with self.subTest(context=context):
-                opener = _ScriptedOpener(_response())
-                endpoint = messages_endpoint(
-                    api_url="http://localhost", model="model",
-                    max_output_tokens=100,
-                    prompt_caching=MessagesPromptCaching(),
-                )
-                model = MessagesModel(endpoint, opener=opener)
-                expected = MessagesModel(replace(endpoint, prompt_caching=None))._build_request_payload(
-                    context, (), None,
-                )
-                model.sample(context)
-                self.assertEqual(_payload(opener), {
-                    **expected, "cache_control": {"type": "ephemeral", "ttl": "5m"},
-                })
+    def test_block_breakpoint_marks_the_rightmost_eligible_block(self):
+        def call(call_id):
+            return ToolCall(name="lookup", call_id=call_id, arguments_json="{}")
+
+        tools = (ToolSpec("lookup", "Look up facts.", {"type": "object"}),)
+        # Context items and the (message, block) index of the marked block.
+        cases = (
+            ((Instructions("Be concise."), Message("user", "Hello.")), (0, 0)),
+            # Thinking and empty text blocks never carry a breakpoint.
+            ((Instructions(""), Message("user", "Hello."), Reasoning("thought")), (0, 0)),
+            ((Message("user", "Hello."), Message("assistant", "")), (0, 0)),
+            ((Message("user", "Hello."), Message("assistant", " \n")), (0, 0)),
+            # Parallel tool results: the last one.
+            ((
+                Message("user", "Go."), Reasoning("Plan.", content_signature="sig"),
+                call("call-1"), call("call-2"),
+                ToolResult("call-1", "One."), ToolResult("call-2", "Two."),
+            ), (2, 1)),
+            # Blank tool results are skipped: an earlier result, else the call.
+            ((
+                Message("user", "Go."), call("call-1"), call("call-2"),
+                ToolResult("call-1", "One."), ToolResult("call-2", ""),
+            ), (2, 0)),
+            ((
+                Message("user", "Go."), Message("assistant", "Looking."),
+                call("call-1"), ToolResult("call-1", " "),
+            ), (1, 1)),
+            # After a paused server compaction, its block is the last one.
+            ((Message("user", "Old question."), OpaqueCompaction.from_messages("Summary.")), (0, 0)),
+            # Nothing eligible: only the top-level control is sent.
+            ((Instructions("Be concise."), Message("user", "")), None),
+        )
+        for items, position in cases:
+            for ttl in ("5m", "1h"):
+                with self.subTest(items=items, ttl=ttl):
+                    context = InteractionContext(items)
+                    opener = _ScriptedOpener(_response())
+                    endpoint = messages_endpoint(
+                        api_url="http://localhost", model="model",
+                        max_output_tokens=100,
+                        prompt_caching=MessagesPromptCaching(ttl=ttl),
+                    )
+                    uncached = MessagesModel(
+                        replace(endpoint, prompt_caching=None),
+                    )._build_request_payload(context, tools, None)
+                    MessagesModel(endpoint, opener=opener).sample(context, tools=tools)
+                    payload = _payload(opener)
+                    control = {"type": "ephemeral", "ttl": ttl}
+                    self.assertEqual(payload["cache_control"], control)
+                    self.assertEqual(
+                        [(m, b, block["cache_control"]) for m, b, block in _marked_blocks(payload)],
+                        [] if position is None else [(*position, control)],
+                    )
+                    # Purely additive: system, tools, and every other block
+                    # are exactly as in the uncached request.
+                    self.assertEqual(
+                        _without_block_markers(payload),
+                        {**uncached, "cache_control": control},
+                    )
 
     def test_caching_composes_with_compaction_without_changing_the_log(self):
         for checkpoint in (
@@ -198,6 +270,11 @@ class MessagesPromptCachingTests(unittest.TestCase):
                 model.sample(context)
                 payload = _payload(opener)
                 self.assertEqual(payload["cache_control"], {"type": "ephemeral", "ttl": "1h"})
+                # The block breakpoint is placed after the projection.
+                self.assertEqual([block for _, _, block in _marked_blocks(payload)], [{
+                    "type": "text", "text": "Continue.",
+                    "cache_control": {"type": "ephemeral", "ttl": "1h"},
+                }])
                 self.assertEqual(payload["context_management"], {
                     "edits": [{"type": "compact_20260112"}],
                 })
@@ -309,6 +386,10 @@ class MessagesPromptCachingCLITests(unittest.TestCase):
                     self.assertEqual(
                         payload["cache_control"], {"type": "ephemeral", "ttl": "5m"},
                     )
+                    self.assertEqual(payload["messages"], [{"role": "user", "content": [{
+                        "type": "text", "text": "Hello.",
+                        "cache_control": {"type": "ephemeral", "ttl": "5m"},
+                    }]}])
 
     def test_frontends_do_not_expose_cache_options(self):
         for frontend in (cli, demo):

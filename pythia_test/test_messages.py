@@ -419,8 +419,10 @@ class MessagesSummaryRequestTests(unittest.TestCase):
                     {"type": "adaptive", "display": "summarized"},
                 )
                 self.assertEqual(payload["output_config"], {"effort": "max"})
-                # Summary requests still carry cache_control (plan 9.1 TODO).
+                # Summary requests still carry cache_control, both top-level
+                # and on their only block (plan 9.1 TODO).
                 self.assertEqual(payload["cache_control"], {"type": "ephemeral", "ttl": "5m"})
+                self.assertEqual(block["cache_control"], {"type": "ephemeral", "ttl": "5m"})
                 request, _ = opener.calls[0]
                 self.assertIsNone(request.get_header("Anthropic-beta"))
                 self.assertEqual(result.protocol, "pi")
