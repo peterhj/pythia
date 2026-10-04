@@ -56,6 +56,7 @@ from .items import OpaqueCompaction
 from .items import Reasoning
 from .items import ToolCall
 from .items import ToolResult
+from .items import Tools
 from .items import SampleMetadata
 from .items import TextPart
 from .items import TurnSummary
@@ -160,6 +161,7 @@ __all__ = [
     "InteractionConfigSnapshot",
     "InteractionContext",
     "Instructions",
+    "Tools",
     "MediaPart",
     "Message",
     "MESSAGES_COMPACTION_BETA",

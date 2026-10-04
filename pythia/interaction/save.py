@@ -28,6 +28,7 @@ from .items import OpaqueCompaction
 from .items import Reasoning
 from .items import ToolCall
 from .items import ToolResult
+from .items import Tools
 from .items import SampleMetadata
 from .items import TextPart
 from .items import TurnSummary
@@ -36,6 +37,8 @@ from .items import UserToolCall
 from .items import UserToolResult
 from .items import _validate_elapsed_seconds
 from .usage import TokenUsage
+from ._tool_spec import ToolSpec
+from ._tool_spec import _copy_schema
 
 
 SavePath = Union[str, os.PathLike]
@@ -48,6 +51,7 @@ class SaveError(ValueError):
 _ITEM_TYPES = {
     Init: "init",
     Instructions: "instructions",
+    Tools: "tools",
     Message: "message",
     Reasoning: "reasoning",
     ToolCall: "tool_call",
@@ -104,6 +108,15 @@ def interaction_item_to_dict(item: InteractionItem) -> Dict[str, Any]:
         encoded["result"] = interaction_item_to_dict(item.result)
     elif isinstance(item, Instructions):
         encoded.update(text=item.text)
+    elif isinstance(item, Tools):
+        encoded["specs"] = [
+            {
+                "name": spec.name,
+                "description": spec.description,
+                "parameters": _copy_schema(spec.parameters),
+            }
+            for spec in item.specs
+        ]
     elif isinstance(item, Message):
         if isinstance(item.content, str):
             encoded.update(role=item.role, content=item.content)
@@ -347,6 +360,26 @@ def interaction_item_from_dict(value: Any) -> InteractionItem:
         return Instructions(
             text=_require_string(mapping.get("text"), "instructions.text"),
         )
+    if item_type == "tools":
+        specs = mapping.get("specs")
+        if not isinstance(specs, list):
+            raise SaveError("tools.specs must be a list")
+        decoded = []
+        for index, spec in enumerate(specs):
+            if not isinstance(spec, Mapping):
+                raise SaveError(f"tools.specs[{index}] must be an object")
+            try:
+                decoded.append(ToolSpec(
+                    name=spec.get("name"),
+                    description=spec.get("description"),
+                    parameters=spec.get("parameters"),
+                ))
+            except (TypeError, ValueError) as exc:
+                raise SaveError(f"tools.specs[{index}]: {exc}") from exc
+        try:
+            return Tools(tuple(decoded))
+        except (TypeError, ValueError) as exc:
+            raise SaveError(f"tools.specs: {exc}") from exc
     if item_type == "message":
         role = _require_string(mapping.get("role"), "message.role")
         raw_content = mapping.get("content")

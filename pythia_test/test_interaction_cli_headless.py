@@ -17,7 +17,7 @@ from unittest import mock
 
 from pythia.interaction import (
     Environment, Init, Instructions, InteractionContext, Message, ModelFailure,
-    ModelResponseError, ModelSample, ModelSampleBoundary, ToolCall, ToolResult,
+    ModelResponseError, ModelSample, ModelSampleBoundary, ToolCall, ToolResult, Tools,
     TurnSummary, cli, demo, load_interaction_save, save_interaction_save,
 )
 from pythia.interaction.codex_auth import CodexAuthUnavailable
@@ -184,7 +184,7 @@ class HeadlessCLITests(unittest.TestCase):
                 code, model, _, stderr = self.run_main([*resume, "--instructions", ""], _answer())
                 self.assertEqual(code, 0, stderr)
                 self.assertEqual(len(model.calls), 1)
-                self.assertEqual(model.calls[0][0].items, (*old, Instructions("")))
+                self.assertEqual(model.calls[0][0].items, (*old, Tools(model.calls[0][1]), Instructions("")))
 
     @unittest.skipUnless(os.name == "posix", "interactive CLI requires POSIX")
     def test_interactive_prompt_file_preloads_editor_and_submits_literal_text(self):

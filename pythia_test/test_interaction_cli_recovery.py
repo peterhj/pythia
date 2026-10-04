@@ -28,6 +28,7 @@ from pythia.interaction import ToolCall
 from pythia.interaction import ToolOutcome
 from pythia.interaction import ToolResult
 from pythia.interaction import ToolSpec
+from pythia.interaction import Tools
 from pythia.interaction import SampleMetadata
 from pythia.interaction import TurnSummary
 from pythia.interaction import UserInteractionBoundary
@@ -60,7 +61,7 @@ class CLIRecoveryTests(_ControllerTestCase):
         )
 
     async def test_resume_tail_matrix_replays_raw_history_without_saving_or_sampling(self):
-        old = (Init("old"), Message("assistant", "historical answer"),
+        old = (Init("old"), Tools(), Message("assistant", "historical answer"),
                TurnSummary(sample_count=1))
         tails = (
             ((), None),
@@ -225,10 +226,10 @@ class CLIRecoveryTests(_ControllerTestCase):
 
     async def test_partial_batch_recovery_is_durable_per_call_and_idempotent(self):
         calls = tuple(ToolCall("record", name, "{}") for name in ("one", "two", "three"))
-        original = (Init("old"), *calls, ModelSampleBoundary(),
+        original = (Init("old"), Tools(), *calls, ModelSampleBoundary(),
                     ToolResult("one", "already saved"))
         save_interaction_save(self.path, InteractionContext(original))
-        environment = mock.Mock(spec=Environment)
+        environment = mock.Mock(spec=Environment, tool_specs=())
         writes = []
 
         def save(path, context):
@@ -256,7 +257,7 @@ class CLIRecoveryTests(_ControllerTestCase):
         environment.execute_tool_calls.assert_not_called()
 
     async def test_pending_recovery_with_instructions_only_is_explicit_continuation(self):
-        original = (Init("old"), Message("user", "old query"),
+        original = (Init("old"), Tools(), Message("user", "old query"),
                     ToolCall("record", "one", "{}"))
         save_interaction_save(self.path, InteractionContext(original))
         environment = Environment()
@@ -278,7 +279,7 @@ class CLIRecoveryTests(_ControllerTestCase):
                                 provider_session_id="session-id", provider_turn_id="turn-id",
                                 provider_turn_state="opaque-turn-state")
         call = ToolCall("record", "call_codex_id", "{}")
-        original = (Init("old"), Message("user", "old query"), reasoning,
+        original = (Init("old"), Tools(), Message("user", "old query"), reasoning,
                     OpaqueCompaction.from_responses("opaque-checkpoint"), call, metadata,
                     ModelSampleBoundary())
         save_interaction_save(self.path, InteractionContext(original))

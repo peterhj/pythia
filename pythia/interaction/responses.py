@@ -46,6 +46,7 @@ from .items import CompactionMetadata
 from .items import ContextPrefix
 from .items import Init
 from .items import Instructions
+from .items import Tools
 from .items import InteractionItem
 from .items import Message
 from .items import ModelFailure
@@ -330,7 +331,7 @@ def _encode_context_items(
         ):
             continue
 
-        if isinstance(item, Instructions):
+        if isinstance(item, (Instructions, Tools)):
             continue
 
         if isinstance(item, Message):

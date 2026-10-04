@@ -29,6 +29,7 @@ from .items import CompactionMetadata
 from .items import ContextPrefix
 from .items import Init
 from .items import Instructions
+from .items import Tools
 from .items import InteractionItem
 from .items import Message
 from .items import ModelFailure
@@ -165,8 +166,8 @@ def _encode_context_messages(
             flush_assistant()
             continue
 
-        if isinstance(item, Instructions):
-            # Superseded or already emitted above; invisible to encoding.
+        if isinstance(item, (Instructions, Tools)):
+            # Instructions were emitted above; tool snapshots are audit-only.
             continue
 
         if isinstance(item, Message):

@@ -19,7 +19,7 @@ from unittest import mock
 from urllib.request import urlopen
 
 from pythia.interaction import DisplayItem, Environment, Message, ModelSample, ModelSampleBoundary, Tool, ToolCall
-from pythia.interaction import ToolOutcome, ToolSpec, ToolResult, TurnSummary
+from pythia.interaction import ToolOutcome, ToolSpec, ToolResult, TurnSummary, Tools
 from pythia.interaction import ModelFailure, ModelTransportError, Reasoning, OpaqueCompaction
 from pythia.interaction import CompactionContextWindowError, CompactionResult, CompactionSettings
 from pythia.interaction import ContextPrefix, ModelContextWindowError, NothingToCompact
@@ -737,6 +737,48 @@ class RuntimeTests(unittest.TestCase):
         wait_for(lambda: session.thread_result(thread) is not None)
         return session.thread_result(thread)
 
+    def test_role_tool_snapshots_resume_only_when_changed(self):
+        def extra(description):
+            return (Tool(ToolSpec("extra", description, {}),
+                         lambda args, **kwargs: ToolOutcome("unused")),)
+
+        session = self.session({}, extra_tools=extra("first"), worker_board=False)
+        session.close()
+        for index in (1, -1):
+            path = self.path / "contexts" / f"{index}.jsonl"
+            context = load_interaction_save(path)
+            self.assertEqual([s.name for s in context.latest_tools().specs],
+                             [*self.tool_names[index], "extra"])
+            # A compaction prefix drops tool snapshots from model_items, but
+            # resume must still compare the raw log's latest snapshot.
+            context.append(ContextPrefix((Message("assistant", "summary"),)))
+            auto.save_interaction_save(path, context)
+
+        for tools, expected_count in ((extra("first"), 1), (extra("changed"), 2), ((), 3), ((), 3)):
+            session = self.session({}, extra_tools=tools, worker_board=False, resume=True)
+            session.close()
+            for index in (1, -1):
+                context = load_interaction_save(self.path / "contexts" / f"{index}.jsonl")
+                snapshots = [item for item in context if isinstance(item, Tools)]
+                self.assertEqual(len(snapshots), expected_count)
+                self.assertEqual([s.name for s in snapshots[-1].specs],
+                                 [*self.tool_names[index], *(t.spec.name for t in tools)])
+                self.assertFalse(any(isinstance(item, Tools) for item in context.model_items()))
+        self.assertEqual(self.calls, {1: [], 2: []})
+
+        # Legacy context files get one fresh snapshot on their next resume.
+        for index in (1, -1):
+            path = self.path / "contexts" / f"{index}.jsonl"
+            context = load_interaction_save(path)
+            auto.save_interaction_save(path, auto.InteractionContext(
+                item for item in context if not isinstance(item, Tools)
+            ))
+        session = self.session({}, worker_board=False, resume=True)
+        session.close()
+        for index in (1, -1):
+            context = load_interaction_save(self.path / "contexts" / f"{index}.jsonl")
+            self.assertEqual(sum(isinstance(item, Tools) for item in context), 1)
+
     def settled(self, session, submitted):
         wait_for(lambda: session.task_result(submitted) is not None)
         return session.task_result(submitted)
@@ -895,7 +937,8 @@ class RuntimeTests(unittest.TestCase):
         for i in (1, 2, -1):
             self.assertIn("quiescent", session.status(i))
             context = load_interaction_save(self.path / "contexts" / f"{i}.jsonl")
-            self.assertEqual(len(context), 2)
+            self.assertEqual(len(context), 3)
+            self.assertIsInstance(context[-1], Tools)
             self.assertIn(session.service.base_url + "/README.md", context[1].text)
         self.assertEqual(session.service.board.records(), ())
         self.assertEqual(self.calls, {1: [], 2: []})
@@ -919,7 +962,7 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(debug[0].index, -1)
         self.assertIn("condition fired", debug[0].items[0].text)
         # The latest user request only asks for a debug event, not a watcher model turn/log schema.
-        self.assertEqual(len(load_interaction_save(self.path / "contexts" / "-1.jsonl")), 2)
+        self.assertEqual(len(load_interaction_save(self.path / "contexts" / "-1.jsonl")), 3)
         session.close()
         self.assertCountEqual(self.closed, (1, 2, -1))
         for index, thread_ids in self.threads.items():
@@ -1647,7 +1690,7 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(self.threads[2], [])
         self.assertEqual(self.tool_names, {1: [], -1: ["resume_main", "read_main_context"]})
         self.assertCountEqual(self.models_built, (1, -1))
-        self.assertEqual(len(load_interaction_save(self.path / "contexts" / "1.jsonl")), 1)
+        self.assertEqual(len(load_interaction_save(self.path / "contexts" / "1.jsonl")), 2)
         watcher = load_interaction_save(self.path / "contexts" / "-1.jsonl")
         self.assertEqual(watcher[1], auto.Instructions(auto._SUPERVISOR_INSTRUCTIONS))
         self.assertEqual(set(json.loads((self.path / "config.json").read_text())),
@@ -2536,8 +2579,8 @@ class EntryPointTests(unittest.TestCase):
                 self.assertNotIn(b"#2", output)
                 self.assertFalse((path / "index.jsonl").exists())
                 self.assertFalse((path / "contexts" / "2.jsonl").exists())
-                self.assertEqual(len(load_interaction_save(path / "contexts" / "1.jsonl")), 1)
-                self.assertEqual(len(load_interaction_save(path / "contexts" / "-1.jsonl")), 2)
+                self.assertEqual(len(load_interaction_save(path / "contexts" / "1.jsonl")), 2)
+                self.assertEqual(len(load_interaction_save(path / "contexts" / "-1.jsonl")), 3)
             finally:
                 if process.poll() is None:
                     process.kill()
@@ -2827,7 +2870,7 @@ class EntryPointTests(unittest.TestCase):
                 self.assertEqual(process.stderr.read(), b"")
                 self.assertEqual((path / "index.jsonl").read_text(), "")
                 for index in (1, 2, -1):
-                    self.assertEqual(len(load_interaction_save(path / "contexts" / f"{index}.jsonl")), 2)
+                    self.assertEqual(len(load_interaction_save(path / "contexts" / f"{index}.jsonl")), 3)
             finally:
                 if process.poll() is None:
                     process.kill()
@@ -2912,7 +2955,7 @@ class EntryPointTests(unittest.TestCase):
                     else:
                         self.assertNotIn("max_tokens", request)
                         self.assertNotIn("max_completion_tokens", request)
-                self.assertEqual(len(load_interaction_save(root / "run" / "contexts" / "-1.jsonl")), 2)
+                self.assertEqual(len(load_interaction_save(root / "run" / "contexts" / "-1.jsonl")), 3)
         finally:
             gateway.shutdown()
             server_thread.join()

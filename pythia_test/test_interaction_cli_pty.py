@@ -22,6 +22,7 @@ from pythia.interaction import Message
 from pythia.interaction import InteractionContext
 from pythia.interaction import ToolCall
 from pythia.interaction import ToolResult
+from pythia.interaction import Tools
 from pythia.interaction import TurnSummary
 from pythia.interaction import UserToolCall
 from pythia.interaction import UserToolResult
@@ -259,7 +260,8 @@ class PosixCLITests(unittest.IsolatedAsyncioTestCase):
         os.write(self.master, b"unfinished draft\x04")
         await self.wait_exit()
         saved = load_interaction_save(self.root / "interaction.jsonl")
-        self.assertEqual(len(saved.items), 1)
+        self.assertEqual(len(saved.items), 2)
+        self.assertIsInstance(saved.items[1], Tools)
 
     async def test_save_path_stays_in_launch_directory_not_tool_workspace(self):
         workspace = self.root / "tools"
@@ -314,7 +316,7 @@ class PosixCLITests(unittest.IsolatedAsyncioTestCase):
         self.start("--endpoint-api", "codex", "--model", "test", "--endpoint-auth-file", str(auth),
                    "--save", "auth session.jsonl", "--prompt", "blocked initial", failure="auth")
         await self.wait_output(b"auth needed")
-        self.assertEqual(len(load_interaction_save(selected).items), 1)
+        self.assertEqual(len(load_interaction_save(selected).items), 2)
         os.write(self.master, b"\x15\x0b/login\r")
         await self.wait_output(b"Model ready")
         os.write(self.master, b"/quota\r")
@@ -376,9 +378,10 @@ class PosixCLITests(unittest.IsolatedAsyncioTestCase):
         os.write(self.master, b"/quit\r")
         await self.wait_exit()
         saved = load_interaction_save(path)
-        self.assertEqual(saved.items[:-1], original)
-        self.assertIsInstance(saved.items[-1], ToolResult)
-        self.assertFalse(saved.items[-1].success)
+        self.assertEqual(saved.items[:-2], original)
+        self.assertIsInstance(saved.items[-1], Tools)
+        self.assertIsInstance(saved.items[-2], ToolResult)
+        self.assertFalse(saved.items[-2].success)
         self.assertFalse((self.root / "must-not-run").exists())
         self.assertNotIn(b"[assistant] answer", self.output)
 

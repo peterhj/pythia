@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import math
-import re
 from collections.abc import Iterable
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -17,39 +16,14 @@ from .items import InteractionItem
 from .items import Message
 from .items import ToolCall
 from .items import ToolResult
+from ._tool_spec import ToolSpec
 
 if TYPE_CHECKING:
     from .display import DisplayItem
 
 
-_TOOL_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
-
-
 class EnvironmentError(ValueError):
     pass
-
-
-@dataclass(frozen=True)
-class ToolSpec:
-    name: str
-    description: str
-    parameters: Mapping[str, object]
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.name, str) or not self.name.strip():
-            raise ValueError("tool name must not be empty")
-        name = self.name.strip()
-        if _TOOL_NAME_RE.fullmatch(name) is None:
-            raise ValueError(
-                "tool name may contain only letters, digits, underscores, and hyphens"
-            )
-        object.__setattr__(self, "name", name)
-
-        if not isinstance(self.description, str):
-            raise TypeError("tool description must be a string")
-        if not isinstance(self.parameters, Mapping):
-            raise TypeError("tool parameters must be a mapping")
-        object.__setattr__(self, "parameters", dict(self.parameters))
 
 
 def _validate_user_messages(messages: Iterable[Message]) -> Tuple[Message, ...]:

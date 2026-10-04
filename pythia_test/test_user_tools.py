@@ -21,7 +21,7 @@ from pythia.interaction import (
     ContextValidationError, DefaultEnvironment, Environment,
     Instructions, InteractionConfig, Message, MessagesEndpoint, MessagesModel, InteractionContext, ModelSample,
     ModelSampleBoundary, NothingToCompact, OpaqueCompaction, PiCompactor, SampleParams, Init,
-    TokenUsage, ToolCall, ToolResult, SampleMetadata, TurnSummary, UserInteraction,
+    TokenUsage, ToolCall, ToolResult, Tools, SampleMetadata, TurnSummary, UserInteraction,
     UserInteractionBoundary, UserToolCall, UserToolResult, load_interaction_save,
     render_interaction_items, save_interaction_save,
 )
@@ -505,7 +505,7 @@ class UserToolControllerTests(unittest.IsolatedAsyncioTestCase):
         ))
         save_interaction_save(
             self.path,
-            InteractionContext((Init("saved"), call)),
+            InteractionContext((Init("saved"), Tools(), call)),
         )
         self.args.resume = True
         terminal = _Terminal(
@@ -744,15 +744,15 @@ class UserToolControllerTests(unittest.IsolatedAsyncioTestCase):
                     self.assertTrue(response.closed)
                     saved = load_interaction_save(self.path)
                     self.assertEqual(tuple(type(i) for i in saved), (
-                        Init, UserToolCall, UserToolResult,
+                        Init, Tools, UserToolCall, UserToolResult,
                     ))
-                    self.assertEqual(saved.items[1].call.arguments_json, "{}")
-                    self.assertTrue(saved.items[2].result.success)
-                    self.assertIn(f"\nplan: {expected_plan}\n", saved.items[2].result.output)
+                    self.assertEqual(saved.items[2].call.arguments_json, "{}")
+                    self.assertTrue(saved.items[3].result.success)
+                    self.assertIn(f"\nplan: {expected_plan}\n", saved.items[3].result.output)
                     self.assertNotIn(token, self.path.read_text())
                     self.assertNotIn("{}", tuple(i.text for i in terminal.items))
                     transcript = tuple(i for i in terminal.items if not i.text.startswith("[cli]"))
-                    self.assertEqual(len(transcript), 2)
+                    self.assertEqual(len(transcript), 3)
                     self.assertEqual(transcript, render_interaction_items(saved.items))
 
                     before = self.path.read_bytes()
@@ -816,7 +816,7 @@ class UserToolControllerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(model.calls[0][0].items, model.checkpoints[0])
 
     async def test_resume_unfinished_user_tool_never_executes_and_preserves_model_tail(self):
-        original = (Init("old"), Message("assistant", "answer"), TurnSummary(), _records("login")[0])
+        original = (Init("old"), Tools(), Message("assistant", "answer"), TurnSummary(), _records("login")[0])
         save_interaction_save(self.path, InteractionContext(original))
         self.args.resume = True
         model = _Model(self.path)
@@ -958,7 +958,7 @@ class UserToolControllerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_same_account_login_rebinds_without_sampling_or_changing_provider_state(self):
         metadata = SampleMetadata(TokenUsage(), provider_turn_id="turn", provider_turn_state="state")
-        original = (Init("old"), Message("assistant", "answer"), metadata, TurnSummary())
+        original = (Init("old"), Tools(), Message("assistant", "answer"), metadata, TurnSummary())
         save_interaction_save(self.path, InteractionContext(original))
         self.args.resume = True
         model = _Model(self.path)
@@ -998,6 +998,7 @@ class UserToolControllerTests(unittest.IsolatedAsyncioTestCase):
     async def test_compact_records_audit_pair_and_installs_checkpoint_atomically(self):
         original = (
             Init("old"),
+            Tools(),
             Message("assistant", "previous answer"),
             TurnSummary(sample_count=1),
         )
@@ -1387,6 +1388,7 @@ class UserToolControllerTests(unittest.IsolatedAsyncioTestCase):
         call = UserToolCall(ToolCall("compact", "user_pending", "{}"))
         original = (
             Init("old"),
+            Tools(),
             Message("assistant", "previous answer"),
             TurnSummary(sample_count=1),
             call,
@@ -1408,6 +1410,7 @@ class UserToolControllerTests(unittest.IsolatedAsyncioTestCase):
     async def test_compact_result_checkpoint_save_failure_is_not_rerun(self):
         original = (
             Init("old"),
+            Tools(),
             Message("assistant", "previous answer"),
             TurnSummary(sample_count=1),
         )
@@ -1473,7 +1476,7 @@ class UserToolControllerTests(unittest.IsolatedAsyncioTestCase):
         create.assert_not_called()
         saved = load_interaction_save(self.path)
         self.assertEqual(tuple(type(item) for item in saved), (
-            Init, UserToolCall, UserToolResult,
+            Init, Tools, UserToolCall, UserToolResult,
         ))
         self.assertFalse(saved.items[-1].result.success)
         self.assertIn("authentication needed", saved.items[-1].result.output.lower())
@@ -1534,7 +1537,7 @@ class UserToolControllerTests(unittest.IsolatedAsyncioTestCase):
         terminal = _Terminal(lambda t, e, s: t.key("c-d") if s == "auth needed" else None)
         self.assertEqual(await self.run_cli(None, terminal), 0)
         saved = load_interaction_save(self.path)
-        self.assertEqual(saved.items, (*original, Instructions("new instructions")))
+        self.assertEqual(saved.items, (*original, Tools(), Instructions("new instructions")))
 
 
 if __name__ == "__main__":

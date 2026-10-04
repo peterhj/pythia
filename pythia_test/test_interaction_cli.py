@@ -40,6 +40,7 @@ from pythia.interaction import ToolCall
 from pythia.interaction import ToolOutcome
 from pythia.interaction import ToolResult
 from pythia.interaction import ToolSpec
+from pythia.interaction import Tools
 from pythia.interaction import TokenUsage
 from pythia.interaction import TurnSummary
 from pythia.interaction import UserInteractionBoundary
@@ -491,6 +492,61 @@ class _ControllerTestCase(unittest.IsolatedAsyncioTestCase):
         return result
 
 
+class CLIToolsSnapshotTests(_ControllerTestCase):
+    def test_tools_update_does_not_hide_completed_manual_compaction(self):
+        context = InteractionContext((
+            Init("saved"), UserToolCall(ToolCall("compact", "user_1", "{}")),
+            UserToolResult(ToolResult("user_1", "compacted")),
+            ContextPrefix((Message("user", "summary"),)),
+            CompactionMetadata(TokenUsage(), "pi"), Tools(),
+        ))
+        self.assertIsNone(cli._resume_notice(context))
+
+    async def test_startup_logs_tools_before_sampling(self):
+        handler = mock.Mock(return_value=ToolOutcome("unused"))
+        environment = Environment((Tool(ToolSpec("current", "Current tool", {}), handler),))
+        model = _Model(self.path, _answer())
+        terminal = _Terminal(lambda t, e, s: t.key("c-d") if s == "idle" else None)
+        self.assertEqual(await self._run(model, terminal, ["--prompt", "hello"], environment), 0)
+        context, runtime_tools, _ = model.calls[0]
+        self.assertEqual(context.items[1], Tools(environment.tool_specs))
+        self.assertEqual(runtime_tools, environment.tool_specs)
+        handler.assert_not_called()
+
+    async def test_resume_compares_raw_latest_without_restoring_or_sampling(self):
+        handler = mock.Mock(return_value=ToolOutcome("unused"))
+        environment = Environment((Tool(ToolSpec("current", "Current tool", {}), handler),))
+        current = Tools(environment.tool_specs)
+        old = Tools((ToolSpec("obsolete", "Old tool", {}),))
+        for previous in (None, current, old, Tools()):
+            with self.subTest(previous=previous):
+                original = (Init("saved"), *((previous,) if previous is not None else ()),
+                            ContextPrefix((Message("assistant", "previous"),)), TurnSummary())
+                save_interaction_save(self.path, InteractionContext(original))
+                expected = original if previous == current else (*original, current)
+                for _ in range(2):
+                    model = _Model(self.path)
+                    terminal = _Terminal(lambda t, e, s: t.key("c-d") if s == "idle" else None)
+                    self.assertEqual(await self._run(model, terminal, ["--resume"], environment), 0)
+                    self.assertEqual(load_interaction_save(self.path).items, expected)
+                    self.assertEqual(model.calls, [])
+                    self.assertFalse(any("without recorded turn completion" in i.text for i in terminal.items))
+                terminal = _Terminal(lambda t, e, s: t.key("c-d") if s == "idle" else None)
+                self.assertEqual(await self._run(_Model(self.path), terminal, ["--resume"]), 0)
+                self.assertEqual(load_interaction_save(self.path).items, (*expected, Tools()))
+        handler.assert_not_called()
+
+    async def test_snapshot_checkpoint_failure_blocks_sampling(self):
+        original = (Init("saved"), Message("assistant", "previous"), TurnSummary())
+        save_interaction_save(self.path, InteractionContext(original))
+        model = _Model(self.path, _answer())
+        terminal = _Terminal(lambda t, e, s: t.submit("/quit") if s == "failed" else None)
+        with mock.patch.object(cli, "save_interaction_save", side_effect=OSError("no space")):
+            self.assertEqual(await self._run(model, terminal, ["--resume", "--prompt", "hello"]), 1)
+        self.assertEqual(model.calls, [])
+        self.assertEqual(load_interaction_save(self.path).items, original)
+
+
 class CLIDisabledToolsTests(_ControllerTestCase):
     async def test_unexpected_default_calls_fail_without_effects_or_tool_warnings(self):
         marker = self.path.parent / "must-not-exist"
@@ -651,8 +707,9 @@ class CLIControllerTests(_ControllerTestCase):
         self.assertGreaterEqual(ticks, 4)
         self.assertTrue(all(not editor.text for editor, _, _ in terminal.frames))
         saved = load_interaction_save(self.path)
-        self.assertEqual(len(saved.items), 1)
+        self.assertEqual(len(saved.items), 2)
         self.assertIsInstance(saved.items[0], Init)
+        self.assertEqual(saved.items[1], Tools())
 
     async def test_full_input_queue_preserves_unaccepted_draft(self):
         state = cli._UIState(ready=True)
@@ -790,7 +847,8 @@ class CLIControllerTests(_ControllerTestCase):
         ), 0)
         received = model.calls[0][0]
         self.assertEqual(received.items[:len(original)], original)
-        result = received.items[-4]
+        result = received.items[-5]
+        self.assertEqual(received.items[-4], Tools())
         self.assertIsInstance(result, ToolResult)
         self.assertFalse(result.success)
         self.assertEqual(result.call_id, "pending")
@@ -808,10 +866,11 @@ class CLIControllerTests(_ControllerTestCase):
         model = _Model(self.path)
         self.assertEqual(await self._run(model, terminal, ["--resume"]), 0)
         saved = load_interaction_save(self.path)
-        self.assertEqual(saved.items[:-1], original)
-        self.assertEqual(saved.items[-1].call_id, "pending")
-        self.assertFalse(saved.items[-1].success)
-        self.assertIn("session restart", saved.items[-1].output)
+        self.assertEqual(saved.items[:-2], original)
+        self.assertEqual(saved.items[-1], Tools())
+        self.assertEqual(saved.items[-2].call_id, "pending")
+        self.assertFalse(saved.items[-2].success)
+        self.assertIn("session restart", saved.items[-2].output)
         self.assertEqual(saved.pending_tool_calls(), ())
         self.assertEqual(model.calls, [])
 
@@ -824,7 +883,7 @@ class CLIControllerTests(_ControllerTestCase):
         self.assertEqual(await self._run(
             model, terminal, ["--resume", "--instructions", ""]
         ), 0)
-        self.assertEqual(model.calls[0][0].items, (*original, Instructions("")))
+        self.assertEqual(model.calls[0][0].items, (*original, Tools(), Instructions("")))
 
     async def test_new_session_replaces_existing_log_and_missing_resume_keeps_query(self):
         for resume in (False, True):
@@ -844,6 +903,7 @@ class CLIControllerTests(_ControllerTestCase):
                 context = model.calls[0][0]
                 self.assertNotEqual(context.items[0], Init("old"))
                 self.assertEqual(context.items[1:], (
+                    Tools(),
                     Message("user", "fresh"), UserInteractionBoundary(),
                 ))
 
@@ -867,7 +927,7 @@ class CLIControllerTests(_ControllerTestCase):
         ))
 
     async def test_completed_resume_does_not_repeat_answer_or_summary(self):
-        original = (Init("saved"), Message("assistant", "previous"),
+        original = (Init("saved"), Tools(), Message("assistant", "previous"),
                     ModelSampleBoundary(), TurnSummary(sample_count=1))
         save_interaction_save(self.path, InteractionContext(original))
         terminal = _Terminal(lambda t, e, s: t.submit("/exit") if s == "idle" else None)
@@ -878,7 +938,7 @@ class CLIControllerTests(_ControllerTestCase):
         self.assertEqual(model.calls, [])
 
     async def test_resume_is_the_default(self):
-        original = (Init("saved"), Message("assistant", "previous"),
+        original = (Init("saved"), Tools(), Message("assistant", "previous"),
                     ModelSampleBoundary(), TurnSummary(sample_count=1))
         save_interaction_save(self.path, InteractionContext(original))
         terminal = _Terminal(lambda t, e, s: t.submit("/exit") if s == "idle" else None)

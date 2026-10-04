@@ -14,7 +14,7 @@ from unittest import mock
 from pythia.interaction import cli, demo
 from pythia.interaction import (
     Environment, Init, Instructions, Message, InteractionContext, ModelSample,
-    ToolCall, ToolResult, TurnSummary, UserInteractionBoundary,
+    ToolCall, ToolResult, Tools, TurnSummary, UserInteractionBoundary,
     UserToolCall, UserToolResult, load_interaction_save, save_interaction_save,
 )
 from pythia.interaction.model_config import DEFAULT_SAVE_PATH, resolve_save_path
@@ -142,6 +142,7 @@ class SaveEntrypointTests(_SavePathTestCase):
         )
         self.assertEqual(status, 0)
         self.assertEqual(model.calls[0][0].items[1:], (
+            Tools(model.calls[0][1]),
             Message("user", demo.EXPERIMENTAL_USER_MESSAGE_PROMPT),
             UserInteractionBoundary(),
         ))
@@ -163,7 +164,7 @@ class SaveEntrypointTests(_SavePathTestCase):
                 self.assertEqual(len(model.calls), 2)
                 saved = load_interaction_save(self.selected)
                 self.assertEqual(saved.items[0].model, "initial-model")
-                self.assertEqual(saved.items[1:3], (Message("user", "fresh query"), UserInteractionBoundary()))
+                self.assertEqual(saved.items[2:4], (Message("user", "fresh query"), UserInteractionBoundary()))
                 self.assertIn(ToolResult("plan-one", "Plan updated"), saved.items)
                 self.assertEqual(saved.items[-1].sample_count, 2)
                 self.assertNotIn("Save log:", repr(saved.items))
@@ -184,7 +185,9 @@ class SaveEntrypointTests(_SavePathTestCase):
     def test_completed_resume_replays_only_chosen_file_without_sampling(self):
         for frontend in (cli, demo):
             with self.subTest(frontend=frontend.__name__):
-                save_interaction_save(self.selected, InteractionContext(_COMPLETED))
+                with demo.DefaultEnvironment(cwd=self.workspace) as environment:
+                    snapshot = Tools(environment.tool_specs)
+                save_interaction_save(self.selected, InteractionContext((*_COMPLETED, snapshot)))
                 before = self.selected.read_bytes()
                 code, model, terminal, printed = self._main(frontend, ["--resume"], samples=())
                 self.assertEqual(code, 0)
@@ -230,7 +233,8 @@ class SaveEntrypointTests(_SavePathTestCase):
                 self.assertEqual(code, 0)
                 received = model.calls[0][0].items
                 self.assertEqual(received[:len(original)], original)
-                result = received[-4]
+                result = received[-5]
+                self.assertEqual(received[-4], Tools(model.calls[0][1]))
                 self.assertEqual(result.call_id, _PLAN_CALL.call_id)
                 self.assertEqual(result.success, frontend is demo)
                 if frontend is cli:
@@ -249,7 +253,7 @@ class SaveEntrypointTests(_SavePathTestCase):
                     frontend, ["--resume", "--instructions", "override"],
                 )
                 self.assertEqual(code, 0)
-                self.assertEqual(model.calls[0][0].items, (*_COMPLETED, Instructions("override")))
+                self.assertEqual(model.calls[0][0].items, (*_COMPLETED, Tools(model.calls[0][1]), Instructions("override")))
 
     def test_custom_user_tool_recovery_never_dispatches_or_samples(self):
         call = UserToolCall(ToolCall("login", "user_pending", "{}"))
@@ -261,9 +265,10 @@ class SaveEntrypointTests(_SavePathTestCase):
         create.assert_not_called()
         self.assertEqual(model.calls, [])
         saved = load_interaction_save(self.selected)
-        self.assertEqual(saved.items[:-1], original)
-        self.assertIsInstance(saved.items[-1], UserToolResult)
-        self.assertFalse(saved.items[-1].result.success)
+        self.assertEqual(saved.items[:-2], original)
+        self.assertIsInstance(saved.items[-1], Tools)
+        self.assertIsInstance(saved.items[-2], UserToolResult)
+        self.assertFalse(saved.items[-2].result.success)
 
     def test_checkpoint_failure_keeps_chosen_file_and_does_not_redirect_to_default(self):
         for frontend in (cli, demo):

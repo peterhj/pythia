@@ -1273,6 +1273,8 @@ class DemoTests(unittest.TestCase):
             self.assertTrue(
                 all(isinstance(item, DisplayItem) for item in emitted)
             )
+            self.assertEqual(emitted[0].text, "[tools] exec_command, write_stdin, update_plan, apply_patch")
+            emitted = emitted[1:]
             rendered = tuple(item.text for item in emitted)
             self.assertEqual(
                 str(emitted[0]),

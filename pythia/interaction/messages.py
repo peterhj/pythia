@@ -29,6 +29,7 @@ from .items import CompactionMetadata
 from .items import ContextPrefix
 from .items import Init
 from .items import Instructions
+from .items import Tools
 from .items import InteractionItem
 from .items import Message
 from .items import ModelFailure
@@ -298,6 +299,8 @@ def _encode_context(
     if latest_compaction >= 0:
         instruction_prefix: List[InteractionItem] = []
         for item in items[:latest_compaction]:
+            if isinstance(item, Tools):
+                continue
             if isinstance(item, Instructions):
                 instruction_prefix.append(item)
                 continue
@@ -360,7 +363,7 @@ def _encode_context(
             flush()
             continue
 
-        if isinstance(item, Instructions):
+        if isinstance(item, (Instructions, Tools)):
             continue
 
         if isinstance(item, Message):

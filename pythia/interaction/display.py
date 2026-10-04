@@ -19,6 +19,7 @@ from .items import CompactionMetadata
 from .items import ContextPrefix
 from .items import Init
 from .items import Instructions
+from .items import Tools
 from .items import InteractionItem
 from .items import Message
 from .items import ModelFailure
@@ -177,6 +178,10 @@ class InteractionItemRenderer:
             elif isinstance(item, Instructions):
                 label = "instructions"
                 blocks = _render_instructions(item)
+            elif isinstance(item, Tools):
+                label = "tools"
+                names = ", ".join(spec.name for spec in item.specs) or "(none)"
+                blocks = (f"[tools] {names}",)
             elif isinstance(item, Message):
                 label = item.role.strip() or "message"
                 blocks = _render_message(item)

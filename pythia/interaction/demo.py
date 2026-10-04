@@ -27,6 +27,7 @@ from .items import ModelSampleBoundary
 from .items import SampleMetadata
 from .items import ToolCall
 from .items import ToolResult
+from .items import Tools
 from .items import TurnSummary
 from .items import UserInteractionBoundary
 from .items import summarize_turn_usage
@@ -172,6 +173,7 @@ def run(
     if not isinstance(binding, ModelBinding):
         binding = None
 
+    tools_snapshot = Tools(environment.tool_specs)
     resumed_existing_save = False
     if resume and Path(save_path).exists():
         context = load_interaction_save(save_path)
@@ -194,6 +196,7 @@ def run(
         initial: list = [Init(model=initial_model_name(model))]
         if instructions_item is not None:
             initial.append(instructions_item)
+        initial.append(tools_snapshot)
         context = InteractionContext(tuple(initial))
 
     if save_path is not None:
@@ -225,7 +228,19 @@ def run(
         _persist()
         for display_item in result.display_items(source_calls=pending_calls):
             print(display_item)
-    elif resumed_existing_save and prompt is None and instructions_item is None:
+    if tools_snapshot != context.latest_tools():
+        context.append(tools_snapshot)
+        _persist()
+        for display_item in render_interaction_items((tools_snapshot,)):
+            print(display_item)
+    elif not resumed_existing_save:
+        for display_item in render_interaction_items((tools_snapshot,)):
+            print(display_item)
+
+    if (
+        not pending_calls and resumed_existing_save
+        and prompt is None and instructions_item is None
+    ):
         final_text = _final_assistant_text(context)
         if final_text is None or not final_text.strip():
             raise RuntimeError("resumed save has no final assistant text")

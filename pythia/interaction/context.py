@@ -18,6 +18,7 @@ from .items import ModelFailure
 from .items import ModelSampleBoundary
 from .items import ToolCall
 from .items import ToolResult
+from .items import Tools
 from .items import SampleMetadata
 from .items import TurnSummary
 from .items import UserToolCall
@@ -153,7 +154,7 @@ def _project_items(
         for i in active
         if not isinstance(
             i,
-            (CompactionMetadata, UserToolCall, UserToolResult),
+            (CompactionMetadata, UserToolCall, UserToolResult, Tools),
         )
     )
 
@@ -255,6 +256,17 @@ class InteractionContext(Sequence[InteractionItem]):
             if not isinstance(item, Init)
         )
         return _collapse_instructions(projected)
+
+    def latest_tools(self) -> Optional[Tools]:
+        """Last top-level tool snapshot in the raw log, not restored config.
+
+        ContextPrefix projection intentionally does not affect this lookup:
+        compaction must not cause unchanged runtime tools to be logged again.
+        """
+        return next(
+            (item for item in reversed(self._items) if isinstance(item, Tools)),
+            None,
+        )
 
     def pending_tool_calls(self) -> Tuple[ToolCall, ...]:
         return _validate_tool_sequence(

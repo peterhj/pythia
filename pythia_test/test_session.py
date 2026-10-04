@@ -27,6 +27,7 @@ from pythia.interaction import SaveError
 from pythia.interaction import TokenUsage
 from pythia.interaction import ToolCall
 from pythia.interaction import ToolResult
+from pythia.interaction import Tools
 from pythia.interaction import SampleMetadata
 from pythia.interaction import TurnSummary
 from pythia.interaction import UserInteractionBoundary
@@ -628,6 +629,7 @@ class SessionResumeTests(unittest.TestCase):
             (
                 "[user] original request",
                 "[assistant] resumed answer",
+                "[tools] exec_command, write_stdin, update_plan, apply_patch",
             ),
         )
 
@@ -741,7 +743,9 @@ class SessionResumeTests(unittest.TestCase):
 
         self.assertEqual(summary, "resumed answer")
         self.assertEqual(len(model.contexts), 1)
-        tool_result = model.contexts[0].items[-1]
+        tool_result = model.contexts[0].items[-2]
+        snapshot = model.contexts[0].items[-1]
+        self.assertIsInstance(snapshot, Tools)
         self.assertIsInstance(tool_result, ToolResult)
         self.assertEqual(tool_result.call_id, call.call_id)
         self.assertTrue(tool_result.success)
@@ -751,6 +755,7 @@ class SessionResumeTests(unittest.TestCase):
             (
                 *interrupted.items,
                 tool_result,
+                snapshot,
                 Message(role="assistant", content="resumed answer"),
                 SampleMetadata(usage=TokenUsage()),
                 ModelSampleBoundary(),

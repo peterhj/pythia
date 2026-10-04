@@ -25,6 +25,7 @@ from pythia.interaction import SampleParams
 from pythia.interaction import TokenUsage
 from pythia.interaction import ToolCall
 from pythia.interaction import ToolResult
+from pythia.interaction import Tools
 from pythia.interaction import SampleMetadata
 from pythia.interaction import TurnSummary
 from pythia.interaction import UserInteractionBoundary
@@ -199,6 +200,11 @@ class DemoStartupBaselineTests(unittest.TestCase):
         self.addCleanup(os.chdir, Path.cwd())
         os.chdir(self.launch)
         self.path = self.launch / "interaction.jsonl"
+        with demo.DefaultEnvironment(cwd=self.workspace) as environment:
+            self.tools_snapshot = Tools(environment.tool_specs)
+        self.experimental_tools_snapshot = Tools((
+            *self.tools_snapshot.specs, demo.create_inject_user_message_tool().spec,
+        ))
 
     def _run_demo(self, argv=(), samples=(ANSWER,)):
         model = _CheckpointRecordingModel(samples)
@@ -265,6 +271,7 @@ class DemoStartupBaselineTests(unittest.TestCase):
         self.assertEqual(
             context.items[1:],
             (
+                self.tools_snapshot,
                 Message(role="user", content=demo.DEFAULT_PROMPT),
                 UserInteractionBoundary(),
             ),
@@ -323,6 +330,7 @@ class DemoStartupBaselineTests(unittest.TestCase):
                 item.text for item in printed if isinstance(item, DisplayItem)
             ),
             (
+                "[tools] exec_command, write_stdin, update_plan, apply_patch",
                 f"[user] {query.rstrip()}",
                 "[tool-call] update_plan (plan-1)",
                 "[sample] input=20 output=4 total=24 cached=5",
@@ -445,6 +453,7 @@ class DemoStartupBaselineTests(unittest.TestCase):
         self.assertEqual(
             model.calls[0][0].items[1:],
             (
+                self.tools_snapshot,
                 Message(role="user", content="Fresh query."),
                 UserInteractionBoundary(),
             ),
@@ -457,7 +466,7 @@ class DemoStartupBaselineTests(unittest.TestCase):
 
     def test_completed_resume_replays_summary_without_sampling_or_appending(self):
         save_interaction_save(
-            self.path, InteractionContext(COMPLETED_SESSION_ITEMS)
+            self.path, InteractionContext((*COMPLETED_SESSION_ITEMS, self.tools_snapshot))
         )
         before = self.path.read_bytes()
 
@@ -477,6 +486,7 @@ class DemoStartupBaselineTests(unittest.TestCase):
                 "[sample] input=10 output=2 total=12 cached=4",
                 "[turn] input_sum=10 output_sum=2 cold_sum=6 "
                 "cached_sum=4 cached_max=4 context=12 samples=1 compactions=0",
+                "[tools] exec_command, write_stdin, update_plan, apply_patch",
             ),
         )
 
@@ -497,6 +507,7 @@ class DemoStartupBaselineTests(unittest.TestCase):
         expected = (
             *interrupted,
             ToolResult(call_id=PLAN_CALL.call_id, output="Plan updated"),
+            self.tools_snapshot,
             Instructions(""),
             Message(role="user", content="Follow-up."),
             UserInteractionBoundary(),
@@ -521,7 +532,7 @@ class DemoStartupBaselineTests(unittest.TestCase):
                 self.assertEqual(len(model.calls), 1)
                 self.assertEqual(
                     model.calls[0][0].items,
-                    (*COMPLETED_SESSION_ITEMS, Instructions(instructions)),
+                    (*COMPLETED_SESSION_ITEMS, self.tools_snapshot, Instructions(instructions)),
                 )
 
     def test_missing_resume_file_warns_and_uses_supplied_or_demo_default_query(self):
@@ -542,6 +553,7 @@ class DemoStartupBaselineTests(unittest.TestCase):
                 self.assertEqual(
                     model.calls[0][0].items[1:],
                     (
+                        self.tools_snapshot,
                         Message(role="user", content=prompt or demo.DEFAULT_PROMPT),
                         UserInteractionBoundary(),
                     ),
@@ -583,6 +595,7 @@ class DemoStartupBaselineTests(unittest.TestCase):
         self.assertEqual(len(model.calls), 2)
         initial, tools, _options = model.calls[0]
         self.assertEqual(initial.items[1:], (
+            self.experimental_tools_snapshot,
             Message("user", demo.EXPERIMENTAL_USER_MESSAGE_PROMPT),
             UserInteractionBoundary(),
         ))
@@ -630,6 +643,7 @@ class DemoStartupBaselineTests(unittest.TestCase):
                 self.assertEqual(status, 0)
                 context, tools, _options = model.calls[0]
                 self.assertEqual(context.items[1:], (
+                    self.experimental_tools_snapshot,
                     Message("user", "Custom test."), UserInteractionBoundary(),
                 ))
                 self.assertIn(INJECTION_CALL.name, tuple(tool.name for tool in tools))
@@ -642,6 +656,7 @@ class DemoStartupBaselineTests(unittest.TestCase):
         )
         self.assertEqual(status, 0)
         self.assertEqual(model.calls[0][0].items[1:], (
+            self.experimental_tools_snapshot,
             Message("user", demo.EXPERIMENTAL_USER_MESSAGE_PROMPT),
             UserInteractionBoundary(),
         ))
@@ -651,7 +666,9 @@ class DemoStartupBaselineTests(unittest.TestCase):
         )
 
     def test_experimental_resume_does_not_append_seed_to_completed_save(self):
-        save_interaction_save(self.path, InteractionContext(COMPLETED_SESSION_ITEMS))
+        save_interaction_save(self.path, InteractionContext((
+            *COMPLETED_SESSION_ITEMS, self.experimental_tools_snapshot,
+        )))
         before = self.path.read_bytes()
         status, model, _printed = self._run_demo(
             ["--resume", "--experimental-user-message-injection"], samples=(),
@@ -670,7 +687,7 @@ class DemoStartupBaselineTests(unittest.TestCase):
         )
         self.assertEqual(status, 0)
         self.assertEqual(len(model.calls), 1)
-        expected = (*interrupted, INJECTION_RESULT, INJECTED_MESSAGE)
+        expected = (*interrupted, INJECTION_RESULT, INJECTED_MESSAGE, self.experimental_tools_snapshot)
         self.assertEqual(model.calls[0][0].items, expected)
         restored = load_interaction_save(self.path)
         self.assertEqual(restored.items[:len(expected)], expected)
@@ -683,7 +700,7 @@ class DemoStartupBaselineTests(unittest.TestCase):
         save_interaction_save(self.path, InteractionContext(interrupted))
         status, model, _printed = self._run_demo(["--resume"])
         self.assertEqual(status, 0)
-        result = model.calls[0][0].items[-1]
+        result = model.calls[0][0].items[-2]
         self.assertIsInstance(result, ToolResult)
         self.assertFalse(result.success)
         self.assertIn("Unknown tool", result.output)

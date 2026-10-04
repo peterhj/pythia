@@ -52,6 +52,7 @@ from .items import CompactionMetadata
 from .items import ContextPrefix
 from .items import Init
 from .items import Instructions
+from .items import Tools
 from .items import InteractionItem
 from .items import Message
 from .items import ModelFailure
@@ -787,7 +788,7 @@ async def _reload_retry_model(
 
 
 def _ends_with_completed_manual_compaction(context: InteractionContext) -> bool:
-    items = context.items
+    items = tuple(item for item in context.items if not isinstance(item, Tools))
     end = len(items)
     if end and isinstance(items[end - 1], CompactionMetadata):
         end -= 1
@@ -819,6 +820,7 @@ def _resume_notice(context: InteractionContext) -> Optional[str]:
                 UserInteractionBoundary,
                 UserToolCall,
                 UserToolResult,
+                Tools,
             ),
         ):
             continue
@@ -857,6 +859,7 @@ async def _drive_interaction(
     config: InteractionConfig,
 ) -> None:
     attachment_cwd = Path(args.cwd).expanduser().resolve()
+    tools_snapshot = Tools(environment.tool_specs)
     existing = args.resume and await asyncio.to_thread(path.exists)
     if existing:
         context = await asyncio.to_thread(load_interaction_save, path)
@@ -882,6 +885,7 @@ async def _drive_interaction(
         initial = [Init(model=args.model or initial_model_name(model))]
         if args.instructions is not None:
             initial.append(Instructions(args.instructions))
+        initial.append(tools_snapshot)
         context = InteractionContext(initial)
     if state.closing:
         return
@@ -901,6 +905,13 @@ async def _drive_interaction(
                     await _checkpoint(context, state, path)
                 if state.closing:
                     return
+                if tools_snapshot != context.latest_tools():
+                    # Compare the raw log, not its compacted model projection.
+                    # Runtime tools are never restored from these snapshots.
+                    await _append(context, (tools_snapshot,), state, path)
+                    state.displays.extend(render_interaction_items((tools_snapshot,)))
+                elif not existing:
+                    state.displays.extend(render_interaction_items((tools_snapshot,)))
                 if existing and args.instructions is not None:
                     instructions = Instructions(args.instructions)
                     await _append(context, (instructions,), state, path)

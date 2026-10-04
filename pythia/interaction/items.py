@@ -11,6 +11,8 @@ from typing import Tuple
 from typing import Union
 
 from .usage import TokenUsage
+from ._tool_spec import ToolSpec
+from ._tool_spec import _copy_schema
 
 
 _COMPACTION_PROTOCOL_RE = re.compile(r"^[a-z][a-z0-9_]{0,127}$")
@@ -180,6 +182,34 @@ class Instructions:
 
     def __post_init__(self) -> None:
         _require_string(self.text, "text")
+
+
+@dataclass(frozen=True)
+class Tools:
+    """A durable snapshot of the runtime's advertised tool specifications.
+
+    Later snapshots supersede earlier ones for audit purposes; an empty tuple
+    records no tools. Unlike Instructions, these are not restored or used as
+    provider input: the runtime environment and explicit ``tools=`` argument
+    remain authoritative. Schemas are defensively copied, and no handlers or
+    runtime state are retained.
+    """
+
+    specs: Tuple[ToolSpec, ...] = ()
+
+    def __post_init__(self) -> None:
+        specs = []
+        names = set()
+        for index, spec in enumerate(self.specs):
+            if not isinstance(spec, ToolSpec):
+                raise TypeError(f"specs[{index}] must be ToolSpec")
+            if spec.name in names:
+                raise ValueError(f"duplicate tool name: {spec.name!r}")
+            names.add(spec.name)
+            specs.append(ToolSpec(
+                spec.name, spec.description, _copy_schema(spec.parameters),
+            ))
+        object.__setattr__(self, "specs", tuple(specs))
 
 
 @dataclass(frozen=True)
@@ -668,6 +698,7 @@ class ContextPrefix:
 InteractionItem = Union[
     Init,
     Instructions,
+    Tools,
     Message,
     Reasoning,
     ToolCall,
@@ -687,6 +718,7 @@ InteractionItem = Union[
 INTERACTION_ITEM_TYPES = (
     Init,
     Instructions,
+    Tools,
     Message,
     Reasoning,
     ToolCall,
@@ -723,6 +755,7 @@ __all__ = [
     "TextPart",
     "ToolCall",
     "ToolResult",
+    "Tools",
     "UserToolCall",
     "UserToolResult",
     "SampleMetadata",

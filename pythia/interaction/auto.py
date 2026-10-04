@@ -42,7 +42,7 @@ from .context import InteractionContext
 from .default_environment import DefaultEnvironment
 from .display import DisplayItem, render_interaction_items
 from .environment import Environment, Tool, ToolOutcome, ToolSpec
-from .items import Init, Instructions, Message, ModelSampleBoundary, ToolCall, ToolResult
+from .items import Init, Instructions, Message, ModelSampleBoundary, ToolCall, ToolResult, Tools
 from .items import UserToolResult
 from .items import summarize_turn_usage
 from .model import ModelContextWindowError, ModelError, ModelSample
@@ -685,6 +685,7 @@ class _Session:
             current = _instructions(index, self.settings[index],
                                     None if service is None else service.base_url,
                                     supervisor=self._supervising)
+            tools_snapshot = Tools(environment.tool_specs)
             if self._resumed:
                 context = self._contexts[index]
                 recovered = []
@@ -702,11 +703,14 @@ class _Session:
                     )))
                 notice = Instructions(_RESTART_NOTICE if current is None
                                       else current.text + "\n\n" + _RESTART_NOTICE)
+                if tools_snapshot != context.latest_tools():
+                    recovered.append(tools_snapshot)
                 context.extend((*recovered, notice))
                 self._checkpoint(index, context)
             else:
                 context = InteractionContext((Init(model=args.model),
-                                              *(() if current is None else (current,))))
+                                              *(() if current is None else (current,)),
+                                              tools_snapshot))
                 self._checkpoint(index, context)
             self._phase(index, "quiescent")
             self._ready[index].set()

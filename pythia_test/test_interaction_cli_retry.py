@@ -14,7 +14,7 @@ from pythia.interaction import (
     ModelResponseError, NothingToCompact,
     ModelSample, ModelSampleBoundary, ModelTimeoutError, OpaqueCompaction,
     Reasoning, SampleParams, SaveError, Tool, ToolCall, ToolOutcome,
-    ToolResult, ToolSpec, TurnSummary, UserInteractionBoundary, UserToolCall,
+    ToolResult, ToolSpec, Tools, TurnSummary, UserInteractionBoundary, UserToolCall,
     cli, load_interaction_save, save_interaction_save,
 )
 from pythia.interaction import user_tools
@@ -207,7 +207,7 @@ class RetryControllerTests(_ControllerTestCase):
                          ["old task", "new task"])
 
     async def test_resumed_failure_is_not_retryable_and_prompt_retry_is_literal(self):
-        original = InteractionContext((Init("old"), Message("user", "hello"),
+        original = InteractionContext((Init("old"), Tools(), Message("user", "hello"),
             ModelFailure(category="timeout", message="old failure"), ModelSampleBoundary()))
         save_interaction_save(self.path, original)
         before = self.path.read_bytes()
